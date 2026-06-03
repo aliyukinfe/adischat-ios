@@ -12,7 +12,7 @@ workflows:
       app_store_connect: AdisChat AppStore
 
     environment:
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
       ios_signing:
@@ -111,7 +111,7 @@ workflows:
     instance_type: mac_mini_m2
 
     environment:
-      node: 20
+      node: 22
       xcode: latest
       cocoapods: default
 
