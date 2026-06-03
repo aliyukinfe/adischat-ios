@@ -41,28 +41,28 @@ workflows:
       - name: Capacitor copy
         script: ./node_modules/.bin/cap copy ios --verbose
 
-      # 3. Update iOS native project (plugins, config)
-      - name: Capacitor update
+      # 3. Patch plugin Package.swift files to use capacitor-swift-pm 8.x
+      - name: Patch SPM versions
         script: |
-          # Patch missing Package.swift for mlkit (known Capacitor SPM issue)
-          MLKIT="node_modules/@capacitor-mlkit/barcode-scanning"
-          if [ -d "$MLKIT" ] && [ ! -f "$MLKIT/Package.swift" ]; then
-            echo "Patching @capacitor-mlkit/barcode-scanning Package.swift..."
-            cat > "$MLKIT/Package.swift" << 'EOF'
-          // swift-tools-version:5.9
-          import PackageDescription
-          let package = Package(
-            name: "CapacitorMlkitBarcodeScanning",
-            platforms: [.iOS(.v14)],
-            products: [.library(name: "CapacitorMlkitBarcodeScanning", targets: ["CapacitorMlkitBarcodeScanning"])],
-            dependencies: [.package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "7.0.0")],
-            targets: [.target(name: "CapacitorMlkitBarcodeScanning",
-              dependencies: [.product(name: "Capacitor", package: "capacitor-swift-pm")],
-              path: "ios/Plugin", publicHeadersPath: "")]
-          )
-          EOF
+          echo "Patching @capacitor-community/contacts Package.swift to use capacitor-swift-pm 8.x..."
+          CONTACTS_PKG="node_modules/@capacitor-community/contacts/Package.swift"
+          if [ -f "$CONTACTS_PKG" ]; then
+            sed -i 's/from: "7\.0\.0"/from: "8.0.0"/g' "$CONTACTS_PKG"
+            echo "Patched contacts:"
+            grep "capacitor-swift-pm" "$CONTACTS_PKG"
           fi
-          ./node_modules/.bin/cap update ios --verbose
+
+          echo "Patching @capacitor-mlkit/barcode-scanning if needed..."
+          MLKIT_PKG="node_modules/@capacitor-mlkit/barcode-scanning/Package.swift"
+          if [ -f "$MLKIT_PKG" ]; then
+            sed -i 's/from: "7\.0\.0"/from: "8.0.0"/g' "$MLKIT_PKG"
+            echo "Patched mlkit:"
+            grep "capacitor-swift-pm" "$MLKIT_PKG"
+          fi
+
+      # 4. Update iOS native project (plugins, config)
+      - name: Capacitor update
+        script: ./node_modules/.bin/cap update ios --verbose
 
       # 4. Set build number
       - name: Set build number
