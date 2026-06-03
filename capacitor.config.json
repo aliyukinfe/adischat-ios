@@ -9,7 +9,7 @@
     "contentInset": "automatic",
     "allowsLinkPreview": false,
     "scrollEnabled": true,
-    "limitsNavigationsToAppBoundDomains": true
+    "limitsNavigationsToAppBoundDomains": false
   },
   "plugins": {
     "FirebaseAuthentication": {

@@ -1,10 +1,11 @@
 {
-  "name": "adischat-android",
+  "name": "adischat-ios",
   "version": "1.0.0",
-  "description": "",
+  "description": "Capacitor iOS shell for AdisChat.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "sync:ios": "python scripts/patch_capacitor_spm_versions.py && cap sync ios && python scripts/normalize_capacitor_spm_paths.py",
+    "doctor:ios": "cap doctor ios"
   },
   "keywords": [],
   "author": "",

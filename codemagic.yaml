@@ -1,126 +1,16 @@
 workflows:
-
-  # ── iOS Build & Publish ──────────────────────────────────────────
-  ios-release:
-    name: AdisChat iOS — App Store
-    max_build_duration: 60
-    instance_type: mac_mini_m2   # free tier machine
-
-    # Links to the App Store Connect integration you add in
-    # Codemagic UI → Teams → Integrations → App Store Connect
-    integrations:
-      app_store_connect: AdisChat AppStore
-
-    environment:
-      node: 22
-      xcode: latest
-      cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.adischat.app
-      vars:
-        APP_ID: com.adischat.app
-        APP_NAME: AdisChat
-
-    triggering:
-      events:
-        - push
-      branch_patterns:
-        - pattern: main
-          include: true
-
-    scripts:
-      # 1. Install npm deps
-      - name: Install dependencies
-        script: |
-          npm install
-          echo "Node: $(node -v), NPM: $(npm -v)"
-          echo "Capacitor CLI: $(./node_modules/.bin/cap --version)"
-
-      # 2. Copy web assets + update native plugins
-      - name: Capacitor copy
-        script: ./node_modules/.bin/cap copy ios --verbose
-
-      # 3. Patch plugin Package.swift files to use capacitor-swift-pm 8.x
-      - name: Patch SPM versions
-        script: |
-          # Use Python for reliable cross-platform file patching (macOS sed needs '' flag)
-          python3 - << 'PYEOF'
-          import os, glob
-
-          targets = [
-            "node_modules/@capacitor-community/contacts/Package.swift",
-            "node_modules/@capacitor-mlkit/barcode-scanning/Package.swift",
-          ]
-          # Also scan all node_modules plugin Package.swift files
-          targets += glob.glob("node_modules/@capacitor*/*/Package.swift")
-          targets += glob.glob("node_modules/@capacitor-community/*/Package.swift")
-
-          for path in set(targets):
-            if not os.path.isfile(path):
-              continue
-            with open(path, "r") as f:
-              content = f.read()
-            if 'from: "7.0.0"' in content:
-              patched = content.replace('from: "7.0.0"', 'from: "8.0.0"')
-              with open(path, "w") as f:
-                f.write(patched)
-              print(f"Patched: {path}")
-            else:
-              print(f"OK (no patch needed): {path}")
-          PYEOF
-
-      # 4. Update iOS native project (plugins, config)
-      - name: Capacitor update
-        script: ./node_modules/.bin/cap update ios --verbose
-
-      # 4. Set build number
-      - name: Set build number
-        script: |
-          cd ios/App
-          agvtool new-version -all $CM_BUILD_NUMBER
-
-      # 5. Build & sign iOS app (SPM — no CocoaPods workspace needed)
-      - name: Build iOS
-        script: |
-          xcode-project build-ipa \
-            --project "ios/App/App.xcodeproj" \
-            --scheme "App"
-
-    artifacts:
-      - build/ios/ipa/*.ipa          # signed IPA file
-      - /tmp/xcodebuild_logs/*.log   # build logs
-
-    publishing:
-      # Auto-publish to TestFlight on every successful build
-      app_store_connect:
-        auth: integration
-        submit_to_testflight: true
-        beta_groups:
-          - "Internal Testers"
-
-      # Email notification when build finishes
-      email:
-        recipients:
-          - aliyukinfe@gmail.com    # ← change to your email
-        notify:
-          success: true
-          failure: true
-
-
-  # ── iOS Simulator build (no signing needed — instant test) ──────
-  ios-debug:
-    name: AdisChat iOS — Simulator Test
+  ios-simulator:
+    name: AdisChat iOS - Appetize simulator build
     max_build_duration: 30
     instance_type: mac_mini_m2
 
     environment:
       node: 22
       xcode: latest
-      cocoapods: default
 
     triggering:
       events:
+        - push
         - pull_request
       branch_patterns:
         - pattern: "*"
@@ -128,26 +18,98 @@ workflows:
 
     scripts:
       - name: Install dependencies
-        script: npm install
+        script: |
+          npm ci
+          echo "Node: $(node -v)"
+          echo "NPM: $(npm -v)"
+          npx cap --version
 
-      - name: Capacitor copy
-        script: ./node_modules/.bin/cap copy ios
+      - name: Sync Capacitor iOS project
+        script: |
+          python3 scripts/patch_capacitor_spm_versions.py
+          npx cap sync ios
+          python3 scripts/normalize_capacitor_spm_paths.py
 
-      - name: Capacitor update
-        script: ./node_modules/.bin/cap update ios
-
-      - name: Build (simulator, no signing)
+      - name: Build simulator app
         script: |
           xcodebuild \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Debug \
-            -destination "platform=iOS Simulator,name=iPhone 16" \
+            -destination "generic/platform=iOS Simulator" \
             -derivedDataPath build/ios \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            | xcpretty
+            build
+
+      - name: Zip for Appetize
+        script: |
+          APP_PATH=$(find build/ios/Build/Products/Debug-iphonesimulator -maxdepth 1 -name "*.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "No simulator .app found"
+            exit 1
+          fi
+          mkdir -p "$CM_EXPORT_DIR"
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$CM_EXPORT_DIR/AdisChat-simulator.zip"
+          ls -lh "$CM_EXPORT_DIR"
 
     artifacts:
-      - build/ios/Build/Products/Debug-iphonesimulator/App.app
+      - $CM_EXPORT_DIR/AdisChat-simulator.zip
+      - /tmp/xcodebuild_logs/*.log
+
+  ios-release:
+    name: AdisChat iOS - App Store IPA
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: AdisChat AppStore
+
+    environment:
+      node: 22
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.adischat.app
+      vars:
+        APP_ID: com.adischat.app
+        APP_NAME: AdisChat
+
+    scripts:
+      - name: Install dependencies
+        script: |
+          npm ci
+          npx cap --version
+
+      - name: Sync Capacitor iOS project
+        script: |
+          python3 scripts/patch_capacitor_spm_versions.py
+          npx cap sync ios
+          python3 scripts/normalize_capacitor_spm_paths.py
+
+      - name: Set up code signing
+        script: xcode-project use-profiles
+
+      - name: Set build number
+        script: |
+          cd ios/App
+          agvtool new-version -all "$CM_BUILD_NUMBER"
+
+      - name: Build signed IPA
+        script: |
+          xcode-project build-ipa \
+            --project "ios/App/App.xcodeproj" \
+            --scheme "App"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - $CM_EXPORT_DIR/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testers
