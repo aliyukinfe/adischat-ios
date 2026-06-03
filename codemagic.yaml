@@ -1,0 +1,121 @@
+workflows:
+
+  # ── iOS Build & Publish ──────────────────────────────────────────
+  ios-release:
+    name: AdisChat iOS — App Store
+    max_build_duration: 60
+    instance_type: mac_mini_m2   # free tier machine
+
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.adischat.app
+      vars:
+        APP_ID: com.adischat.app
+        APP_NAME: AdisChat
+
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+
+    scripts:
+      # 1. Install npm deps
+      - name: Install dependencies
+        script: npm ci
+
+      # 2. Sync Capacitor iOS
+      - name: Capacitor sync
+        script: npx cap sync ios
+
+      # 3. Install CocoaPods
+      - name: Install CocoaPods
+        script: |
+          cd ios/App
+          pod install --repo-update
+
+      # 4. Set build number to Codemagic build number
+      - name: Set build number
+        script: |
+          cd ios/App
+          agvtool new-version -all $(($(app-store-connect get-latest-testflight-build-number \
+            "$APP_ID" 2>/dev/null || echo 0) + 1))
+
+      # 5. Build & sign iOS app
+      - name: Build iOS
+        script: |
+          xcode-project build-ipa \
+            --workspace "ios/App/App.xcworkspace" \
+            --scheme "App"
+
+    artifacts:
+      - build/ios/ipa/*.ipa          # signed IPA file
+      - /tmp/xcodebuild_logs/*.log   # build logs
+
+    publishing:
+      # Auto-publish to TestFlight on every successful build
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - "Internal Testers"
+
+      # Email notification when build finishes
+      email:
+        recipients:
+          - aliyukinfe@gmail.com    # ← change to your email
+        notify:
+          success: true
+          failure: true
+
+
+  # ── iOS Simulator build (no signing needed — instant test) ──────
+  ios-debug:
+    name: AdisChat iOS — Simulator Test
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+
+    environment:
+      node: 20
+      xcode: latest
+      cocoapods: default
+
+    triggering:
+      events:
+        - pull_request
+      branch_patterns:
+        - pattern: "*"
+          include: true
+
+    scripts:
+      - name: Install dependencies
+        script: npm ci
+
+      - name: Capacitor sync
+        script: npx cap sync ios
+
+      - name: Install CocoaPods
+        script: |
+          cd ios/App
+          pod install --repo-update
+
+      - name: Build (simulator, no signing)
+        script: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
+            -derivedDataPath build/ios \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
+
+    artifacts:
+      - build/ios/Build/Products/Debug-iphonesimulator/App.app
