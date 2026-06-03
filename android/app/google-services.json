@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "75418741614",
+    "project_id": "adischat-f4a77",
+    "storage_bucket": "adischat-f4a77.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:75418741614:android:9cd5776b450880ef4c2f7f",
+        "android_client_info": {
+          "package_name": "com.adischat.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "75418741614-2on1ds3plc107sbkr5h5dpjjejkshdcq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adischat.app",
+            "certificate_hash": "af7f7aabd698e3c005e6784699e1b3830b1377c2"
+          }
+        },
+        {
+          "client_id": "75418741614-ova6255i92gfa3r9i1l5qt5cv3dkrsmg.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfb0xe12Pnb5DA_qRFG03HjDgxxB8FXZU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "75418741614-ova6255i92gfa3r9i1l5qt5cv3dkrsmg.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

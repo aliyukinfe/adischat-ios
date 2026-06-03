@@ -1,0 +1,23 @@
+{
+  "appId": "com.adischat.app",
+  "appName": "AdisChat",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "allowsLinkPreview": false,
+    "scrollEnabled": true,
+    "limitsNavigationsToAppBoundDomains": true
+  },
+  "plugins": {
+    "FirebaseAuthentication": {
+      "skipNativeAuth": false,
+      "providers": ["google.com"]
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}
