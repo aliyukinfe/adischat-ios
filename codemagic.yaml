@@ -64,23 +64,17 @@ workflows:
           fi
           ./node_modules/.bin/cap update ios --verbose
 
-      # 4. Install CocoaPods
-      - name: Install CocoaPods
-        script: |
-          cd ios/App
-          pod install --repo-update
-
-      # 5. Set build number
+      # 4. Set build number
       - name: Set build number
         script: |
           cd ios/App
           agvtool new-version -all $CM_BUILD_NUMBER
 
-      # 5. Build & sign iOS app
+      # 5. Build & sign iOS app (SPM — no CocoaPods workspace needed)
       - name: Build iOS
         script: |
           xcode-project build-ipa \
-            --workspace "ios/App/App.xcworkspace" \
+            --project "ios/App/App.xcodeproj" \
             --scheme "App"
 
     artifacts:
@@ -132,15 +126,10 @@ workflows:
       - name: Capacitor update
         script: ./node_modules/.bin/cap update ios
 
-      - name: Install CocoaPods
-        script: |
-          cd ios/App
-          pod install --repo-update
-
       - name: Build (simulator, no signing)
         script: |
           xcodebuild \
-            -workspace ios/App/App.xcworkspace \
+            -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Debug \
             -destination "platform=iOS Simulator,name=iPhone 16" \
