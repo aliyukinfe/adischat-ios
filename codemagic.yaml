@@ -32,24 +32,49 @@ workflows:
     scripts:
       # 1. Install npm deps
       - name: Install dependencies
-        script: npm ci
+        script: |
+          npm install
+          echo "Node: $(node -v), NPM: $(npm -v)"
+          echo "Capacitor CLI: $(./node_modules/.bin/cap --version)"
 
-      # 2. Sync Capacitor iOS
-      - name: Capacitor sync
-        script: npx cap sync ios
+      # 2. Copy web assets + update native plugins
+      - name: Capacitor copy
+        script: ./node_modules/.bin/cap copy ios --verbose
 
-      # 3. Install CocoaPods
+      # 3. Update iOS native project (plugins, config)
+      - name: Capacitor update
+        script: |
+          # Patch missing Package.swift for mlkit (known Capacitor SPM issue)
+          MLKIT="node_modules/@capacitor-mlkit/barcode-scanning"
+          if [ -d "$MLKIT" ] && [ ! -f "$MLKIT/Package.swift" ]; then
+            echo "Patching @capacitor-mlkit/barcode-scanning Package.swift..."
+            cat > "$MLKIT/Package.swift" << 'EOF'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+            name: "CapacitorMlkitBarcodeScanning",
+            platforms: [.iOS(.v14)],
+            products: [.library(name: "CapacitorMlkitBarcodeScanning", targets: ["CapacitorMlkitBarcodeScanning"])],
+            dependencies: [.package(url: "https://github.com/ionic-team/capacitor-swift-pm.git", from: "7.0.0")],
+            targets: [.target(name: "CapacitorMlkitBarcodeScanning",
+              dependencies: [.product(name: "Capacitor", package: "capacitor-swift-pm")],
+              path: "ios/Plugin", publicHeadersPath: "")]
+          )
+          EOF
+          fi
+          ./node_modules/.bin/cap update ios --verbose
+
+      # 4. Install CocoaPods
       - name: Install CocoaPods
         script: |
           cd ios/App
           pod install --repo-update
 
-      # 4. Set build number to Codemagic build number
+      # 5. Set build number
       - name: Set build number
         script: |
           cd ios/App
-          agvtool new-version -all $(($(app-store-connect get-latest-testflight-build-number \
-            "$APP_ID" 2>/dev/null || echo 0) + 1))
+          agvtool new-version -all $CM_BUILD_NUMBER
 
       # 5. Build & sign iOS app
       - name: Build iOS
@@ -99,10 +124,13 @@ workflows:
 
     scripts:
       - name: Install dependencies
-        script: npm ci
+        script: npm install
 
-      - name: Capacitor sync
-        script: npx cap sync ios
+      - name: Capacitor copy
+        script: ./node_modules/.bin/cap copy ios
+
+      - name: Capacitor update
+        script: ./node_modules/.bin/cap update ios
 
       - name: Install CocoaPods
         script: |
