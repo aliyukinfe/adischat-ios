@@ -44,21 +44,31 @@ workflows:
       # 3. Patch plugin Package.swift files to use capacitor-swift-pm 8.x
       - name: Patch SPM versions
         script: |
-          echo "Patching @capacitor-community/contacts Package.swift to use capacitor-swift-pm 8.x..."
-          CONTACTS_PKG="node_modules/@capacitor-community/contacts/Package.swift"
-          if [ -f "$CONTACTS_PKG" ]; then
-            sed -i 's/from: "7\.0\.0"/from: "8.0.0"/g' "$CONTACTS_PKG"
-            echo "Patched contacts:"
-            grep "capacitor-swift-pm" "$CONTACTS_PKG"
-          fi
+          # Use Python for reliable cross-platform file patching (macOS sed needs '' flag)
+          python3 - << 'PYEOF'
+          import os, glob
 
-          echo "Patching @capacitor-mlkit/barcode-scanning if needed..."
-          MLKIT_PKG="node_modules/@capacitor-mlkit/barcode-scanning/Package.swift"
-          if [ -f "$MLKIT_PKG" ]; then
-            sed -i 's/from: "7\.0\.0"/from: "8.0.0"/g' "$MLKIT_PKG"
-            echo "Patched mlkit:"
-            grep "capacitor-swift-pm" "$MLKIT_PKG"
-          fi
+          targets = [
+            "node_modules/@capacitor-community/contacts/Package.swift",
+            "node_modules/@capacitor-mlkit/barcode-scanning/Package.swift",
+          ]
+          # Also scan all node_modules plugin Package.swift files
+          targets += glob.glob("node_modules/@capacitor*/*/Package.swift")
+          targets += glob.glob("node_modules/@capacitor-community/*/Package.swift")
+
+          for path in set(targets):
+            if not os.path.isfile(path):
+              continue
+            with open(path, "r") as f:
+              content = f.read()
+            if 'from: "7.0.0"' in content:
+              patched = content.replace('from: "7.0.0"', 'from: "8.0.0"')
+              with open(path, "w") as f:
+                f.write(patched)
+              print(f"Patched: {path}")
+            else:
+              print(f"OK (no patch needed): {path}")
+          PYEOF
 
       # 4. Update iOS native project (plugins, config)
       - name: Capacitor update
