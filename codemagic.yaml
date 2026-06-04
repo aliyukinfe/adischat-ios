@@ -32,12 +32,16 @@ workflows:
 
       - name: Build simulator app
         script: |
+          # Build for BOTH arm64 + x86_64 so it opens on Appetize.io
           xcodebuild \
             -project ios/App/App.xcodeproj \
             -scheme App \
             -configuration Debug \
             -destination "generic/platform=iOS Simulator" \
             -derivedDataPath build/ios \
+            ONLY_ACTIVE_ARCH=NO \
+            ARCHS="arm64 x86_64" \
+            VALID_ARCHS="arm64 x86_64" \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
