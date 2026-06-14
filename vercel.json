@@ -1,0 +1,71 @@
+{
+  "buildCommand": null,
+  "outputDirectory": "www",
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "/link.html",
+      "permanent": false
+    },
+    {
+      "source": "/download/windows",
+      "destination": "/downloads/adischat-desktop-windows-latest.exe",
+      "permanent": false
+    },
+    {
+      "source": "/desktop/windows",
+      "destination": "/downloads/adischat-desktop-windows-latest.exe",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/download",
+      "destination": "/download.html"
+    },
+    {
+      "source": "/desktop",
+      "destination": "/download.html"
+    },
+    {
+      "source": "/channel/:slug",
+      "destination": "/link.html"
+    },
+    {
+      "source": "/group/:slug",
+      "destination": "/link.html"
+    },
+    {
+      "source": "/user/:slug",
+      "destination": "/link.html"
+    },
+    {
+      "source": "/:slug",
+      "destination": "/link.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/.well-known/assetlinks.json",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/json"
+        }
+      ]
+    },
+    {
+      "source": "/downloads/adischat-desktop-windows-latest.exe",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/vnd.microsoft.portable-executable"
+        },
+        {
+          "key": "Content-Disposition",
+          "value": "attachment; filename=\"AdisChat-Desktop-Windows-Setup.exe\""
+        }
+      ]
+    }
+  ]
+}
