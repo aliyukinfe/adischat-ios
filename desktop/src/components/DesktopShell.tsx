@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { User as FirebaseUser } from "firebase/auth";
 import QRCode from "qrcode";
 import { api, isAdminUser } from "@/lib/api";
@@ -17,7 +17,6 @@ type Filter = "all" | "unread" | "chat" | "group" | "channel";
 type ThemeMode = "dark" | "light" | "system";
 type DesktopView = "messaging" | "profile" | "settings" | "admin";
 type ConnectionStatus = "connected" | "reconnecting" | "disconnected";
-type ConnectionIndicatorStyle = "dots" | "orbit" | "bubble";
 type IconName = "chat" | "group" | "channel" | "unread" | "settings" | "profile" | "search" | "check" | "mute" | "smile" | "plus" | "phone" | "video" | "more" | "refresh" | "chevron-down" | "shield";
 type SearchHit = { kind: "user"; user: UserSummary } | { kind: "group" | "channel"; room: CommunityRoom };
 
@@ -202,13 +201,11 @@ function MessageStatus({ message }: { message: Message }) {
   return <span className="message-status sent" aria-label="Sent"><i /></span>;
 }
 
-function ConnectionIndicator({ status, style }: { status: ConnectionStatus; style: ConnectionIndicatorStyle }) {
+function ConnectionIndicator({ status }: { status: ConnectionStatus }) {
   if (status === "connected") return null;
   return (
-    <div className={`connection-indicator ${style}`} title="Reconnecting in background" aria-label="Network status">
-      {style === "dots" ? <span className="signal-dots"><i /><i /><i /></span> : null}
-      {style === "orbit" ? <span className="orbit-ring"><i /></span> : null}
-      {style === "bubble" ? <span className="morph-bubble"><i /><i /><i /></span> : null}
+    <div className="connection-indicator" title="Connecting" aria-label="Connecting">
+      <span className="signal-dots"><i /><i /><i /></span>
     </div>
   );
 }
@@ -240,6 +237,7 @@ export function DesktopShell() {
   const [toast, setToast] = useState("");
   const [messageSearch, setMessageSearch] = useState("");
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [showEmoji, setShowEmoji] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
@@ -263,6 +261,7 @@ export function DesktopShell() {
   const messageScrollRef = useRef<HTMLDivElement>(null);
   const positionedThreadRef = useRef("");
   const prevMsgCountRef = useRef(0);
+  const dragDepthRef = useRef(0);
   // Furthest-down content position the user has actually viewed. Only messages
   // below this are "new" — scrolling back up over seen messages never inflates it.
   const seenBottomRef = useRef(0);
@@ -832,16 +831,58 @@ export function DesktopShell() {
     }
   }
   async function uploadFiles(files: FileList | File[]) {
-    if (!activeThread || activeThread.kind === "channel") return;
-    for (const file of Array.from(files)) {
-      const mediaKind = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file";
-      setUploadProgress(1);
-      const uploaded = await api.uploadMedia(file, setUploadProgress);
-      const media = { type: mediaKind as Message["type"], mediaUrl: uploaded.url, mediaMimeType: file.type };
-      if (activeThread.kind === "group") await api.sendCommunityMessage(activeThread.id, file.name, media);
-      else await api.sendMessage(activeThread.id, file.name, media);
-      setUploadProgress(null);
+    if (!activeThread || activeThread.kind === "channel") {
+      showToast("Choose a chat or group to send files");
+      return;
     }
+    const list = Array.from(files).filter((file) => file.size > 0);
+    if (!list.length) return;
+    for (const file of list) {
+      try {
+        const mediaKind = file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "file";
+        setUploadProgress(1);
+        const uploaded = await api.uploadMedia(file, setUploadProgress);
+        const media = { type: mediaKind as Message["type"], mediaUrl: uploaded.url, mediaMimeType: file.type };
+        if (activeThread.kind === "group") await api.sendCommunityMessage(activeThread.id, file.name, media);
+        else await api.sendMessage(activeThread.id, file.name, media);
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : "File upload failed");
+      } finally {
+        setUploadProgress(null);
+      }
+    }
+  }
+
+  function canDropFiles() {
+    return Boolean(activeThread && activeThread.kind !== "channel");
+  }
+
+  function handleThreadDragEnter(event: DragEvent<HTMLElement>) {
+    if (!event.dataTransfer.types.includes("Files") || !canDropFiles()) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingFiles(true);
+  }
+
+  function handleThreadDragOver(event: DragEvent<HTMLElement>) {
+    if (!isDraggingFiles || !canDropFiles()) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleThreadDragLeave(event: DragEvent<HTMLElement>) {
+    if (!isDraggingFiles) return;
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDraggingFiles(false);
+  }
+
+  function handleThreadDrop(event: DragEvent<HTMLElement>) {
+    if (!canDropFiles()) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingFiles(false);
+    if (event.dataTransfer.files.length) void uploadFiles(event.dataTransfer.files);
   }
 
   function startCall(type: "voice" | "video") {
@@ -1011,7 +1052,7 @@ export function DesktopShell() {
             <p>{unreadTotal ? `${unreadTotal} unread` : "All caught up"}</p>
           </div>
           <div className="header-actions">
-            <ConnectionIndicator status={connectionStatus} style={prefs.connectionIndicatorStyle || "orbit"} />
+            <ConnectionIndicator status={connectionStatus} />
             <button
               className={`auto-refresh-toggle ${autoRefresh ? "on" : ""}`}
               onClick={() => setAutoRefresh((value) => !value)}
@@ -1085,16 +1126,21 @@ export function DesktopShell() {
 
       <section
         className="chat-panel"
-        onDrop={(event) => {
-          event.preventDefault();
-          void uploadFiles(event.dataTransfer.files);
-        }}
-        onDragOver={(event) => event.preventDefault()}
+        onDragEnter={handleThreadDragEnter}
+        onDragOver={handleThreadDragOver}
+        onDragLeave={handleThreadDragLeave}
+        onDrop={handleThreadDrop}
         onPaste={(event) => {
           const files = event.clipboardData.files;
           if (files.length) void uploadFiles(files);
         }}
       >
+        {isDraggingFiles ? (
+          <div className="drop-zone-overlay" aria-live="polite">
+            <span>Drop files to send</span>
+            <small>Images, videos, documents, and media</small>
+          </div>
+        ) : null}
         {view === "profile" ? (
           <ProfilePage
             user={me}
@@ -1989,6 +2035,7 @@ function AdminPanel({ user, onBack }: { user: User | null; onBack: () => void })
   const [logs, setLogs] = useState<AdminReport[]>([]);
   const [status, setStatus] = useState("pending");
   const [query, setQuery] = useState("");
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
@@ -2013,7 +2060,10 @@ function AdminPanel({ user, onBack }: { user: User | null; onBack: () => void })
     if (reportRes.status === "fulfilled") setReports(reportRes.value);
     if (logRes.status === "fulfilled") setLogs(logRes.value);
     const failed = [statsRes, usersRes, verRes, channelRes, gameRes].find((res) => res.status === "rejected") as PromiseRejectedResult | undefined;
-    if (failed) setError(failed.reason instanceof Error ? failed.reason.message : "Could not load one admin section");
+    if (failed) {
+      const message = failed.reason instanceof Error ? failed.reason.message : "Could not load one admin section";
+      setError(/admin only|forbidden|403/i.test(message) ? "Admin access required by server. Make sure this desktop session belongs to the admin account, then sign out and link/sign in again." : message);
+    }
     setBusy(false);
   }, [query, status]);
 
@@ -2037,6 +2087,18 @@ function AdminPanel({ user, onBack }: { user: User | null; onBack: () => void })
     } finally {
       setBusy(false);
     }
+  }
+
+  async function runUserAction(label: string, action: () => Promise<unknown>, success: string) {
+    await confirmAction(label, async () => {
+      await action();
+      setNotice(success);
+      await loadAdmin();
+      if (selectedUser?.uid) {
+        const fresh = await api.getUser(selectedUser.uid).catch(() => null);
+        if (fresh) setSelectedUser(fresh as User);
+      }
+    });
   }
 
   const visibleUsers = users.filter((item) => {
@@ -2131,16 +2193,21 @@ function AdminPanel({ user, onBack }: { user: User | null; onBack: () => void })
           {!reports.length ? <EmptyAdminRow cols={4} label="No reported content returned by backend" /> : null}
         </AdminTable>
 
-        <AdminTable title="Users" columns={["User", "Email", "Role", "Verified"]}>
+        <AdminTable title="Users" columns={["User", "Email", "Role", "Status", "Actions"]}>
           {visibleUsers.slice(0, 30).map((item) => (
-            <tr key={item.uid}>
+            <tr key={item.uid} className={`admin-user-row ${selectedUser?.uid === item.uid ? "selected" : ""}`} onClick={() => setSelectedUser(item)}>
               <td><strong>{item.name || item.username || item.uid}</strong><span>@{item.username || "no_username"}</span></td>
               <td>{item.email || "No email"}</td>
               <td>{item.role || "user"}</td>
-              <td><StatusPill status={(item.verificationLevel || 0) >= 3 ? "verified" : "member"} /></td>
+              <td><StatusPill status={item.deleted ? "deleted" : item.paused || item.disabled ? "paused" : (item.verificationLevel || 0) >= 3 ? "verified" : "active"} /></td>
+              <td>
+                <button className="admin-row-action" onClick={(event) => { event.stopPropagation(); setSelectedUser(item); }}>
+                  Manage
+                </button>
+              </td>
             </tr>
           ))}
-          {!visibleUsers.length ? <EmptyAdminRow cols={4} label="No users found" /> : null}
+          {!visibleUsers.length ? <EmptyAdminRow cols={5} label="No users found" /> : null}
         </AdminTable>
 
         <AdminTable title="Activity Logs / Audit Trail" columns={["Event", "Actor", "Target", "Time"]}>
@@ -2155,12 +2222,104 @@ function AdminPanel({ user, onBack }: { user: User | null; onBack: () => void })
           {!logs.length ? <EmptyAdminRow cols={4} label="Audit endpoint not enabled yet" /> : null}
         </AdminTable>
       </div>
+      {selectedUser ? (
+        <AdminUserDrawer
+          user={selectedUser}
+          currentAdminUid={user?.uid || ""}
+          busy={busy}
+          onClose={() => setSelectedUser(null)}
+          onGrantBadge={() => runUserAction(`Give blue badge to ${selectedUser.name || selectedUser.username || selectedUser.uid}?`, () => api.grantAdminBlueBadge(selectedUser.uid), "Blue badge granted")}
+          onRemoveBadge={() => runUserAction(`Remove blue badge from ${selectedUser.name || selectedUser.username || selectedUser.uid}?`, () => api.removeAdminBlueBadge(selectedUser.uid), "Blue badge removed")}
+          onPause={() => runUserAction(`Pause ${selectedUser.name || selectedUser.username || selectedUser.uid}? They will lose access until reactivated.`, () => api.setAdminUserStatus(selectedUser.uid, "paused"), "User paused")}
+          onReactivate={() => runUserAction(`Reactivate ${selectedUser.name || selectedUser.username || selectedUser.uid}?`, () => api.setAdminUserStatus(selectedUser.uid, "active"), "User reactivated")}
+          onMakeAdmin={() => runUserAction(`Give admin role to ${selectedUser.name || selectedUser.username || selectedUser.uid}?`, () => api.setAdminUserRole(selectedUser.uid, "admin"), "Admin role granted")}
+          onRemoveAdmin={() => runUserAction(`Remove admin role from ${selectedUser.name || selectedUser.username || selectedUser.uid}?`, () => api.setAdminUserRole(selectedUser.uid, "user"), "Admin role removed")}
+          onDelete={() => runUserAction(`Delete ${selectedUser.name || selectedUser.username || selectedUser.uid}? This is permanent.`, () => api.deleteAdminUser(selectedUser.uid), "User deleted")}
+        />
+      ) : null}
     </div>
   );
 }
 
 function AdminMetric({ label, value, tone = "default" }: { label: string; value: number; tone?: "default" | "green" | "blue" | "red" }) {
   return <div className={`admin-metric ${tone}`}><span>{label}</span><strong>{value}</strong></div>;
+}
+
+function AdminUserDrawer({
+  user,
+  currentAdminUid,
+  busy,
+  onClose,
+  onGrantBadge,
+  onRemoveBadge,
+  onPause,
+  onReactivate,
+  onMakeAdmin,
+  onRemoveAdmin,
+  onDelete
+}: {
+  user: User;
+  currentAdminUid: string;
+  busy: boolean;
+  onClose: () => void;
+  onGrantBadge: () => void;
+  onRemoveBadge: () => void;
+  onPause: () => void;
+  onReactivate: () => void;
+  onMakeAdmin: () => void;
+  onRemoveAdmin: () => void;
+  onDelete: () => void;
+}) {
+  const verified = Boolean(user.verified || (user.verificationLevel || 0) >= 3);
+  const paused = Boolean(user.paused || user.disabled || user.status === "paused");
+  const admin = isAdminUser(user);
+  const self = user.uid === currentAdminUid;
+  const title = user.name || user.username || user.uid || "AdisChat user";
+
+  return (
+    <aside className="admin-user-drawer" aria-label="User admin actions">
+      <header>
+        <div className="admin-user-avatar">{user.photoUrl ? <img src={user.photoUrl} alt="" /> : <span>{avatarLabel(title)}</span>}</div>
+        <div>
+          <h3>{title}</h3>
+          <p>@{user.username || "no_username"} · {user.email || "No email"}</p>
+          <div className="admin-user-pills">
+            <StatusPill status={admin ? "admin" : user.role || "user"} />
+            <StatusPill status={paused ? "paused" : user.deleted ? "deleted" : "active"} />
+            <StatusPill status={verified ? "verified" : "not verified"} />
+          </div>
+        </div>
+        <button className="admin-drawer-close" onClick={onClose} aria-label="Close user actions">x</button>
+      </header>
+
+      <div className="admin-user-details">
+        <InfoRow label="User ID" value={user.uid || "-"} />
+        <InfoRow label="Phone" value={user.phone || "Not available"} />
+        <InfoRow label="Joined" value={formatDate(user.joinedAt || user.createdAt)} />
+        <InfoRow label="Last seen" value={user.lastSeen ? formatDate(user.lastSeen) : "Not available"} />
+      </div>
+
+      <div className="admin-user-action-grid">
+        {verified ? (
+          <button disabled={busy} onClick={onRemoveBadge}>Remove blue badge</button>
+        ) : (
+          <button disabled={busy} onClick={onGrantBadge}>Give blue badge</button>
+        )}
+        {paused ? (
+          <button disabled={busy} onClick={onReactivate}>Reactivate user</button>
+        ) : (
+          <button disabled={busy} onClick={onPause}>Pause user</button>
+        )}
+        {admin ? (
+          <button disabled={busy || self} onClick={onRemoveAdmin}>Remove admin</button>
+        ) : (
+          <button disabled={busy} onClick={onMakeAdmin}>Make admin</button>
+        )}
+        <button className="danger" disabled={busy || self} onClick={onDelete}>Delete user</button>
+      </div>
+      {self ? <p className="admin-user-note">You cannot remove admin access or delete your current desktop account.</p> : null}
+    </aside>
+  );
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -2394,7 +2553,6 @@ function SettingsPage({
           <SelectSetting label="Font size" value={prefs.fontSize} options={["small", "normal", "large"]} onChange={(fontSize) => setPrefs({ fontSize: fontSize as DesktopPreferences["fontSize"] })} />
           <SelectSetting label="Chat background" value={prefs.chatBackground} options={["clean", "soft", "solid"]} onChange={(chatBackground) => setPrefs({ chatBackground: chatBackground as DesktopPreferences["chatBackground"] })} />
           <SelectSetting label="Bubble style" value={prefs.bubbleStyle} options={["modern", "compact"]} onChange={(bubbleStyle) => setPrefs({ bubbleStyle: bubbleStyle as DesktopPreferences["bubbleStyle"] })} />
-          <SelectSetting label="Network indicator" value={prefs.connectionIndicatorStyle || "orbit"} options={["dots", "orbit", "bubble"]} onChange={(connectionIndicatorStyle) => setPrefs({ connectionIndicatorStyle: connectionIndicatorStyle as ConnectionIndicatorStyle })} />
         </SettingsCard>
 
         <SettingsCard title="Chat Settings">
@@ -2425,7 +2583,7 @@ function SettingsPage({
         </SettingsCard>
 
         <SettingsCard title="About">
-          <InfoRow label="App version" value="1.2.3" />
+          <InfoRow label="App version" value="1.2.5" />
           <InfoRow label="Link diagnostic" value={linkDiagnostic()} />
           <ActionRow label="Terms of Service" value="Open in browser" />
           <ActionRow label="Privacy Policy" value="Open in browser" />

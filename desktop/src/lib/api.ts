@@ -10,8 +10,12 @@ import type { AdminChannelVerification, AdminGameApproval, AdminReport, AdminSta
  */
 export function normalizeUser(raw: RawUser | null | undefined): User {
   const source = raw?.user || raw?.profile || raw?.data || raw || {};
-  const role = source.role || source.roles?.[0] || "";
-  const permissions = source.permissions || (source.roles ? source.roles.slice() : []);
+  const rawRoles = Array.isArray(source.roles) ? source.roles : typeof source.roles === "string" ? [source.roles] : [];
+  const claims = { ...(source.claims || {}), ...(source.customClaims || {}) } as Record<string, unknown>;
+  const claimRoles = Array.isArray(claims.roles) ? claims.roles.map(String) : typeof claims.role === "string" ? [claims.role] : [];
+  const role = source.role || rawRoles[0] || claimRoles[0] || (source.isAdmin || source.admin || source.is_admin || claims.admin ? "admin" : "");
+  const permissionSource = Array.isArray(source.permissions) ? source.permissions : [];
+  const permissions = [...permissionSource, ...rawRoles, ...claimRoles, ...Object.keys(claims).filter((key) => Boolean(claims[key]))];
   return {
     uid: source.uid || source.userId || source.id || "",
     name: source.name || source.displayName || source.fullName || source.full_name || "",
@@ -29,17 +33,24 @@ export function normalizeUser(raw: RawUser | null | undefined): User {
     createdAt: source.createdAt || source.created_at || 0,
     joinedAt: source.joinedAt || source.joined_at || 0,
     role,
+    roles: [...new Set([role, ...rawRoles, ...claimRoles].filter(Boolean))],
     permissions,
+    isAdmin: Boolean(source.isAdmin || source.admin || source.is_admin || claims.admin || role === "admin"),
+    disabled: Boolean(source.disabled),
+    paused: Boolean(source.paused || source.status === "paused" || source.account_status === "paused"),
+    deleted: Boolean(source.deleted || source.status === "deleted" || source.account_status === "deleted"),
+    status: source.status || source.account_status || "",
     verified: source.verified ?? source.is_verified ?? source.isVerified ?? false,
     verificationLevel: source.verificationLevel ?? source.verification_level ?? 0
   };
 }
 
-export function isAdminUser(user: { role?: string; permissions?: string[] } | null | undefined): boolean {
+export function isAdminUser(user: { role?: string; roles?: string[]; permissions?: string[]; isAdmin?: boolean } | null | undefined): boolean {
   if (!user) return false;
-  const role = (user.role || "").toLowerCase();
-  if (role === "admin" || role === "superadmin" || role === "owner" || role === "moderator") return true;
-  return (user.permissions || []).some((permission) => /admin|moderat/i.test(permission));
+  if (user.isAdmin) return true;
+  const roles = [user.role, ...(user.roles || [])].filter(Boolean).map((role) => String(role).toLowerCase());
+  if (roles.some((role) => ["admin", "superadmin", "owner", "moderator"].includes(role))) return true;
+  return (user.permissions || []).some((permission) => /admin|moderat|owner|superuser/i.test(permission));
 }
 
 const MAIN_API = (process.env.NEXT_PUBLIC_ADISCHAT_API_URL || "https://adischat-api.adischat.workers.dev").replace(/\/$/, "");
@@ -280,6 +291,27 @@ export const api = {
   getAdminStats: () => request<AdminStats>("/api/admin/stats"),
   getAdminUsers: (q = "", page = 0) =>
     request<User[]>(`/api/admin/users?q=${encodeURIComponent(q)}&page=${page}`).then((rows) => rows.map(normalizeUser)),
+  setAdminUserRole: (uid: string, role: "user" | "merchant" | "admin") =>
+    request<{ ok?: boolean; role?: string }>(`/api/admin/users/${encodeURIComponent(uid)}/role`, {
+      method: "PUT",
+      body: JSON.stringify({ role })
+    }),
+  setAdminUserStatus: (uid: string, status: "active" | "paused" | "deleted") =>
+    request<{ ok?: boolean; status?: string }>(`/api/admin/users/${encodeURIComponent(uid)}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status })
+    }),
+  deleteAdminUser: (uid: string) =>
+    request<{ ok?: boolean; deleted?: boolean }>(`/api/admin/users/${encodeURIComponent(uid)}`, {
+      method: "DELETE"
+    }),
+  grantAdminBlueBadge: (uid: string) =>
+    request<{ approved?: boolean }>(`/api/admin/verifications/${encodeURIComponent(uid)}/approve`, { method: "POST", body: JSON.stringify({}) }),
+  removeAdminBlueBadge: (uid: string) =>
+    request<{ ok?: boolean }>(`/api/admin/users/${encodeURIComponent(uid)}/verification`, {
+      method: "PUT",
+      body: JSON.stringify({ verificationLevel: 0, verified: false })
+    }),
   getAdminVerifications: (status = "pending") =>
     request<AdminVerificationRequest[]>(`/api/admin/verifications?status=${encodeURIComponent(status)}`),
   approveAdminVerification: (uid: string) =>
