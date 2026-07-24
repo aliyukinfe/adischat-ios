@@ -120,6 +120,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
@@ -131,6 +132,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -1570,10 +1572,12 @@ private fun ProductRail(
     savedIds: Set<String>,
     compact: Boolean = false,
 ) {
-    SectionHeader(title)
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
-        items(products, key = { it.id }) { product ->
-            ProductCard(product, Modifier.width(if (compact) 144.dp else 164.dp), onProduct, onToggleFavorite, product.id in savedIds, compact = compact)
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
+            items(products, key = { it.id }) { product ->
+                ProductCard(product, Modifier.width(if (compact) 144.dp else 164.dp), onProduct, onToggleFavorite, product.id in savedIds, compact = compact)
+            }
         }
     }
 }
@@ -1587,20 +1591,30 @@ private fun ProductGridSection(
     savedIds: Set<String>,
     maxItems: Int = 10,
 ) {
-    SectionHeader(title)
     if (products.isEmpty()) {
         return
     }
     val visibleProducts = products.take(maxItems)
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier.fillMaxWidth().height(((visibleProducts.size + 1) / 2 * 236).dp),
-        userScrollEnabled = false,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        items(visibleProducts, key = { it.id }) { product ->
-            ProductCard(product, Modifier.fillMaxWidth(), onProduct, onToggleFavorite, product.id in savedIds)
+    val rowCount = (visibleProducts.size + 1) / 2
+    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
+    val horizontalPadding = 12.dp
+    val columnSpacing = 6.dp
+    val rowSpacing = 8.dp
+    val cardWidth = (screenWidth - horizontalPadding - columnSpacing) / 2
+    val rowHeight = maxOf(292.dp, cardWidth + 112.dp)
+    val gridHeight = (rowHeight * rowCount) + (rowSpacing * (rowCount - 1).coerceAtLeast(0))
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        SectionHeader(title)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier.fillMaxWidth().height(gridHeight),
+            userScrollEnabled = false,
+            horizontalArrangement = Arrangement.spacedBy(columnSpacing),
+            verticalArrangement = Arrangement.spacedBy(rowSpacing),
+        ) {
+            items(visibleProducts, key = { it.id }) { product ->
+                ProductCard(product, Modifier.fillMaxWidth(), onProduct, onToggleFavorite, product.id in savedIds)
+            }
         }
     }
 }
@@ -3329,11 +3343,20 @@ private fun PageTitle(title: String, subtitle: String) {
 
 @Composable
 private fun SectionHeader(title: String, action: String? = "See all") {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, color = ShopInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-        if (!action.isNullOrBlank()) {
-            Text(action, color = ShopInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = ShopInk, modifier = Modifier.size(18.dp))
+    Surface(
+        modifier = Modifier.fillMaxWidth().zIndex(1f),
+        color = ShopBg,
+        tonalElevation = 0.dp,
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, color = ShopInk, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (!action.isNullOrBlank()) {
+                Text(action, color = ShopInk, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = ShopInk, modifier = Modifier.size(18.dp))
+            }
         }
     }
 }
