@@ -692,10 +692,33 @@ async function verifySellerDeliveryCode(request: Request) {
     p_order_group_id: orderGroupId,
     p_code: deliveryCode,
   });
-  if (error) return safeError("Delivery code could not be verified.", 409);
-  if ((data as Json)?.ok === false) return safeError("Delivery code could not be verified.", 409);
+  if (error) {
+    const mapped = deliveryCodeError(error.message);
+    return structuredError(mapped.code, mapped.message, 409, mapped.retryable);
+  }
+  if ((data as Json)?.ok === false) {
+    const mapped = deliveryCodeError(String((data as Json)?.code || (data as Json)?.error || ""));
+    return structuredError(mapped.code, mapped.message, 409, mapped.retryable);
+  }
   await audit(client, profileId, "seller_order.verify_delivery_code", "shop_order_group", orderGroupId);
   return response({ ok: true, sellerOrderGroup: data as Json });
+}
+
+function deliveryCodeError(raw = "") {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("invalid-delivery-code") || normalized.includes("delivery_code_invalid")) {
+    return { code: "delivery_code_invalid", message: "The delivery code is incorrect.", retryable: true };
+  }
+  if (normalized.includes("delivery-code-locked") || normalized.includes("delivery_code_locked")) {
+    return { code: "delivery_code_locked", message: "Too many incorrect delivery code attempts. Try again later.", retryable: true };
+  }
+  if (normalized.includes("delivery-code-not-revealed") || normalized.includes("delivery_code_not_revealed")) {
+    return { code: "delivery_code_not_revealed", message: "Ask the customer to reveal the delivery code first.", retryable: true };
+  }
+  if (normalized.includes("seller-order-not-found") || normalized.includes("seller_order_not_found")) {
+    return { code: "seller_order_not_found", message: "Seller order not found.", retryable: false };
+  }
+  return { code: "delivery_code_unavailable", message: "Delivery code could not be verified.", retryable: true };
 }
 
 async function sellerStatus(request: Request) {

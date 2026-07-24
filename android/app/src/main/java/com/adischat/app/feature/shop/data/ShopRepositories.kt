@@ -32,18 +32,21 @@ private fun Throwable.shopCheckoutMessage(fallback: String): String {
 private fun Throwable.shopSellerActionMessage(fallback: String): String {
     if (this is HttpException) {
         val body = response()?.errorBody()?.string().orEmpty()
-        val errorObject = runCatching {
-            JsonParser.parseString(body).asJsonObject.getAsJsonObject("error")
-        }.getOrNull()
+        val parsedError = runCatching { JsonParser.parseString(body).asJsonObject.get("error") }.getOrNull()
+        val errorObject = parsedError?.takeIf { it.isJsonObject }?.asJsonObject
         val code = errorObject?.get("code")?.asString.orEmpty()
-        val message = errorObject?.get("message")?.asString.orEmpty()
+        val message = errorObject?.get("message")?.asString
+            ?: parsedError?.takeIf { it.isJsonPrimitive }?.asString
+            ?: ""
+        val normalized = "${code} ${message}".lowercase()
         return when {
-            response()?.code() == 409 -> "This order has already moved to a new state. Refreshing seller orders."
+            normalized.contains("delivery_code_invalid") || normalized.contains("invalid-delivery-code") || normalized.contains("incorrect") -> "The delivery code is incorrect."
+            normalized.contains("delivery_code_locked") || normalized.contains("delivery-code-locked") -> "Too many incorrect delivery code attempts. Try again later."
+            normalized.contains("delivery_code_not_revealed") || normalized.contains("delivery-code-not-revealed") -> "Ask the customer to reveal the delivery code first."
             message.isNotBlank() -> ShopStateReducers.safeErrorMessage(message, fallback)
+            response()?.code() == 409 -> "This order has already moved to a new state. Refreshing seller orders."
             code == "invalid_order_state" -> "This order has already moved to a new state. Refreshing seller orders."
             code == "seller_order_not_found" -> "This order is no longer available for this seller."
-            code == "delivery_code_invalid" -> "The delivery code is incorrect."
-            code == "delivery_code_locked" -> "Too many incorrect delivery code attempts. Try again later."
             else -> fallback
         }
     }
@@ -399,7 +402,7 @@ class SellerRepository(
                 }
             }
         } catch (error: Throwable) {
-            if (error is HttpException && error.code() == 409) {
+            if (error is HttpException && error.code() == 409 && action != "delivered") {
                 return@runCatching withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
             }
             throw IllegalStateException(error.shopSellerActionMessage("Seller action is not allowed for this order state."))
