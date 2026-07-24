@@ -216,9 +216,15 @@ class ShopViewModel(
     fun revealDeliveryCode(orderId: String) {
         if (orderId.isBlank()) return
         viewModelScope.launch {
+            val busyKey = "delivery-code-$orderId"
+            setBusy(busyKey, true)
             orderRepository.revealDeliveryCode(orderId)
-                .onSuccess { code -> _protectedState.value = _protectedState.value.copy(deliveryCode = code, error = null) }
+                .onSuccess { code ->
+                    _protectedState.value = _protectedState.value.copy(deliveryCode = code, error = null)
+                    loadOrderDetail(orderId)
+                }
                 .onFailure { showProtectedError(it, "Delivery code is not available yet.") }
+            setBusy(busyKey, false)
         }
     }
 

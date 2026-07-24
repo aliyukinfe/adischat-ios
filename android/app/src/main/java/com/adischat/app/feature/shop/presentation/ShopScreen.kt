@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
@@ -2606,10 +2607,18 @@ private fun OrdersScreen(
         }
         if (filtered.isEmpty()) EmptyCard("No orders in this section yet.")
         filtered.forEach { order ->
-            OrderCard(order, onOpen = onOpen, onCancel = onCancel, onRevealCode = onRevealCode)
+            val visibleCode = protectedState.deliveryCode?.takeIf { it.orderId == order.id }
+            OrderCard(
+                order = order,
+                deliveryCode = visibleCode,
+                busy = protectedState.busyIds.contains("delivery-code-${order.id}"),
+                onOpen = onOpen,
+                onCancel = onCancel,
+                onRevealCode = onRevealCode,
+            )
         }
         protectedState.selectedOrder?.let { order ->
-            OrderDetailCard(order, protectedState.deliveryCode)
+            OrderDetailCard(order, protectedState.deliveryCode?.takeIf { it.orderId == order.id })
         }
         if (protectedState.selectedOrder == null) {
             protectedState.deliveryCode?.let {
@@ -2622,11 +2631,15 @@ private fun OrdersScreen(
 @Composable
 private fun OrderCard(
     order: ShopOrderDto,
+    deliveryCode: com.adischat.app.feature.shop.data.ShopDeliveryCodeDto?,
+    busy: Boolean,
     onOpen: (String) -> Unit,
     onCancel: (String, String) -> Unit,
     onRevealCode: (String) -> Unit,
 ) {
+    val clipboard = LocalClipboardManager.current
     val canCancel = order.fulfillmentStatus in listOf("awaiting_seller_confirmation", "accepted", "created")
+    val canRevealCode = order.fulfillmentStatus in listOf("handed_to_carrier", "shipped", "out_for_delivery")
     Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(order.orderNumber ?: "Order ${order.id.takeLast(8)}", color = ShopInk, fontWeight = FontWeight.SemiBold)
@@ -2644,12 +2657,31 @@ private fun OrderCard(
                 Button(onClick = { onOpen(order.id) }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
                     Text("Track")
                 }
-                Button(onClick = { onRevealCode(order.id) }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopInk)) {
-                    Text("Delivery code")
+                Button(
+                    onClick = { onRevealCode(order.id) },
+                    enabled = canRevealCode && !busy,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopInk),
+                ) {
+                    Text(if (busy) "Loading..." else "Delivery code")
                 }
                 if (canCancel) {
                     Button(onClick = { onCancel(order.id, "Customer requested cancellation") }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopRed)) {
                         Text("Cancel")
+                    }
+                }
+            }
+            deliveryCode?.takeIf { it.deliveryCode.isNotBlank() }?.let { code ->
+                Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopGreenSoft), border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = .2f))) {
+                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Delivery code", color = ShopInk, fontWeight = FontWeight.SemiBold)
+                            Text(code.deliveryCode, color = ShopGreen, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                            Text(code.message ?: "Show it only after receiving the order.", color = ShopMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                        }
+                        IconButton(onClick = { clipboard.setText(AnnotatedString(code.deliveryCode)) }) {
+                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy delivery code", tint = ShopGreen)
+                        }
                     }
                 }
             }
