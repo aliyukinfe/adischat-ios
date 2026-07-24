@@ -29,6 +29,27 @@ private fun Throwable.shopCheckoutMessage(fallback: String): String {
     return ShopStateReducers.safeErrorMessage(message, fallback)
 }
 
+private fun Throwable.shopSellerActionMessage(fallback: String): String {
+    if (this is HttpException) {
+        val body = response()?.errorBody()?.string().orEmpty()
+        val errorObject = runCatching {
+            JsonParser.parseString(body).asJsonObject.getAsJsonObject("error")
+        }.getOrNull()
+        val code = errorObject?.get("code")?.asString.orEmpty()
+        val message = errorObject?.get("message")?.asString.orEmpty()
+        return when {
+            response()?.code() == 409 -> "This order has already moved to a new state. Refreshing seller orders."
+            message.isNotBlank() -> ShopStateReducers.safeErrorMessage(message, fallback)
+            code == "invalid_order_state" -> "This order has already moved to a new state. Refreshing seller orders."
+            code == "seller_order_not_found" -> "This order is no longer available for this seller."
+            code == "delivery_code_invalid" -> "The delivery code is incorrect."
+            code == "delivery_code_locked" -> "Too many incorrect delivery code attempts. Try again later."
+            else -> fallback
+        }
+    }
+    return ShopStateReducers.safeErrorMessage(message, fallback)
+}
+
 class ShopHomeRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.api) {
     suspend fun loadHome(): ShopHomeState {
         val service = api ?: return ShopHomeState(loading = false, error = true, maintenance = true)
@@ -329,9 +350,22 @@ class SellerRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
 ) {
+    private suspend fun <T> withSellerAuthRetry(block: suspend (String) -> T): T {
+        return try {
+            block(identity.authorization())
+        } catch (error: Throwable) {
+            if (error is HttpException && error.code() == 401) {
+                identity.clear()
+                block(identity.authorization())
+            } else {
+                throw error
+            }
+        }
+    }
+
     suspend fun status(): Result<Pair<String, ShopSellerApplicationDto?>> = runCatching {
         val service = api ?: error("Couldn't load Seller Center. Try again.")
-        val envelope = service.sellerStatus(identity.authorization())
+        val envelope = withSellerAuthRetry { token -> service.sellerStatus(token) }
         (envelope.status ?: envelope.application?.status ?: "not_started") to envelope.application
     }
 
@@ -343,25 +377,34 @@ class SellerRepository(
 
     suspend fun orderGroups(): Result<List<ShopOrderGroupDto>> = runCatching {
         val service = api ?: error("Couldn't load seller orders.")
-        service.sellerOrderGroups(identity.authorization()).sellerOrderGroups.orEmpty()
+        withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
     }
 
     suspend fun transition(orderGroupId: String, action: String, reason: String = "", carrier: String? = null, trackingNumber: String? = null): Result<List<ShopOrderGroupDto>> = runCatching {
         val service = api ?: error("Seller action is temporarily unavailable.")
         val body = ShopSellerOrderActionRequest(orderGroupId = orderGroupId, reason = reason, carrier = carrier, trackingNumber = trackingNumber)
-        when (action) {
-            "accept" -> service.sellerAcceptOrderGroup(identity.authorization(), body)
-            "reject" -> service.sellerRejectOrderGroup(identity.authorization(), body)
-            "processing" -> service.sellerMarkProcessing(identity.authorization(), body)
-            "packed" -> service.sellerMarkPacked(identity.authorization(), body)
-            "handed_to_carrier" -> service.sellerHandToCarrier(identity.authorization(), body)
-            "delivered" -> service.sellerVerifyDeliveryCode(
-                identity.authorization(),
-                ShopSellerDeliveryCodeRequest(orderGroupId = orderGroupId, deliveryCode = trackingNumber.orEmpty()),
-            )
-            else -> error("Seller action is not supported.")
+        try {
+            withSellerAuthRetry { token ->
+                when (action) {
+                    "accept" -> service.sellerAcceptOrderGroup(token, body)
+                    "reject" -> service.sellerRejectOrderGroup(token, body)
+                    "processing" -> service.sellerMarkProcessing(token, body)
+                    "packed" -> service.sellerMarkPacked(token, body)
+                    "handed_to_carrier" -> service.sellerHandToCarrier(token, body)
+                    "delivered" -> service.sellerVerifyDeliveryCode(
+                        token,
+                        ShopSellerDeliveryCodeRequest(orderGroupId = orderGroupId, deliveryCode = trackingNumber.orEmpty()),
+                    )
+                    else -> error("Seller action is not supported.")
+                }
+            }
+        } catch (error: Throwable) {
+            if (error is HttpException && error.code() == 409) {
+                return@runCatching withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
+            }
+            throw IllegalStateException(error.shopSellerActionMessage("Seller action is not allowed for this order state."))
         }
-        service.sellerOrderGroups(identity.authorization()).sellerOrderGroups.orEmpty()
+        withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
     }
 }
 

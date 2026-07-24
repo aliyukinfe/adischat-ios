@@ -3157,6 +3157,7 @@ private fun SellerOrderGroupCard(
                     InfoRow("Delivery code", when {
                         group.deliveryCodeStatus?.verified == true -> "Verified"
                         group.deliveryCodeStatus?.revealed == true -> "Shown to customer"
+                        fulfillment in listOf("handed_to_carrier", "shipped", "out_for_delivery") -> "Waiting for customer code"
                         else -> "Hidden until shipped"
                     })
                 }

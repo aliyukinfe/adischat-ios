@@ -337,8 +337,12 @@ class ShopViewModel(
                     _protectedState.value = _protectedState.value.copy(sellerOrderGroups = groups, error = null)
                     _state.value = _state.value.copy(message = "Seller order updated")
                     loadOrders()
+                    loadSellerOrders()
                 }
-                .onFailure { showProtectedError(it, "Seller action is not allowed for this order state.") }
+                .onFailure {
+                    showProtectedError(it, "Seller action is not allowed for this order state.")
+                    loadSellerOrders()
+                }
             setBusy(orderGroupId, false)
         }
     }
