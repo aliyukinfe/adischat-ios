@@ -1032,10 +1032,12 @@ private fun AdminSellerApplicationCard(
     reason: String,
     onReviewSeller: (String, String, String) -> Unit,
 ) {
-    val status = statusKey(application.status)
+    val status = statusKey(application.status.orEmpty())
+    val storeName = application.storeName.orEmpty().ifBlank { "Unnamed store" }
+    val applicantName = application.applicantName.orEmpty().ifBlank { "Seller" }
     AdminReviewCard(
-        title = application.storeName.ifBlank { "Unnamed store" },
-        subtitle = "${application.applicantName.ifBlank { "Seller" }} • ${backendLabel(application.status)}",
+        title = storeName,
+        subtitle = "$applicantName - ${backendLabel(application.status.orEmpty())}",
         meta = application.applicantEmail.orEmpty(),
         busy = busy,
         primaryLabel = if (status == "suspended") "Reactivate" else "Approve",
@@ -1064,17 +1066,18 @@ private fun AdminProductCard(
     reason: String,
     onReviewProduct: (String, String, String) -> Unit,
 ) {
+    val moderationStatus = product.moderationStatus.orEmpty().ifBlank { product.status.orEmpty() }
     AdminReviewCard(
-        title = product.title.ifBlank { "Untitled product" },
-        subtitle = "${product.storeName.ifBlank { "Store" }} • ${backendLabel(product.moderationStatus.ifBlank { product.status })}",
+        title = product.title.orEmpty().ifBlank { "Untitled product" },
+        subtitle = "${product.storeName.orEmpty().ifBlank { "Store" }} - ${backendLabel(moderationStatus)}",
         meta = formatEtb(product.priceMinor),
         busy = busy,
         primaryLabel = "Approve",
-        secondaryLabel = if (statusKey(product.moderationStatus) == "submitted") "Start review" else "Request changes",
+        secondaryLabel = if (statusKey(moderationStatus) == "submitted") "Start review" else "Request changes",
         tertiaryLabel = "Reject",
         onPrimary = { onReviewProduct(product.id, "approve", "") },
         onSecondary = {
-            val action = if (statusKey(product.moderationStatus) == "submitted") "start_review" else "request_changes"
+            val action = if (statusKey(moderationStatus) == "submitted") "start_review" else "request_changes"
             onReviewProduct(product.id, action, reason.ifBlank { "Product needs changes before publishing." })
         },
         onTertiary = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product does not meet AdisGebeya listing standards." }) },
@@ -1118,9 +1121,9 @@ private fun AdminReviewCard(
 private fun AdminOrderCard(order: ShopAdminOrderDto) {
     Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(order.orderNumber.ifBlank { "Order" }, color = ShopInk, fontWeight = FontWeight.SemiBold)
-            Text("${orderStatusLabel(order.status)} • ${fulfillmentStatusLabel(order.fulfillmentStatus)}", color = ShopMuted, fontSize = 12.sp)
-            Text("${paymentStatusLabel(order.paymentStatus)} • ${formatEtb(order.totalMinor)}", color = ShopGreen, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Text(order.orderNumber.orEmpty().ifBlank { "Order" }, color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Text("${orderStatusLabel(order.status.orEmpty())} - ${fulfillmentStatusLabel(order.fulfillmentStatus.orEmpty())}", color = ShopMuted, fontSize = 12.sp)
+            Text("${paymentStatusLabel(order.paymentStatus.orEmpty())} - ${formatEtb(order.totalMinor)}", color = ShopGreen, fontSize = 13.sp, fontWeight = FontWeight.Medium)
         }
     }
 }
@@ -1129,8 +1132,8 @@ private fun AdminOrderCard(order: ShopAdminOrderDto) {
 private fun AdminAuditCard(audit: ShopAdminAuditLogDto) {
     Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(backendLabel(audit.action), color = ShopInk, fontWeight = FontWeight.SemiBold)
-            Text("${backendLabel(audit.entityType)} • ${audit.actorName ?: "Admin"}", color = ShopMuted, fontSize = 12.sp)
+            Text(backendLabel(audit.action.orEmpty()), color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Text("${backendLabel(audit.entityType.orEmpty())} - ${audit.actorName ?: "Admin"}", color = ShopMuted, fontSize = 12.sp)
             audit.createdAt?.let { Text(it, color = ShopMuted, fontSize = 11.sp) }
         }
     }

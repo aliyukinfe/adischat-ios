@@ -394,41 +394,61 @@ data class ShopAdminDashboardDto(
 
 data class ShopAdminSellerApplicationDto(
     val id: String = "",
-    val status: String = "",
-    val storeName: String = "",
-    val businessType: String = "",
-    val applicantName: String = "",
+    val status: String? = null,
+    @SerializedName("proposed_store_name")
+    val storeName: String? = null,
+    @SerializedName("business_type")
+    val businessType: String? = null,
+    @SerializedName("applicant_name")
+    val applicantName: String? = null,
+    @SerializedName("applicant_email")
     val applicantEmail: String? = null,
+    @SerializedName("submitted_at")
     val submittedAt: String? = null,
 )
 
 data class ShopAdminProductDto(
     val id: String = "",
-    val title: String = "",
-    val status: String = "",
-    val moderationStatus: String = "",
+    val title: String? = null,
+    val status: String? = null,
+    @SerializedName("moderation_status")
+    val moderationStatus: String? = null,
+    @SerializedName("price_minor")
     val priceMinor: Int = 0,
-    val storeName: String = "",
-    val sellerName: String = "",
+    @SerializedName("store_name")
+    val storeName: String? = null,
+    @SerializedName("seller_name")
+    val sellerName: String? = null,
+    @SerializedName("submitted_at")
     val submittedAt: String? = null,
 )
 
 data class ShopAdminOrderDto(
     val id: String = "",
-    val orderNumber: String = "",
-    val status: String = "",
-    val paymentStatus: String = "",
-    val fulfillmentStatus: String = "",
+    @SerializedName("order_number")
+    val orderNumber: String? = null,
+    val status: String? = null,
+    @SerializedName("payment_status")
+    val paymentStatus: String? = null,
+    @SerializedName("fulfillment_status")
+    val fulfillmentStatus: String? = null,
+    @SerializedName("total_minor")
     val totalMinor: Int = 0,
+    @SerializedName("created_at")
     val createdAt: String? = null,
 )
 
 data class ShopAdminAuditLogDto(
     val id: String = "",
-    val action: String = "",
-    val entityType: String = "",
+    @SerializedName("action_type")
+    val action: String? = null,
+    @SerializedName("target_type")
+    val entityType: String? = null,
+    @SerializedName("target_id")
     val entityId: String? = null,
+    @SerializedName("actor_role")
     val actorName: String? = null,
+    @SerializedName("created_at")
     val createdAt: String? = null,
 )
 
