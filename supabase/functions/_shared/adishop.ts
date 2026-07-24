@@ -721,6 +721,135 @@ function deliveryCodeError(raw = "") {
   return { code: "delivery_code_unavailable", message: "Delivery code could not be verified.", retryable: true };
 }
 
+function adminError(raw = "") {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("admin-forbidden")) return { code: "admin_forbidden", message: "You do not have access to AdisGebeya Admin.", status: 403 };
+  if (normalized.includes("reason-required")) return { code: "reason_required", message: "A clear reason is required.", status: 400 };
+  if (normalized.includes("seller-application-not-found")) return { code: "seller_application_not_found", message: "Seller application not found.", status: 404 };
+  if (normalized.includes("product-not-found")) return { code: "product_not_found", message: "Product not found.", status: 404 };
+  if (normalized.includes("order-not-found")) return { code: "order_not_found", message: "Order not found.", status: 404 };
+  if (normalized.includes("invalid-seller-application-state")) return { code: "invalid_state", message: "This seller application has already moved to another state.", status: 409 };
+  if (normalized.includes("invalid-product-state")) return { code: "invalid_state", message: "This product has already moved to another state.", status: 409 };
+  if (normalized.includes("product-validation-failed")) return { code: "product_validation_failed", message: "Product is missing required details.", status: 409 };
+  if (normalized.includes("missing-images")) return { code: "missing_images", message: "At least one product image is required.", status: 409 };
+  if (normalized.includes("missing-stock")) return { code: "missing_stock", message: "Product stock is required before approval.", status: 409 };
+  if (normalized.includes("store-not-active")) return { code: "store_not_active", message: "The store must be active before approval.", status: 409 };
+  if (normalized.includes("last-super-admin-protected")) return { code: "last_super_admin_protected", message: "At least one Super Admin must remain active.", status: 409 };
+  if (normalized.includes("self-escalation-blocked")) return { code: "self_escalation_blocked", message: "Admins cannot assign roles to themselves.", status: 409 };
+  return { code: "admin_action_failed", message: "Admin action could not be completed.", status: 500 };
+}
+
+async function adminRpc(request: Request, rpcName: string, args: Json, responseKey: string) {
+  const { client, profileId } = await currentSession(request);
+  const { data, error } = await client.rpc(rpcName, { p_profile_id: profileId, ...args });
+  if (error) {
+    const mapped = adminError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.status >= 500);
+  }
+  return response({ ok: true, [responseKey]: data as Json });
+}
+
+function pageParams(request: Request) {
+  const url = new URL(request.url);
+  return {
+    p_status: url.searchParams.get("status") || "submitted",
+    p_search: url.searchParams.get("search") || "",
+    p_limit: Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 30))),
+    p_offset: Math.max(0, Number(url.searchParams.get("offset") || 0)),
+  };
+}
+
+async function adminSession(request: Request) {
+  return adminRpc(request, "adishop_admin_session", {}, "adminSession");
+}
+
+async function adminDashboard(request: Request) {
+  return adminRpc(request, "adishop_admin_dashboard", {}, "dashboard");
+}
+
+async function adminSellerApplications(request: Request) {
+  return adminRpc(request, "adishop_admin_list_seller_applications", pageParams(request), "sellerApplications");
+}
+
+async function adminSellerApplicationDetail(request: Request) {
+  const url = new URL(request.url);
+  const applicationId = String(url.searchParams.get("applicationId") || "");
+  return adminRpc(request, "adishop_admin_get_seller_application", { p_application_id: applicationId }, "sellerApplicationDetail");
+}
+
+async function adminReviewSeller(request: Request) {
+  const body = await jsonBody(request);
+  return adminRpc(request, "adishop_admin_review_seller_application", {
+    p_application_id: String(body.applicationId || ""),
+    p_action: String(body.action || ""),
+    p_reason: String(body.reason || ""),
+    p_private_notes: String(body.privateNotes || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "sellerApplicationDetail");
+}
+
+async function adminProducts(request: Request) {
+  const params = pageParams(request);
+  return adminRpc(request, "adishop_admin_list_products", { ...params, p_status: params.p_status === "submitted" ? "pending" : params.p_status }, "products");
+}
+
+async function adminProductDetail(request: Request) {
+  const url = new URL(request.url);
+  return adminRpc(request, "adishop_admin_get_product", { p_product_id: String(url.searchParams.get("productId") || "") }, "productDetail");
+}
+
+async function adminReviewProduct(request: Request) {
+  const body = await jsonBody(request);
+  return adminRpc(request, "adishop_admin_review_product", {
+    p_product_id: String(body.productId || ""),
+    p_action: String(body.action || ""),
+    p_reason_code: String(body.reasonCode || ""),
+    p_public_reason: String(body.publicReason || body.reason || ""),
+    p_private_notes: String(body.privateNotes || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "productDetail");
+}
+
+async function adminOrders(request: Request) {
+  const params = pageParams(request);
+  return adminRpc(request, "adishop_admin_list_orders", { p_search: params.p_search, p_limit: params.p_limit, p_offset: params.p_offset }, "orders");
+}
+
+async function adminAddOrderNote(request: Request) {
+  const body = await jsonBody(request);
+  return adminRpc(request, "adishop_admin_add_order_note", {
+    p_order_id: String(body.orderId || ""),
+    p_note: String(body.note || ""),
+    p_visibility: String(body.visibility || "private"),
+  }, "orderNote");
+}
+
+async function adminAuditLog(request: Request) {
+  const params = pageParams(request);
+  return adminRpc(request, "adishop_admin_audit_log", { p_limit: params.p_limit, p_offset: params.p_offset }, "auditLog");
+}
+
+async function adminUsers(request: Request) {
+  return adminRpc(request, "adishop_admin_users", {}, "adminUsers");
+}
+
+async function adminRoleMutation(request: Request, mode: "assign" | "revoke") {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const rpcName = mode === "assign" ? "adishop_admin_assign_role" : "adishop_admin_revoke_role";
+  const { data, error } = await client.rpc(rpcName, {
+    p_actor_profile_id: profileId,
+    p_target_profile_id: String(body.profileId || ""),
+    p_role_code: String(body.roleCode || ""),
+    p_reason: String(body.reason || ""),
+  });
+  if (error) {
+    const mapped = adminError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.status >= 500);
+  }
+  return response({ ok: true, result: data as Json });
+}
+
 async function sellerStatus(request: Request) {
   const { client, profileId } = await currentSession(request);
   const { data } = await client.from("shop_seller_applications").select("*").eq("profile_id", profileId).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -866,6 +995,20 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-confirm-checkout") return await confirmCheckout(request);
     if (name === "adishop-submit-seller-application") return await submitSellerApplication(request);
     if (name === "adishop-get-seller-application-status") return await sellerStatus(request);
+    if (name === "adishop-admin-session") return await adminSession(request);
+    if (name === "adishop-admin-dashboard") return await adminDashboard(request);
+    if (name === "adishop-admin-seller-applications") return await adminSellerApplications(request);
+    if (name === "adishop-admin-seller-application-detail") return await adminSellerApplicationDetail(request);
+    if (name === "adishop-admin-review-seller") return await adminReviewSeller(request);
+    if (name === "adishop-admin-products") return await adminProducts(request);
+    if (name === "adishop-admin-product-detail") return await adminProductDetail(request);
+    if (name === "adishop-admin-review-product") return await adminReviewProduct(request);
+    if (name === "adishop-admin-orders") return await adminOrders(request);
+    if (name === "adishop-admin-add-order-note") return await adminAddOrderNote(request);
+    if (name === "adishop-admin-audit-log") return await adminAuditLog(request);
+    if (name === "adishop-admin-users") return await adminUsers(request);
+    if (name === "adishop-admin-assign-role") return await adminRoleMutation(request, "assign");
+    if (name === "adishop-admin-revoke-role") return await adminRoleMutation(request, "revoke");
     return safeError("Shop action unavailable.", 404);
   } catch (error) {
     const code = error instanceof Error ? error.message : "";

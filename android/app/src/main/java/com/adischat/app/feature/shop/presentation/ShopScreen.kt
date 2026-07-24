@@ -70,6 +70,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Reviews
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
@@ -145,6 +146,10 @@ import com.adischat.app.feature.shop.data.ShopBannerDto
 import com.adischat.app.feature.shop.data.ShopCategoryDto
 import com.adischat.app.feature.shop.data.ShopAddressDto
 import com.adischat.app.feature.shop.data.ShopAddressRequest
+import com.adischat.app.feature.shop.data.ShopAdminAuditLogDto
+import com.adischat.app.feature.shop.data.ShopAdminOrderDto
+import com.adischat.app.feature.shop.data.ShopAdminProductDto
+import com.adischat.app.feature.shop.data.ShopAdminSellerApplicationDto
 import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopCartItemDto
 import com.adischat.app.feature.shop.data.ShopFavoriteDto
@@ -329,6 +334,7 @@ sealed class ShopRoute {
     data object SellerApply : ShopRoute()
     data object SellerStatus : ShopRoute()
     data object SellerDashboard : ShopRoute()
+    data object Admin : ShopRoute()
     data object Checkout : ShopRoute()
     data class Product(val product: ShopProductDto) : ShopRoute()
     data class Category(val category: ShopCategoryDto) : ShopRoute()
@@ -387,7 +393,7 @@ fun ShopRootScreen(
     var detailRoute by remember(initialRoute) {
         mutableStateOf<ShopRoute?>(
             when (initialRoute) {
-                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, ShopRoute.Support, ShopRoute.Checkout -> initialRoute
+                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, ShopRoute.Support, ShopRoute.Admin, ShopRoute.Checkout -> initialRoute
                 else -> null
             }
         )
@@ -474,6 +480,24 @@ fun ShopRootScreen(
                         busyIds = protectedState.busyIds,
                     )
                     ShopRoute.Support -> PlaceholderShopPage("AdisGebeya Support", "Support for orders, sellers and delivery will appear here.", onBack = { detailRoute = null })
+                    ShopRoute.Admin -> AdminCenterScreen(
+                        protectedState = protectedState,
+                        onBack = { detailRoute = null },
+                        onLoad = {
+                            vm.loadAdminSession()
+                            vm.loadAdminQueues()
+                            vm.loadAdminOrders()
+                            vm.loadAdminAuditLog()
+                        },
+                        onRefresh = {
+                            vm.loadAdminDashboard()
+                            vm.loadAdminQueues()
+                            vm.loadAdminOrders()
+                            vm.loadAdminAuditLog()
+                        },
+                        onReviewSeller = vm::adminReviewSeller,
+                        onReviewProduct = vm::adminReviewProduct,
+                    )
                     else -> detailRoute = null
                 }
             } else {
@@ -520,6 +544,7 @@ fun ShopRootScreen(
                         onBack = onBackToHome,
                         onSubpage = { accountSubpage = it },
                         onSubpageBack = { accountSubpage = null },
+                        onAdminCenter = { detailRoute = ShopRoute.Admin },
                         onProduct = { detailRoute = ShopRoute.Product(it) },
                         actions = ShopAccountActions(
                             loadFavorites = vm::loadFavorites,
@@ -540,6 +565,7 @@ fun ShopRootScreen(
                             deleteAddress = vm::deleteAddress,
                             setDefaultAddress = vm::setDefaultAddress,
                             submitSellerApplication = vm::submitSellerApplication,
+                            loadAdminSession = vm::loadAdminSession,
                         ),
                     )
                 }
@@ -555,6 +581,7 @@ fun ShopRootScreen(
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.Saved -> vm.loadFavorites()
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.RecentlyViewed -> vm.loadRecentlyViewed()
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.Addresses -> vm.loadAddresses()
+            selectedTab == ShopRootTab.Account && accountSubpage == null -> vm.loadAdminSession()
             detailRoute is ShopRoute.Product -> vm.recordProductView((detailRoute as ShopRoute.Product).product)
             else -> Unit
         }
@@ -621,6 +648,7 @@ private data class ShopAccountActions(
     val deleteAddress: (String) -> Unit,
     val setDefaultAddress: (String) -> Unit,
     val submitSellerApplication: (String) -> Unit,
+    val loadAdminSession: () -> Unit,
 )
 
 @Composable
@@ -740,9 +768,13 @@ private fun ShopAccountScreen(
     onBack: () -> Unit,
     onSubpage: (ShopAccountSubpage) -> Unit,
     onSubpageBack: () -> Unit,
+    onAdminCenter: () -> Unit,
     onProduct: (ShopProductDto) -> Unit,
     actions: ShopAccountActions,
 ) {
+    LaunchedEffect(Unit) {
+        actions.loadAdminSession()
+    }
     when (selectedSubpage) {
         ShopAccountSubpage.Orders -> OrdersScreen(
             protectedState,
@@ -757,7 +789,7 @@ private fun ShopAccountScreen(
         ShopAccountSubpage.Addresses -> AddressesScreen(protectedState, onSubpageBack, actions.loadAddresses, actions.saveAddress, actions.deleteAddress, actions.setDefaultAddress)
         ShopAccountSubpage.Reviews -> PlaceholderShopPage("My Reviews", "No reviews yet. Reviews will appear here after verified AdisGebeya purchases support reviews.", onBack = onSubpageBack)
         ShopAccountSubpage.BuyerProtection -> BuyerProtectionPage(onBack = onSubpageBack)
-        null -> ShopAccountHome(state, protectedState, onBack, onSubpage)
+        null -> ShopAccountHome(state, protectedState, onBack, onSubpage, onAdminCenter)
     }
 }
 
@@ -767,6 +799,7 @@ private fun ShopAccountHome(
     protectedState: ShopProtectedState,
     onBack: () -> Unit,
     onSubpage: (ShopAccountSubpage) -> Unit,
+    onAdminCenter: () -> Unit,
 ) {
     LazyColumn(
         Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(),
@@ -797,7 +830,37 @@ private fun ShopAccountHome(
             Triple("Reviews", "Your product and store feedback", ShopAccountSubpage.Reviews),
             Triple("Buyer Protection", "How AdisGebeya protects eligible purchases", ShopAccountSubpage.BuyerProtection),
         ), onSubpage) }
+        if (protectedState.adminSession != null) {
+            item { AdminAccountEntry(protectedState, onAdminCenter) }
+        }
         item { EmptyCard("AdisGebeya settings will appear here when configurable shopping preferences are available.") }
+    }
+}
+
+@Composable
+private fun AdminAccountEntry(
+    protectedState: ShopProtectedState,
+    onAdminCenter: () -> Unit,
+) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Row(
+            Modifier.fillMaxWidth().clickable { onAdminCenter() }.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(42.dp).clip(RoundedCornerShape(15.dp)).background(ShopOrange.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Security, contentDescription = null, tint = ShopOrangeDark, modifier = Modifier.size(22.dp))
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text("AdisGebeya Admin", color = ShopInk, fontWeight = FontWeight.SemiBold)
+                Text(
+                    protectedState.adminSession?.primaryRole?.let { backendLabel(it) } ?: "Moderation Center",
+                    color = ShopMuted,
+                    fontSize = 12.sp,
+                )
+            }
+            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(18.dp))
+        }
     }
 }
 
@@ -829,6 +892,215 @@ private fun AccountGroup(
                     if (index != rows.lastIndex) HorizontalDivider(color = ShopLine.copy(alpha = .6f), modifier = Modifier.padding(start = 68.dp))
                 }
             }
+        }
+    }
+}
+
+private enum class AdminTab(val label: String) {
+    Sellers("Sellers"),
+    Products("Products"),
+    Orders("Orders"),
+    Audit("Audit"),
+}
+
+@Composable
+private fun AdminCenterScreen(
+    protectedState: ShopProtectedState,
+    onBack: () -> Unit,
+    onLoad: () -> Unit,
+    onRefresh: () -> Unit,
+    onReviewSeller: (String, String, String) -> Unit,
+    onReviewProduct: (String, String, String) -> Unit,
+) {
+    var selectedTab by remember { mutableStateOf(AdminTab.Sellers) }
+    var reason by remember { mutableStateOf("") }
+
+    LaunchedEffect(Unit) { onLoad() }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk) }
+                Column(Modifier.weight(1f)) {
+                    Text("AdisGebeya Admin", color = ShopInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text(backendLabel(protectedState.adminSession?.primaryRole).ifBlank { "Moderation Center" }, color = ShopMuted, fontSize = 12.sp)
+                }
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = ShopGreen) }
+            }
+        }
+
+        if (protectedState.adminLoading) {
+            item { EmptyCard("Loading admin workspace...") }
+        }
+
+        protectedState.adminError?.takeIf { it.isNotBlank() }?.let { message ->
+            item { EmptyCard(message) }
+        }
+
+        if (protectedState.adminSession == null && !protectedState.adminLoading) {
+            item { EmptyCard("You do not have access to AdisGebeya Admin.") }
+        }
+
+        item { AdminDashboardCards(protectedState) }
+
+        item {
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(AdminTab.entries) { tab ->
+                    val selected = selectedTab == tab
+                    Surface(
+                        color = if (selected) ShopGreen else ShopSurface,
+                        contentColor = if (selected) ShopOnColor else ShopInk,
+                        shape = RoundedCornerShape(999.dp),
+                        modifier = Modifier.clickable { selectedTab = tab },
+                    ) {
+                        Text(tab.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
+                    }
+                }
+            }
+        }
+
+        if (selectedTab == AdminTab.Sellers || selectedTab == AdminTab.Products) {
+            item {
+                OutlinedTextField(
+                    value = reason,
+                    onValueChange = { reason = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Reason for rejection or changes") },
+                    singleLine = false,
+                )
+            }
+        }
+
+        when (selectedTab) {
+            AdminTab.Sellers -> {
+                if (protectedState.adminSellerApplications.isEmpty()) item { EmptyCard("No seller applications are waiting for review.") }
+                items(protectedState.adminSellerApplications, key = { it.id }) { application ->
+                    AdminSellerApplicationCard(application, protectedState.busyIds.contains(application.id), reason, onReviewSeller)
+                }
+            }
+            AdminTab.Products -> {
+                if (protectedState.adminProducts.isEmpty()) item { EmptyCard("No products are waiting for moderation.") }
+                items(protectedState.adminProducts, key = { it.id }) { product ->
+                    AdminProductCard(product, protectedState.busyIds.contains(product.id), reason, onReviewProduct)
+                }
+            }
+            AdminTab.Orders -> {
+                if (protectedState.adminOrders.isEmpty()) item { EmptyCard("No open orders found.") }
+                items(protectedState.adminOrders, key = { it.id }) { order ->
+                    AdminOrderCard(order)
+                }
+            }
+            AdminTab.Audit -> {
+                if (protectedState.adminAuditLog.isEmpty()) item { EmptyCard("No admin audit events yet.") }
+                items(protectedState.adminAuditLog, key = { it.id }) { audit ->
+                    AdminAuditCard(audit)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminDashboardCards(protectedState: ShopProtectedState) {
+    val dashboard = protectedState.adminDashboard
+    val metrics = listOf(
+        "Seller apps" to (dashboard?.pendingSellerApplications ?: protectedState.adminSellerApplications.size),
+        "Products" to (dashboard?.productsAwaitingReview ?: protectedState.adminProducts.size),
+        "Open orders" to (dashboard?.openOrders ?: protectedState.adminOrders.size),
+        "Audit 24h" to (dashboard?.auditEvents24h ?: 0),
+    )
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        items(metrics) { metric ->
+            Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp), modifier = Modifier.width(132.dp)) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(metric.first, color = ShopMuted, fontSize = 12.sp)
+                    Text(metric.second.toString(), color = ShopInk, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminSellerApplicationCard(
+    application: ShopAdminSellerApplicationDto,
+    busy: Boolean,
+    reason: String,
+    onReviewSeller: (String, String, String) -> Unit,
+) {
+    AdminReviewCard(
+        title = application.storeName.ifBlank { "Unnamed store" },
+        subtitle = "${application.applicantName.ifBlank { "Seller" }} • ${backendLabel(application.status)}",
+        meta = application.applicantEmail.orEmpty(),
+        busy = busy,
+        onApprove = { onReviewSeller(application.id, "approve", "") },
+        onReject = { onReviewSeller(application.id, "reject", reason.ifBlank { "Application needs more information." }) },
+    )
+}
+
+@Composable
+private fun AdminProductCard(
+    product: ShopAdminProductDto,
+    busy: Boolean,
+    reason: String,
+    onReviewProduct: (String, String, String) -> Unit,
+) {
+    AdminReviewCard(
+        title = product.title.ifBlank { "Untitled product" },
+        subtitle = "${product.storeName.ifBlank { "Store" }} • ${backendLabel(product.moderationStatus.ifBlank { product.status })}",
+        meta = formatEtb(product.priceMinor),
+        busy = busy,
+        onApprove = { onReviewProduct(product.id, "approve", "") },
+        onReject = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product needs changes before publishing." }) },
+    )
+}
+
+@Composable
+private fun AdminReviewCard(
+    title: String,
+    subtitle: String,
+    meta: String,
+    busy: Boolean,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+) {
+    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(subtitle, color = ShopMuted, fontSize = 12.sp)
+            if (meta.isNotBlank()) Text(meta, color = ShopGreen, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onReject, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reject") }
+                Button(onClick = onApprove, enabled = !busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
+                    Text(if (busy) "Saving..." else "Approve")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminOrderCard(order: ShopAdminOrderDto) {
+    Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(order.orderNumber.ifBlank { "Order" }, color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Text("${orderStatusLabel(order.status)} • ${fulfillmentStatusLabel(order.fulfillmentStatus)}", color = ShopMuted, fontSize = 12.sp)
+            Text("${paymentStatusLabel(order.paymentStatus)} • ${formatEtb(order.totalMinor)}", color = ShopGreen, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun AdminAuditCard(audit: ShopAdminAuditLogDto) {
+    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(backendLabel(audit.action), color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Text("${backendLabel(audit.entityType)} • ${audit.actorName ?: "Admin"}", color = ShopMuted, fontSize = 12.sp)
+            audit.createdAt?.let { Text(it, color = ShopMuted, fontSize = 11.sp) }
         }
     }
 }

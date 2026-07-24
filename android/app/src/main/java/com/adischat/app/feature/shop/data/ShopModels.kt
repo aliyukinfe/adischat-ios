@@ -287,6 +287,15 @@ data class ShopEnvelope<T>(
     val deliveryCode: ShopDeliveryCodeDto? = null,
     val status: String? = null,
     val application: ShopSellerApplicationDto? = null,
+    val adminSession: ShopAdminSessionDto? = null,
+    val dashboard: ShopAdminDashboardDto? = null,
+    val sellerApplications: List<ShopAdminSellerApplicationDto>? = null,
+    val sellerApplicationDetail: ShopAdminSellerApplicationDto? = null,
+    val products: List<ShopAdminProductDto>? = null,
+    val productDetail: ShopAdminProductDto? = null,
+    val adminOrders: List<ShopAdminOrderDto>? = null,
+    val auditLog: List<ShopAdminAuditLogDto>? = null,
+    val adminUsers: List<ShopAdminUserDto>? = null,
 )
 
 data class ShopCartItemDto(
@@ -361,6 +370,99 @@ data class ShopSellerApplicationDto(
     @SerializedName("submitted_at") val submittedAt: String? = null,
 )
 
+data class ShopAdminSessionDto(
+    val profileId: String = "",
+    val primaryRole: String = "",
+    val roles: List<String> = emptyList(),
+    val permissions: List<String> = emptyList(),
+)
+
+data class ShopAdminDashboardDto(
+    val pendingSellerApplications: Int = 0,
+    val productsAwaitingReview: Int = 0,
+    val activeStores: Int = 0,
+    val openOrders: Int = 0,
+    val completedOrders24h: Int = 0,
+    val auditEvents24h: Int = 0,
+)
+
+data class ShopAdminSellerApplicationDto(
+    val id: String = "",
+    val status: String = "",
+    val storeName: String = "",
+    val businessType: String = "",
+    val applicantName: String = "",
+    val applicantEmail: String? = null,
+    val submittedAt: String? = null,
+)
+
+data class ShopAdminProductDto(
+    val id: String = "",
+    val title: String = "",
+    val status: String = "",
+    val moderationStatus: String = "",
+    val priceMinor: Int = 0,
+    val storeName: String = "",
+    val sellerName: String = "",
+    val submittedAt: String? = null,
+)
+
+data class ShopAdminOrderDto(
+    val id: String = "",
+    val orderNumber: String = "",
+    val status: String = "",
+    val paymentStatus: String = "",
+    val fulfillmentStatus: String = "",
+    val totalMinor: Int = 0,
+    val createdAt: String? = null,
+)
+
+data class ShopAdminAuditLogDto(
+    val id: String = "",
+    val action: String = "",
+    val entityType: String = "",
+    val entityId: String? = null,
+    val actorName: String? = null,
+    val createdAt: String? = null,
+)
+
+data class ShopAdminUserDto(
+    val profileId: String = "",
+    val displayName: String? = null,
+    val email: String? = null,
+    val roles: List<String> = emptyList(),
+    val status: String? = null,
+)
+
+data class ShopAdminReviewSellerRequest(
+    val applicationId: String,
+    val action: String,
+    val reason: String = "",
+    val privateNotes: String = "",
+    val requestId: String,
+)
+
+data class ShopAdminReviewProductRequest(
+    val productId: String,
+    val action: String,
+    val reasonCode: String = "",
+    val publicReason: String = "",
+    val privateNotes: String = "",
+    val requestId: String,
+)
+
+data class ShopAdminOrderNoteRequest(
+    val orderId: String,
+    val note: String,
+    val visibility: String = "private",
+)
+
+data class ShopAdminRoleRequest(
+    val profileId: String,
+    val roleCode: String,
+    val reason: String,
+)
+
 data class ShopProtectedState(
     val loading: Boolean = false,
     val error: String? = null,
@@ -378,6 +480,15 @@ data class ShopProtectedState(
     val deliveryCode: ShopDeliveryCodeDto? = null,
     val sellerStatus: String = "not_started",
     val sellerApplication: ShopSellerApplicationDto? = null,
+    val adminLoading: Boolean = false,
+    val adminError: String? = null,
+    val adminSession: ShopAdminSessionDto? = null,
+    val adminDashboard: ShopAdminDashboardDto? = null,
+    val adminSellerApplications: List<ShopAdminSellerApplicationDto> = emptyList(),
+    val adminProducts: List<ShopAdminProductDto> = emptyList(),
+    val adminOrders: List<ShopAdminOrderDto> = emptyList(),
+    val adminAuditLog: List<ShopAdminAuditLogDto> = emptyList(),
+    val adminUsers: List<ShopAdminUserDto> = emptyList(),
     val busyIds: Set<String> = emptySet(),
 )
 

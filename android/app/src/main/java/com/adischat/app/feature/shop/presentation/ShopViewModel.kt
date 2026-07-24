@@ -16,6 +16,9 @@ import com.adischat.app.feature.shop.data.ShopAddressRequest
 import com.adischat.app.feature.shop.data.ShopIdentityRepository
 import com.adischat.app.feature.shop.data.ShopNotificationRepository
 import com.adischat.app.feature.shop.data.ShopProtectedState
+import com.adischat.app.feature.shop.data.ShopAdminRepository
+import com.adischat.app.feature.shop.data.ShopAdminReviewProductRequest
+import com.adischat.app.feature.shop.data.ShopAdminReviewSellerRequest
 import com.adischat.app.feature.shop.data.ShopStateReducers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,6 +37,7 @@ class ShopViewModel(
     private val notificationRepository: ShopNotificationRepository = ShopNotificationRepository(identityRepository),
     private val checkoutRepository: CheckoutRepository = CheckoutRepository(identityRepository),
     private val sellerRepository: SellerRepository = SellerRepository(identityRepository),
+    private val adminRepository: ShopAdminRepository = ShopAdminRepository(identityRepository),
 ) : ViewModel() {
     private val _state = MutableStateFlow(ShopHomeState())
     val state: StateFlow<ShopHomeState> = _state.asStateFlow()
@@ -364,6 +368,109 @@ class ShopViewModel(
         }
     }
 
+    fun loadAdminSession() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.session()
+                .onSuccess { session ->
+                    _protectedState.value = _protectedState.value.copy(adminSession = session, adminLoading = false, adminError = null)
+                    loadAdminDashboard()
+                }
+                .onFailure {
+                    _protectedState.value = _protectedState.value.copy(adminSession = null, adminLoading = false, adminError = null)
+                }
+        }
+    }
+
+    fun loadAdminDashboard() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.dashboard()
+                .onSuccess { dashboard -> _protectedState.value = _protectedState.value.copy(adminDashboard = dashboard, adminLoading = false, adminError = null) }
+                .onFailure { showAdminError(it, "Couldn't load Admin dashboard.") }
+        }
+    }
+
+    fun loadAdminQueues() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            val sellers = adminRepository.sellerApplications().getOrElse {
+                showAdminError(it, "Couldn't load seller applications.")
+                return@launch
+            }
+            val products = adminRepository.products().getOrElse {
+                showAdminError(it, "Couldn't load products for review.")
+                return@launch
+            }
+            _protectedState.value = _protectedState.value.copy(
+                adminSellerApplications = sellers,
+                adminProducts = products,
+                adminLoading = false,
+                adminError = null,
+            )
+        }
+    }
+
+    fun loadAdminOrders() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.orders()
+                .onSuccess { orders -> _protectedState.value = _protectedState.value.copy(adminOrders = orders, adminLoading = false, adminError = null) }
+                .onFailure { showAdminError(it, "Couldn't load orders.") }
+        }
+    }
+
+    fun loadAdminAuditLog() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.auditLog()
+                .onSuccess { log -> _protectedState.value = _protectedState.value.copy(adminAuditLog = log, adminLoading = false, adminError = null) }
+                .onFailure { showAdminError(it, "Couldn't load audit log.") }
+        }
+    }
+
+    fun adminReviewSeller(applicationId: String, action: String, reason: String = "") {
+        if (applicationId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(applicationId, true)
+            adminRepository.reviewSeller(
+                ShopAdminReviewSellerRequest(
+                    applicationId = applicationId,
+                    action = action,
+                    reason = reason,
+                    requestId = "android-admin-seller-$applicationId-$action-${UUID.randomUUID()}",
+                ),
+            ).onSuccess {
+                _state.value = _state.value.copy(message = "Seller application updated")
+                loadAdminDashboard()
+                loadAdminQueues()
+            }.onFailure { showAdminError(it, "Seller review could not be saved.") }
+            setBusy(applicationId, false)
+        }
+    }
+
+    fun adminReviewProduct(productId: String, action: String, reason: String = "") {
+        if (productId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(productId, true)
+            adminRepository.reviewProduct(
+                ShopAdminReviewProductRequest(
+                    productId = productId,
+                    action = action,
+                    reasonCode = if (action == "approve") "" else "content_quality",
+                    publicReason = reason,
+                    privateNotes = reason,
+                    requestId = "android-admin-product-$productId-$action-${UUID.randomUUID()}",
+                ),
+            ).onSuccess {
+                _state.value = _state.value.copy(message = "Product moderation updated")
+                loadAdminDashboard()
+                loadAdminQueues()
+            }.onFailure { showAdminError(it, "Product review could not be saved.") }
+            setBusy(productId, false)
+        }
+    }
+
     fun clearMessage() {
         _state.value = _state.value.copy(message = null)
     }
@@ -386,6 +493,12 @@ class ShopViewModel(
         val message = ShopStateReducers.safeErrorMessage(error.message, fallback)
         _protectedState.value = _protectedState.value.copy(error = message, loading = false, checkout = null)
         _state.value = _state.value.copy(message = null)
+    }
+
+    private fun showAdminError(error: Throwable, fallback: String) {
+        val message = ShopStateReducers.safeErrorMessage(error.message, fallback)
+        _protectedState.value = _protectedState.value.copy(adminError = message, adminLoading = false)
+        _state.value = _state.value.copy(message = message)
     }
 
     private fun setBusy(id: String, busy: Boolean) {

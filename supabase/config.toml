@@ -114,3 +114,45 @@ verify_jwt = false
 
 [functions.adishop-seller-verify-delivery-code]
 verify_jwt = false
+
+[functions.adishop-admin-session]
+verify_jwt = false
+
+[functions.adishop-admin-dashboard]
+verify_jwt = false
+
+[functions.adishop-admin-seller-applications]
+verify_jwt = false
+
+[functions.adishop-admin-seller-application-detail]
+verify_jwt = false
+
+[functions.adishop-admin-review-seller]
+verify_jwt = false
+
+[functions.adishop-admin-products]
+verify_jwt = false
+
+[functions.adishop-admin-product-detail]
+verify_jwt = false
+
+[functions.adishop-admin-review-product]
+verify_jwt = false
+
+[functions.adishop-admin-orders]
+verify_jwt = false
+
+[functions.adishop-admin-add-order-note]
+verify_jwt = false
+
+[functions.adishop-admin-audit-log]
+verify_jwt = false
+
+[functions.adishop-admin-users]
+verify_jwt = false
+
+[functions.adishop-admin-assign-role]
+verify_jwt = false
+
+[functions.adishop-admin-revoke-role]
+verify_jwt = false

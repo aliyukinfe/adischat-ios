@@ -411,6 +411,126 @@ class SellerRepository(
     }
 }
 
+class ShopAdminRepository(
+    private val identity: ShopIdentityRepository = ShopIdentityRepository(),
+    private val api: ShopFunctionApi? = ShopFunctionClient.api,
+) {
+    private fun Throwable.adminMessage(fallback: String): String {
+        if (this is HttpException) {
+            val body = response()?.errorBody()?.string().orEmpty()
+            val errorObject = runCatching {
+                JsonParser.parseString(body).asJsonObject.getAsJsonObject("error")
+            }.getOrNull()
+            val message = errorObject?.get("message")?.asString.orEmpty()
+            val code = errorObject?.get("code")?.asString.orEmpty()
+            return when {
+                message.isNotBlank() -> ShopStateReducers.safeErrorMessage(message, fallback)
+                code == "admin_forbidden" -> "You do not have access to AdisGebeya Admin."
+                code == "reason_required" -> "A clear reason is required."
+                code == "invalid_state" -> "This item has already moved to another state."
+                else -> fallback
+            }
+        }
+        return ShopStateReducers.safeErrorMessage(message, fallback)
+    }
+
+    private suspend fun <T> withAdminAuth(block: suspend (String) -> T): T {
+        return try {
+            block(identity.authorization())
+        } catch (error: Throwable) {
+            if (error is HttpException && error.code() == 401) {
+                identity.clear()
+                block(identity.authorization())
+            } else {
+                throw error
+            }
+        }
+    }
+
+    suspend fun session(): Result<ShopAdminSessionDto> = runCatching {
+        val service = api ?: error("AdisGebeya Admin is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminSession(token) }.adminSession
+                ?: error("AdisGebeya Admin is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("You do not have access to AdisGebeya Admin."))
+        }
+    }
+
+    suspend fun dashboard(): Result<ShopAdminDashboardDto> = runCatching {
+        val service = api ?: error("Couldn't load Admin dashboard.")
+        try {
+            withAdminAuth { token -> service.adminDashboard(token) }.dashboard
+                ?: error("Couldn't load Admin dashboard.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load Admin dashboard."))
+        }
+    }
+
+    suspend fun sellerApplications(status: String = "submitted", search: String = ""): Result<List<ShopAdminSellerApplicationDto>> = runCatching {
+        val service = api ?: error("Couldn't load seller applications.")
+        try {
+            withAdminAuth { token -> service.adminSellerApplications(token, status, search) }.sellerApplications.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load seller applications."))
+        }
+    }
+
+    suspend fun reviewSeller(request: ShopAdminReviewSellerRequest): Result<ShopAdminSellerApplicationDto?> = runCatching {
+        val service = api ?: error("Seller review is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminReviewSeller(token, request) }.sellerApplicationDetail
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Seller review could not be saved."))
+        }
+    }
+
+    suspend fun products(status: String = "pending", search: String = ""): Result<List<ShopAdminProductDto>> = runCatching {
+        val service = api ?: error("Couldn't load products for review.")
+        try {
+            withAdminAuth { token -> service.adminProducts(token, status, search) }.products.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load products for review."))
+        }
+    }
+
+    suspend fun reviewProduct(request: ShopAdminReviewProductRequest): Result<ShopAdminProductDto?> = runCatching {
+        val service = api ?: error("Product review is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminReviewProduct(token, request) }.productDetail
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Product review could not be saved."))
+        }
+    }
+
+    suspend fun orders(search: String = ""): Result<List<ShopAdminOrderDto>> = runCatching {
+        val service = api ?: error("Couldn't load orders.")
+        try {
+            withAdminAuth { token -> service.adminOrders(token, search) }.adminOrders.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load orders."))
+        }
+    }
+
+    suspend fun auditLog(): Result<List<ShopAdminAuditLogDto>> = runCatching {
+        val service = api ?: error("Couldn't load audit log.")
+        try {
+            withAdminAuth { token -> service.adminAuditLog(token) }.auditLog.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load audit log."))
+        }
+    }
+
+    suspend fun users(): Result<List<ShopAdminUserDto>> = runCatching {
+        val service = api ?: error("Couldn't load admin users.")
+        try {
+            withAdminAuth { token -> service.adminUsers(token) }.adminUsers.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load admin users."))
+        }
+    }
+}
+
 class ProfileShoppingRepository {
     fun protectedFeaturesAvailable(): Boolean = ShopFunctionClient.isConfigured
 }

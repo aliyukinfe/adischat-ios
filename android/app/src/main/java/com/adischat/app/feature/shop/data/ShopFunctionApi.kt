@@ -117,4 +117,48 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-seller-verify-delivery-code")
     suspend fun sellerVerifyDeliveryCode(@Header("Authorization") authorization: String, @Body body: ShopSellerDeliveryCodeRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-session")
+    suspend fun adminSession(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-dashboard")
+    suspend fun adminDashboard(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-seller-applications")
+    suspend fun adminSellerApplications(
+        @Header("Authorization") authorization: String,
+        @Query("status") status: String = "submitted",
+        @Query("search") search: String = "",
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-review-seller")
+    suspend fun adminReviewSeller(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewSellerRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-products")
+    suspend fun adminProducts(
+        @Header("Authorization") authorization: String,
+        @Query("status") status: String = "pending",
+        @Query("search") search: String = "",
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-review-product")
+    suspend fun adminReviewProduct(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewProductRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-orders")
+    suspend fun adminOrders(@Header("Authorization") authorization: String, @Query("search") search: String = ""): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-add-order-note")
+    suspend fun adminAddOrderNote(@Header("Authorization") authorization: String, @Body body: ShopAdminOrderNoteRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-audit-log")
+    suspend fun adminAuditLog(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-users")
+    suspend fun adminUsers(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-assign-role")
+    suspend fun adminAssignRole(@Header("Authorization") authorization: String, @Body body: ShopAdminRoleRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-revoke-role")
+    suspend fun adminRevokeRole(@Header("Authorization") authorization: String, @Body body: ShopAdminRoleRequest): ShopEnvelope<Unit>
 }
