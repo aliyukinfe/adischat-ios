@@ -1032,13 +1032,28 @@ private fun AdminSellerApplicationCard(
     reason: String,
     onReviewSeller: (String, String, String) -> Unit,
 ) {
+    val status = statusKey(application.status)
     AdminReviewCard(
         title = application.storeName.ifBlank { "Unnamed store" },
         subtitle = "${application.applicantName.ifBlank { "Seller" }} • ${backendLabel(application.status)}",
         meta = application.applicantEmail.orEmpty(),
         busy = busy,
-        onApprove = { onReviewSeller(application.id, "approve", "") },
-        onReject = { onReviewSeller(application.id, "reject", reason.ifBlank { "Application needs more information." }) },
+        primaryLabel = if (status == "suspended") "Reactivate" else "Approve",
+        secondaryLabel = when (status) {
+            "submitted" -> "Start review"
+            "approved" -> "Suspend"
+            else -> "Reject"
+        },
+        tertiaryLabel = if (status in listOf("under_review", "submitted")) "Reject" else null,
+        onPrimary = { onReviewSeller(application.id, if (status == "suspended") "reactivate" else "approve", "") },
+        onSecondary = {
+            when (status) {
+                "submitted" -> onReviewSeller(application.id, "start_review", "")
+                "approved" -> onReviewSeller(application.id, "suspend", reason.ifBlank { "Seller account requires administrative review." })
+                else -> onReviewSeller(application.id, "reject", reason.ifBlank { "Application needs more information." })
+            }
+        },
+        onTertiary = { onReviewSeller(application.id, "reject", reason.ifBlank { "Application needs more information." }) },
     )
 }
 
@@ -1054,8 +1069,15 @@ private fun AdminProductCard(
         subtitle = "${product.storeName.ifBlank { "Store" }} • ${backendLabel(product.moderationStatus.ifBlank { product.status })}",
         meta = formatEtb(product.priceMinor),
         busy = busy,
-        onApprove = { onReviewProduct(product.id, "approve", "") },
-        onReject = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product needs changes before publishing." }) },
+        primaryLabel = "Approve",
+        secondaryLabel = if (statusKey(product.moderationStatus) == "submitted") "Start review" else "Request changes",
+        tertiaryLabel = "Reject",
+        onPrimary = { onReviewProduct(product.id, "approve", "") },
+        onSecondary = {
+            val action = if (statusKey(product.moderationStatus) == "submitted") "start_review" else "request_changes"
+            onReviewProduct(product.id, action, reason.ifBlank { "Product needs changes before publishing." })
+        },
+        onTertiary = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product does not meet AdisGebeya listing standards." }) },
     )
 }
 
@@ -1065,8 +1087,12 @@ private fun AdminReviewCard(
     subtitle: String,
     meta: String,
     busy: Boolean,
-    onApprove: () -> Unit,
-    onReject: () -> Unit,
+    primaryLabel: String,
+    secondaryLabel: String,
+    tertiaryLabel: String? = null,
+    onPrimary: () -> Unit,
+    onSecondary: () -> Unit,
+    onTertiary: () -> Unit = {},
 ) {
     Card(shape = RoundedCornerShape(20.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1074,9 +1100,14 @@ private fun AdminReviewCard(
             Text(subtitle, color = ShopMuted, fontSize = 12.sp)
             if (meta.isNotBlank()) Text(meta, color = ShopGreen, fontSize = 12.sp, fontWeight = FontWeight.Medium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onReject, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reject") }
-                Button(onClick = onApprove, enabled = !busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
-                    Text(if (busy) "Saving..." else "Approve")
+                OutlinedButton(onClick = onSecondary, enabled = !busy, modifier = Modifier.weight(1f)) { Text(secondaryLabel) }
+                Button(onClick = onPrimary, enabled = !busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
+                    Text(if (busy) "Saving..." else primaryLabel)
+                }
+            }
+            tertiaryLabel?.let {
+                TextButton(onClick = onTertiary, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
+                    Text(it, color = ShopRed)
                 }
             }
         }

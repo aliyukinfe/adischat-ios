@@ -379,10 +379,16 @@ data class ShopAdminSessionDto(
 
 data class ShopAdminDashboardDto(
     val pendingSellerApplications: Int = 0,
+    val sellersUnderReview: Int = 0,
+    @SerializedName("pendingProductReviews")
     val productsAwaitingReview: Int = 0,
-    val activeStores: Int = 0,
+    val productsRequiringChanges: Int = 0,
+    val suspendedSellers: Int = 0,
+    val suspendedProducts: Int = 0,
+    @SerializedName("activeOrders")
     val openOrders: Int = 0,
-    val completedOrders24h: Int = 0,
+    val ordersNeedingSupport: Int = 0,
+    @SerializedName("todayModerationActions")
     val auditEvents24h: Int = 0,
 )
 
