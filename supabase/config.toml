@@ -1,0 +1,113 @@
+[functions.adishop-exchange-adischat-session]
+verify_jwt = false
+
+[functions.adishop-refresh-shop-session]
+verify_jwt = false
+
+[functions.adishop-get-current-profile]
+verify_jwt = false
+
+[functions.adishop-get-cart]
+verify_jwt = false
+
+[functions.adishop-add-cart-item]
+verify_jwt = false
+
+[functions.adishop-update-cart-item]
+verify_jwt = false
+
+[functions.adishop-remove-cart-item]
+verify_jwt = false
+
+[functions.adishop-clear-cart]
+verify_jwt = false
+
+[functions.adishop-add-favorite]
+verify_jwt = false
+
+[functions.adishop-remove-favorite]
+verify_jwt = false
+
+[functions.adishop-list-favorites]
+verify_jwt = false
+
+[functions.adishop-record-product-view]
+verify_jwt = false
+
+[functions.adishop-list-recently-viewed]
+verify_jwt = false
+
+[functions.adishop-list-addresses]
+verify_jwt = false
+
+[functions.adishop-create-address]
+verify_jwt = false
+
+[functions.adishop-update-address]
+verify_jwt = false
+
+[functions.adishop-delete-address]
+verify_jwt = false
+
+[functions.adishop-set-default-address]
+verify_jwt = false
+
+[functions.adishop-list-orders]
+verify_jwt = false
+
+[functions.adishop-get-order]
+verify_jwt = false
+
+[functions.adishop-submit-seller-application]
+verify_jwt = false
+
+[functions.adishop-get-seller-application-status]
+verify_jwt = false
+
+[functions.adishop-create-checkout]
+verify_jwt = false
+
+[functions.adishop-confirm-checkout]
+verify_jwt = false
+
+[functions.adishop-request-order-cancellation]
+verify_jwt = false
+
+[functions.adishop-reveal-delivery-code]
+verify_jwt = false
+
+[functions.adishop-list-notifications]
+verify_jwt = false
+
+[functions.adishop-notification-unread-count]
+verify_jwt = false
+
+[functions.adishop-mark-notification-read]
+verify_jwt = false
+
+[functions.adishop-mark-all-notifications-read]
+verify_jwt = false
+
+[functions.adishop-list-seller-order-groups]
+verify_jwt = false
+
+[functions.adishop-get-seller-order-group]
+verify_jwt = false
+
+[functions.adishop-seller-accept-order-group]
+verify_jwt = false
+
+[functions.adishop-seller-reject-order-group]
+verify_jwt = false
+
+[functions.adishop-seller-mark-processing]
+verify_jwt = false
+
+[functions.adishop-seller-mark-packed]
+verify_jwt = false
+
+[functions.adishop-seller-mark-ready-for-pickup]
+verify_jwt = false
+
+[functions.adishop-seller-hand-to-carrier]
+verify_jwt = false

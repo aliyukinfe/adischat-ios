@@ -2,3 +2,21 @@ node_modules/
 .DS_Store
 android/local.properties
 *.log
+
+.vercel
+
+# Local validation and generated output
+.tmp-*/
+.tmp-*
+.tmp*
+*.tmp
+/*.png
+!android/app/src/main/ic_launcher-playstore.png
+desktop/tsconfig.tsbuildinfo
+desktop/.next/
+desktop/out/
+desktop/src-tauri/target/
+desktop/src-tauri/gen/
+cloudflare/**/.wrangler/
+supabase/**/.temp/
+.tools/

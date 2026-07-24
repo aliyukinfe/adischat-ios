@@ -2,18 +2,21 @@ package com.adischat.app.network
 
 import com.adischat.app.data.model.AdminStats
 import com.adischat.app.data.model.AdminVerificationRequest
+import com.adischat.app.data.model.AdisLinkTarget
 import com.adischat.app.data.model.AppUser
 import com.adischat.app.data.model.Conversation
 import com.adischat.app.data.model.CommunityRoom
 import com.adischat.app.data.model.Message
 import com.adischat.app.data.model.UserSummary
 import com.adischat.app.data.model.VerificationStatus
+import com.adischat.app.feature.shop.data.ShopAssertionRequestBody
+import com.adischat.app.feature.shop.data.ShopAssertionResponse
 import okhttp3.RequestBody
 import retrofit2.http.*
 
 interface CloudflareApi {
 
-    // ── Public auth (no token required) ──────────────────────────────────────
+    // - Public auth (no token required) -
 
     @POST("api/auth/send-email-otp")
     suspend fun sendEmailOtp(@Body body: SendEmailOtpBody): SendEmailOtpResponse
@@ -24,7 +27,7 @@ interface CloudflareApi {
     @POST("api/auth/lookup")
     suspend fun lookupAccount(@Body body: LookupBody): LookupResponse
 
-    // ── Users ─────────────────────────────────────────────────────────────────
+    // - Users -
 
     @POST("api/users/sync")
     suspend fun syncUser(@Body body: UserSyncBody): AppUser
@@ -32,8 +35,29 @@ interface CloudflareApi {
     @GET("api/users/me")
     suspend fun getMe(): AppUser
 
+    @POST("api/shop/session-assertion")
+    suspend fun requestShopSessionAssertion(@Body body: ShopAssertionRequestBody = ShopAssertionRequestBody()): ShopAssertionResponse
+
     @PUT("api/users/{uid}")
     suspend fun updateUser(@Path("uid") uid: String, @Body body: UserUpdateBody): AppUser
+
+    @PUT("api/users/privacy")
+    suspend fun updatePrivacy(@Body body: PrivacyUpdateBody): AppUser
+
+    @POST("api/users/me/privacy")
+    suspend fun updateMyPrivacy(@Body body: PrivacyUpdateBody): AppUser
+
+    @DELETE("api/users/me")
+    suspend fun deleteAccount(): DeleteAccountResponse
+
+    @POST("api/account/delete")
+    suspend fun deleteAccountCanonicalPost(): DeleteAccountResponse
+
+    @DELETE("api/account")
+    suspend fun deleteAccountCanonicalDelete(): DeleteAccountResponse
+
+    @POST("api/users/me/delete")
+    suspend fun deleteAccountPost(): DeleteAccountResponse
 
     @POST("api/users/{uid}/avatar")
     @Headers("Content-Type: image/jpeg")
@@ -42,12 +66,18 @@ interface CloudflareApi {
     @GET("api/users/search")
     suspend fun searchUsers(@Query("q") query: String): List<UserSummary>
 
-    // ── Media upload ──────────────────────────────────────────────────────────
+    @POST("api/users/heartbeat")
+    suspend fun heartbeat(): HeartbeatResponse
+
+    @GET("api/users/{uid}/presence")
+    suspend fun getPresence(@Path("uid") uid: String): PresenceResponse
+
+    // - Media upload -
 
     @POST("api/upload")
     suspend fun uploadMedia(@Query("type") type: String, @Body body: RequestBody): UploadResponse
 
-    // ── Conversations / Messages ──────────────────────────────────────────────
+    // - Conversations / Messages -
 
     @POST("api/conversations/start/{targetUid}")
     suspend fun startConversation(@Path("targetUid") targetUid: String): StartConversationResponse
@@ -64,7 +94,49 @@ interface CloudflareApi {
     @PUT("api/conversations/{id}/read")
     suspend fun markRead(@Path("id") conversationId: String)
 
-    // ── Verification ──────────────────────────────────────────────────────────
+    @PATCH("api/conversations/{id}/messages/{messageId}/edit")
+    suspend fun editMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageEditBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/delete")
+    suspend fun deleteMessageAction(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageDeleteBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/pin")
+    suspend fun pinMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessagePinBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/star")
+    suspend fun starMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageStarBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/listen")
+    suspend fun listenMessage(@Path("id") id: String, @Path("messageId") messageId: String): ChatActionResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/translate")
+    suspend fun translateMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageTranslateBody): MessageTranslateResponse
+
+    @POST("api/conversations/{id}/messages/{messageId}/reaction")
+    suspend fun reactToMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageReactionBody): ChatActionResponse
+
+    @GET("api/conversations/{id}/search")
+    suspend fun searchConversationMessages(@Path("id") id: String, @Query("q") query: String): List<Message>
+
+    @GET("api/conversations/{id}/export")
+    suspend fun exportConversation(@Path("id") id: String): ChatExportResponse
+
+    @POST("api/conversations/{id}/clear")
+    suspend fun clearConversation(@Path("id") id: String): ChatActionResponse
+
+    @GET("api/conversations/{id}/settings")
+    suspend fun getConversationSettings(@Path("id") id: String): ChatSettingsResponse
+
+    @PUT("api/conversations/{id}/settings")
+    suspend fun updateConversationSettings(@Path("id") id: String, @Body body: ChatSettingsBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/report")
+    suspend fun reportConversation(@Path("id") id: String, @Body body: ChatReportBody): ChatActionResponse
+
+    @POST("api/conversations/{id}/block")
+    suspend fun blockConversationUser(@Path("id") id: String, @Body body: ChatBlockBody): ChatActionResponse
+
+    // - Verification -
 
     @GET("api/verification/status")
     suspend fun getVerificationStatus(): VerificationStatus
@@ -72,7 +144,7 @@ interface CloudflareApi {
     @POST("api/verification/submit")
     suspend fun submitVerification(@Body body: VerificationSubmitBody): GenericResponse
 
-    // ── Admin verification management ─────────────────────────────────────────
+    // - Admin verification management -
 
     @GET("api/admin/verifications")
     suspend fun getAdminVerifications(@Query("status") status: String = "pending"): List<AdminVerificationRequest>
@@ -83,10 +155,10 @@ interface CloudflareApi {
     @POST("api/admin/verifications/{uid}/reject")
     suspend fun rejectVerification(@Path("uid") uid: String, @Body body: RejectBody): GenericResponse
 
-    // ── Wallet (in-app-browser merchant pay) ──────────────────────────────────
+    // - Wallet (in-app-browser merchant pay) -
     // Lightweight, fingerprint-only flow used by the in-app browser bridge.
     // The full-featured wallet (PIN, QR pay codes, send/receive) is on the
-    // separate WalletApi → adischat-wallet-api worker.
+    // separate WalletApi - - adischat-wallet-api worker.
 
     @GET("api/wallet/balance")
     suspend fun getInAppWalletBalance(): InAppWalletBalanceResponse
@@ -94,7 +166,7 @@ interface CloudflareApi {
     @POST("api/wallet/pay")
     suspend fun inAppWalletPay(@Body body: InAppWalletPayBody): InAppWalletPayResponse
 
-    // ── Admin: stats + user management ───────────────────────────────────────
+    // - Admin: stats + user management -
 
     @GET("api/admin/stats")
     suspend fun getAdminStats(): AdminStats
@@ -110,6 +182,72 @@ interface CloudflareApi {
 
     @POST("api/notifications/register-token")
     suspend fun registerNotificationToken(@Body body: NotificationTokenBody): GenericResponse
+
+    @POST("api/notifications/unregister-token")
+    suspend fun unregisterNotificationToken(@Body body: NotificationTokenBody): GenericResponse
+
+    @POST("auth/desktop/qr/scan")
+    suspend fun scanDesktopQr(@Body body: DesktopQrPayloadBody): DesktopQrMobileResponse
+
+    @POST("auth/desktop/qr/approve")
+    suspend fun approveDesktopQr(@Body body: DesktopQrPayloadBody): DesktopQrApproveResponse
+
+    @POST("auth/desktop/qr/reject")
+    suspend fun rejectDesktopQr(@Body body: DesktopQrPayloadBody): GenericResponse
+
+    @GET("api/linked-devices")
+    suspend fun getLinkedDevices(): LinkedDevicesResponse
+
+    @POST("api/linked-devices/{id}/logout")
+    suspend fun logoutLinkedDevice(@Path("id") id: String): GenericResponse
+
+    @POST("api/linked-devices/logout-all")
+    suspend fun logoutAllDesktopDevices(): GenericResponse
+
+    // - Calls -
+
+    @POST("api/calls/start")
+    suspend fun startCall(@Body body: CallStartBody): CallSessionResponse
+
+    @POST("api/calls/accept")
+    suspend fun acceptCall(@Body body: CallActionBody): CallSessionResponse
+
+    @POST("api/calls/reject")
+    suspend fun rejectCall(@Body body: CallActionBody): CallSessionResponse
+
+    @POST("api/calls/ringing_ack")
+    suspend fun ringingAck(@Body body: CallActionBody): CallSessionResponse
+
+    @POST("api/calls/cancel")
+    suspend fun cancelCall(@Body body: CallActionBody): CallSessionResponse
+
+    @POST("api/calls/end")
+    suspend fun endCall(@Body body: CallEndBody): CallSessionResponse
+
+    @POST("api/calls/connected")
+    suspend fun connectedCall(@Body body: CallActionBody): CallSessionResponse
+
+    @POST("api/calls/token")
+    suspend fun getCallToken(@Body body: CallActionBody): CallTokenResponse
+
+    @GET("api/calls/history")
+    suspend fun getCallHistory(@Query("limit") limit: Int = 50): CallHistoryResponse
+
+    // - Call signaling (P2P WebRTC) -
+    @GET("api/calls/active")
+    suspend fun getActiveCall(): CallActiveResponse
+
+    @GET("api/calls/pending")
+    suspend fun getPendingCall(): CallActiveResponse
+
+    @GET("api/calls/{id}")
+    suspend fun getCall(@Path("id") callId: String): CallSessionResponse
+
+    @POST("api/calls/{id}/signal")
+    suspend fun postCallSignal(@Path("id") callId: String, @Body body: CallSignalBody): GenericResponse
+
+    @GET("api/calls/{id}/signals")
+    suspend fun getCallSignals(@Path("id") callId: String, @Query("after") after: Long = 0): CallSignalsResponse
 }
 
 interface WalletApi {
@@ -149,11 +287,17 @@ interface WalletApi {
     @POST("api/notifications/register-token")
     suspend fun registerNotificationToken(@Body body: NotificationTokenBody): GenericResponse
 
+    @POST("api/notifications/unregister-token")
+    suspend fun unregisterNotificationToken(@Body body: NotificationTokenBody): GenericResponse
+
     @GET("api/communities")
     suspend fun getCommunities(
         @Query("type") type: String,
         @Query("q") query: String = "",
     ): List<CommunityRoom>
+
+    @GET("api/links/{slug}")
+    suspend fun resolveAdisLink(@Path("slug") slug: String): AdisLinkTarget
 
     @POST("api/communities")
     suspend fun createCommunity(@Body body: CreateCommunityBody): CommunityRoom
@@ -166,6 +310,15 @@ interface WalletApi {
 
     @POST("api/communities/{id}/join")
     suspend fun joinCommunity(@Path("id") id: String): GenericResponse
+
+    @POST("api/communities/{id}/leave")
+    suspend fun leaveCommunity(@Path("id") id: String): GenericResponse
+
+    @POST("api/communities/{id}/unfollow")
+    suspend fun unfollowCommunity(@Path("id") id: String): GenericResponse
+
+    @DELETE("api/communities/{id}/join")
+    suspend fun leaveCommunityMembership(@Path("id") id: String): GenericResponse
 
     @GET("api/communities/{id}/messages")
     suspend fun getCommunityMessages(@Path("id") id: String): List<Message>
@@ -182,6 +335,42 @@ interface WalletApi {
         @Path("messageId") messageId: String,
         @Body body: MessageReactionBody,
     ): GenericResponse
+
+    @PATCH("api/communities/{id}/messages/{messageId}/edit")
+    suspend fun editCommunityMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageEditBody): ChatActionResponse
+
+    @POST("api/communities/{id}/messages/{messageId}/delete")
+    suspend fun deleteCommunityMessageAction(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageDeleteBody): ChatActionResponse
+
+    @POST("api/communities/{id}/messages/{messageId}/pin")
+    suspend fun pinCommunityMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessagePinBody): ChatActionResponse
+
+    @POST("api/communities/{id}/messages/{messageId}/star")
+    suspend fun starCommunityMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageStarBody): ChatActionResponse
+
+    @POST("api/communities/{id}/messages/{messageId}/listen")
+    suspend fun listenCommunityMessage(@Path("id") id: String, @Path("messageId") messageId: String): ChatActionResponse
+
+    @POST("api/communities/{id}/messages/{messageId}/translate")
+    suspend fun translateCommunityMessage(@Path("id") id: String, @Path("messageId") messageId: String, @Body body: MessageTranslateBody): MessageTranslateResponse
+
+    @GET("api/communities/{id}/search")
+    suspend fun searchCommunityMessages(@Path("id") id: String, @Query("q") query: String): List<Message>
+
+    @GET("api/communities/{id}/export")
+    suspend fun exportCommunityChat(@Path("id") id: String): ChatExportResponse
+
+    @POST("api/communities/{id}/clear")
+    suspend fun clearCommunityChat(@Path("id") id: String): ChatActionResponse
+
+    @GET("api/communities/{id}/settings")
+    suspend fun getCommunityChatSettings(@Path("id") id: String): ChatSettingsResponse
+
+    @PUT("api/communities/{id}/settings")
+    suspend fun updateCommunityChatSettings(@Path("id") id: String, @Body body: ChatSettingsBody): ChatActionResponse
+
+    @POST("api/communities/{id}/report")
+    suspend fun reportCommunityChat(@Path("id") id: String, @Body body: ChatReportBody): ChatActionResponse
 
     @POST("api/communities/{id}/members/{uid}/{action}")
     suspend fun moderateCommunityMember(
@@ -208,7 +397,7 @@ interface WalletApi {
     @POST("api/games/admin/approvals/{channelId}/reject")
     suspend fun rejectGameApproval(@Path("channelId") channelId: String, @Body body: GameApprovalDecisionBody): GameApprovalResponse
 
-    // ── Channel verification (blue badge) — same worker as channel posts ────────
+    // - Channel verification (blue badge) - same worker as channel posts -
 
     @GET("api/channels/{channelId}/verification")
     suspend fun getChannelVerification(@Path("channelId") channelId: String): ChannelVerificationResponse
@@ -246,7 +435,7 @@ interface WalletApi {
         @Body body: RejectBody,
     ): ChannelVerificationResponse
 
-    // ── Channel post feed ─────────────────────────────────────────────────────
+    // - Channel post feed -
 
     @GET("api/channels/{channelId}/posts")
     suspend fun getChannelPosts(
@@ -294,7 +483,7 @@ interface WalletApi {
     ): GenericResponse
 }
 
-// ── Request / response bodies ─────────────────────────────────────────────────
+// - Request / response bodies -
 
 data class SendEmailOtpBody(val email: String)
 data class SendEmailOtpResponse(val sent: Boolean, val devOtp: String? = null)
@@ -332,7 +521,11 @@ data class VerifyEmailOtpBody(val email: String, val otp: String)
 data class VerifyEmailOtpResponse(val verified: Boolean)
 
 data class LookupBody(val identifier: String)
-data class LookupResponse(val email: String)
+data class LookupResponse(
+    val uid: String = "",
+    val email: String = "",
+    val username: String = "",
+)
 
 data class UserSyncBody(
     val name: String, val username: String, val phone: String,
@@ -345,18 +538,144 @@ data class UserUpdateBody(
     val email: String, val dob: String,
 )
 
+data class PrivacyUpdateBody(
+    val lastSeenVisibility: String? = null,
+    val onlineStatusVisibility: String? = null,
+    val profilePhotoVisibility: String? = null,
+    val phoneNumberVisibility: String? = null,
+    val readReceiptsEnabled: Boolean? = null,
+    val whoCanMessageMe: String? = null,
+    val whoCanCallMe: String? = null,
+    val whoCanAddMeToGroups: String? = null,
+)
+data class DeleteAccountResponse(val deleted: Boolean = false, val deletedAt: Long = 0L)
+
 data class AvatarResponse(val photoUrl: String)
 data class StartConversationResponse(val conversationId: String)
 data class UploadResponse(val url: String)
+data class HeartbeatResponse(val ok: Boolean = true, val lastSeen: Long = 0)
+data class PresenceResponse(val uid: String = "", val online: Boolean = false, val lastSeen: Long = 0)
+
+data class CallStartBody(val receiverUid: String, val type: String)
+data class CallActionBody(val callId: String)
+data class CallEndBody(val callId: String, val endReason: String = "")
+data class CallSession(
+    val id: String = "",
+    val callerUid: String = "",
+    val receiverUid: String = "",
+    val type: String = "voice",
+    val status: String = "ringing",
+    val startedAt: Long = 0L,
+    val acceptedAt: Long = 0L,
+    val endedAt: Long = 0L,
+    val durationSeconds: Int = 0,
+    val cloudflareSessionId: String = "",
+    val ringingAt: Long = 0L,
+    val connectedAt: Long = 0L,
+    val endReason: String = "",
+    val createdAt: Long = 0L,
+    val callerName: String = "",
+    val callerPhotoUrl: String = "",
+    val receiverName: String = "",
+    val receiverPhotoUrl: String = "",
+)
+data class CallSessionResponse(
+    val call: CallSession = CallSession(),
+    val setupRequired: Boolean = false,
+)
+data class IceServer(
+    val urls: List<String> = emptyList(),
+    val username: String = "",
+    val credential: String = "",
+)
+data class CallRealtimeToken(
+    val token: String = "",
+    val expiresAt: Long = 0L,
+    val sfuUrl: String = "",
+    val turnUrls: List<String> = emptyList(),
+    val iceServers: List<IceServer> = emptyList(),
+    val setupRequired: Boolean = false,
+    val message: String = "",
+)
+data class CallTokenResponse(
+    val call: CallSession = CallSession(),
+    val realtime: CallRealtimeToken = CallRealtimeToken(),
+)
+data class CallHistoryResponse(val calls: List<CallSession> = emptyList())
+data class CallActiveResponse(val call: CallSession? = null)
+data class CallSignalBody(val kind: String, val payload: String)
+data class CallSignal(
+    val seq: Long = 0L,
+    val fromUid: String = "",
+    val kind: String = "",
+    val payload: String = "",
+)
+data class CallSignalsResponse(
+    val status: String = "",
+    val signals: List<CallSignal> = emptyList(),
+)
 
 data class SendMessageBody(
-    val text:                     String = "",
-    val type:                     String = "text",
-    val mediaUrl:                 String = "",
-    val mediaMimeType:            String = "",
-    val durationMs:               Long   = 0,
+    val text:      String = "",
+    val type:      String = "text",
+    val mediaUrl:      String = "",
+    val mediaMimeType:      String = "",
+    val durationMs:      Long   = 0,
+    val forwarded:      Boolean = false,
+    val replyToMessageId:      String = "",
+    val forwardedFromMessageId:   String = "",
+    val forwardedFromSenderName:  String = "",
     val conversationUserName:     String = "",
     val conversationUserPhotoUrl: String = "",
+)
+
+data class MessageEditBody(val text: String)
+data class MessageDeleteBody(val mode: String = "me")
+data class MessagePinBody(val pinned: Boolean = true)
+data class MessageStarBody(val starred: Boolean = true)
+data class MessageTranslateBody(val targetLanguage: String = "en", val sourceLanguage: String = "auto")
+data class ChatSettingsBody(
+    val muted: Boolean = false,
+    val wallpaper: String = "",
+    val disappearingSeconds: Int = 0,
+    val screenshotWarning: Boolean = true,
+)
+data class ChatReportBody(
+    val messageId: String = "",
+    val reportedUid: String = "",
+    val reason: String = "report",
+    val details: String = "",
+)
+data class ChatBlockBody(val blockedUid: String, val reason: String = "")
+data class ChatActionResponse(
+    val ok: Boolean = false,
+    val messageId: String = "",
+    val edited: Boolean = false,
+    val deletedForMe: Boolean = false,
+    val deletedForEveryone: Boolean = false,
+    val pinned: Boolean = false,
+    val starred: Boolean = false,
+    val listened: Boolean = false,
+    val hiddenCount: Int = 0,
+)
+data class MessageTranslateResponse(
+    val ok: Boolean = false,
+    val messageId: String = "",
+    val sourceText: String = "",
+    val translatedText: String = "",
+    val targetLanguage: String = "en",
+)
+data class ChatSettingsResponse(
+    val muted: Int = 0,
+    val wallpaper: String = "",
+    val disappearing_seconds: Int = 0,
+    val screenshot_warning: Int = 1,
+)
+data class ChatExportResponse(
+    val threadType: String = "",
+    val threadId: String = "",
+    val exportedAt: Long = 0L,
+    val messages: List<Message> = emptyList(),
 )
 
 data class VerificationSubmitBody(
@@ -373,7 +692,7 @@ data class ChannelVerificationResponse(
     val channelId:   String  = "",
     val channelName: String  = "",
     val ownerUid:    String  = "",
-    val note:        String  = "",
+    val note:      String  = "",
     val status:      String  = "none",   // none | pending | approved | rejected
     val adminNote:   String  = "",
     val createdAt:   Long    = 0L,
@@ -381,7 +700,7 @@ data class ChannelVerificationResponse(
 )
 data class SetRoleBody(val role: String)
 
-// ── In-app-browser wallet bodies ──────────────────────────────────────────────
+// - In-app-browser wallet bodies -
 data class InAppWalletBalanceResponse(
     val balance:  Double = 0.0,
     val currency: String = "ETB",
@@ -394,9 +713,9 @@ data class InAppWalletPayBody(
     val description: String = "",
 )
 data class InAppWalletPayResponse(
-    val ok:            Boolean = false,
+    val ok:      Boolean = false,
     val transactionId: String  = "",
-    val amount:        Double  = 0.0,
+    val amount:      Double  = 0.0,
     val currency:      String  = "ETB",
     val orderRef:      String  = "",
     val description:   String  = "",
@@ -407,6 +726,7 @@ data class InAppWalletPayResponse(
 data class NotificationTokenBody(
     val token: String,
     val platform: String = "android",
+    val deviceId: String = "",
 )
 
 data class UpdateCommunityBody(
@@ -542,7 +862,7 @@ data class GameApprovalResponse(
     val updatedAt: Long = 0L,
 )
 
-// ── Game Pot API ──────────────────────────────────────────────────────────────
+// - Game Pot API -
 // All game-pot endpoints live on the wallet worker (adischat-wallet-api).
 
 interface GamePotApi {
@@ -594,11 +914,11 @@ interface GamePotApi {
     suspend fun getGameHistory(@Path("channelId") channelId: String): List<GameResponse>
 }
 
-// ── Game Pot request bodies ───────────────────────────────────────────────────
+// - Game Pot request bodies -
 
 data class CreateGameBody(
-    val title:               String,
-    val totalTickets:        Int,
+    val title:      String,
+    val totalTickets:      Int,
     val pricePerTicket:      Double,
     val adminCommissionPct:  Double = 5.0,
     val maxTicketsPerUser:   Int?   = null,
@@ -610,31 +930,31 @@ data class BuyTicketsBody(
     val walletPin:     String = "",
 )
 
-// ── Game Pot response DTOs ────────────────────────────────────────────────────
+// - Game Pot response DTOs -
 
 data class GameResponse(
-    val id:                    String  = "",
-    val channelId:             String  = "",
-    val creatorUid:            String  = "",
-    val title:                 String  = "",
-    val totalTickets:          Int     = 0,
-    val pricePerTicket:        Double  = 0.0,
+    val id:      String  = "",
+    val channelId:      String  = "",
+    val creatorUid:      String  = "",
+    val title:      String  = "",
+    val totalTickets:      Int     = 0,
+    val pricePerTicket:      Double  = 0.0,
     val adminCommissionPct:    Double  = 5.0,
     val maxTicketsPerUser:     Int?    = null,
     val durationSeconds:       Long    = 1800,
-    val startsAt:              Long?   = null,
-    val endsAt:                Long?   = null,
-    val status:                String  = "pending",
-    val jackpotAmount:         Double  = 0.0,
-    val ticketsSold:           Int     = 0,
+    val startsAt:      Long?   = null,
+    val endsAt:      Long?   = null,
+    val status:      String  = "pending",
+    val jackpotAmount:      Double  = 0.0,
+    val ticketsSold:      Int     = 0,
     val totalTicketCount:      Int     = 0,
     val winnerTicketNumber:    Int?    = null,
-    val winnerUid:             String? = null,
-    val winnerName:            String? = null,
-    val winnerPayout:          Double? = null,
+    val winnerUid:      String? = null,
+    val winnerName:      String? = null,
+    val winnerPayout:      Double? = null,
     val adminCommissionAmount: Double? = null,
-    val createdAt:             Long    = 0L,
-    val updatedAt:             Long    = 0L,
+    val createdAt:      Long    = 0L,
+    val updatedAt:      Long    = 0L,
 )
 
 data class GameSnapshotResponse(
@@ -652,8 +972,8 @@ data class GameTicketResponse(
 )
 
 data class ParticipantResponse(
-    val uid:          String = "",
-    val name:         String = "",
+    val uid:      String = "",
+    val name:      String = "",
     val photoUrl:     String = "",
     val ticketsCount: Int    = 0,
     val totalSpent:   Double = 0.0,
@@ -668,12 +988,12 @@ data class BuyTicketsResponse(
 )
 
 data class DrawResultResponse(
-    val game:               GameResponse = GameResponse(),
-    val winnerTicketNumber: Int?         = null,
-    val winnerName:         String?      = null,
+    val game:      GameResponse = GameResponse(),
+    val winnerTicketNumber: Int?      = null,
+    val winnerName:      String?      = null,
     val payoutAmount:       Double       = 0.0,
     val commissionAmount:   Double       = 0.0,
-    val seed:               String       = "",
+    val seed:      String       = "",
 )
 
 data class CancelGameResponse(
@@ -691,39 +1011,39 @@ data class WalletActionResponse(
     val merchantWalletId: String? = null,
 )
 
-// ── Channel Post DTOs ─────────────────────────────────────────────────────────
+// - Channel Post DTOs -
 
 data class ChannelPostResponse(
-    val id:            String               = "",
-    val channelId:     String               = "",
-    val authorUid:     String               = "",
-    val authorName:    String               = "",
-    val authorPhotoUrl: String              = "",
-    val title:         String               = "",
-    val body:          String               = "",
-    val postType:      String               = "text",
-    val mediaUrl:      String               = "",
-    val mediaMimeType: String               = "",
-    val linkUrl:       String               = "",
-    val linkTitle:     String               = "",
-    val linkImage:     String               = "",
-    val pinned:        Boolean              = false,
-    val views:         Int                  = 0,
+    val id:      String      = "",
+    val channelId:     String      = "",
+    val authorUid:     String      = "",
+    val authorName:    String      = "",
+    val authorPhotoUrl: String      = "",
+    val title:      String      = "",
+    val body:      String      = "",
+    val postType:      String      = "text",
+    val mediaUrl:      String      = "",
+    val mediaMimeType: String      = "",
+    val linkUrl:       String      = "",
+    val linkTitle:     String      = "",
+    val linkImage:     String      = "",
+    val pinned:      Boolean      = false,
+    val views:      Int      = 0,
     val reactions:     Map<String, String>  = emptyMap(),
-    val createdAt:     Long                 = 0L,
-    val updatedAt:     Long                 = 0L,
-    val deleted:       Boolean              = false,
+    val createdAt:     Long      = 0L,
+    val updatedAt:     Long      = 0L,
+    val deleted:       Boolean      = false,
 )
 
 data class ChannelPostsPageResponse(
     val posts:      List<ChannelPostResponse> = emptyList(),
-    val hasMore:    Boolean                   = false,
-    val nextCursor: String?                   = null,
+    val hasMore:    Boolean      = false,
+    val nextCursor: String?      = null,
 )
 
 data class CreateChannelPostBody(
-    val title:         String = "",
-    val body:          String = "",
+    val title:      String = "",
+    val body:      String = "",
     val postType:      String = "text",
     val mediaUrl:      String = "",
     val mediaMimeType: String = "",
@@ -740,3 +1060,50 @@ data class EditChannelPostBody(
 )
 
 data class ChannelPostReactBody(val emoji: String)
+
+data class DesktopQrPayloadBody(
+    val qrPayload: String = "",
+    val token: String = "",
+    val qrSessionId: String = "",
+    val appVersion: String = "android",
+)
+
+data class DesktopQrDeviceInfo(
+    val name: String = "AdisChat Desktop",
+    val os: String = "Desktop",
+    val location: String = "",
+    val ip: String = "",
+)
+
+data class DesktopQrMobileResponse(
+    val qrSessionId: String = "",
+    val status: String = "pending",
+    val expiresAt: Long = 0L,
+    val scannedAt: Long = 0L,
+    val approvedAt: Long = 0L,
+    val rejectedAt: Long = 0L,
+    val device: DesktopQrDeviceInfo = DesktopQrDeviceInfo(),
+)
+
+data class DesktopQrApproveResponse(
+    val ok: Boolean = false,
+    val status: String = "approved",
+    val sessionId: String = "",
+    val expiresAt: Long = 0L,
+)
+
+data class LinkedDeviceResponse(
+    val id: String = "",
+    val deviceType: String = "desktop",
+    val deviceName: String = "AdisChat Desktop",
+    val os: String = "Desktop",
+    val appVersion: String = "",
+    val ip: String = "",
+    val location: String = "",
+    val lastActiveAt: Long = 0L,
+    val createdAt: Long = 0L,
+    val expiresAt: Long = 0L,
+    val revokedAt: Long = 0L,
+)
+
+data class LinkedDevicesResponse(val devices: List<LinkedDeviceResponse> = emptyList())

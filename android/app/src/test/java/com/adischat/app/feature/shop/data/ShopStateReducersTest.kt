@@ -1,0 +1,103 @@
+package com.adischat.app.feature.shop.data
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class ShopStateReducersTest {
+    @Test
+    fun cartItemCountSumsPositiveQuantities() {
+        val cart = ShopCartDto(items = listOf(
+            ShopCartItemDto(quantity = 2),
+            ShopCartItemDto(quantity = 3),
+            ShopCartItemDto(quantity = -4),
+        ))
+
+        assertEquals(5, ShopStateReducers.cartItemCount(cart))
+    }
+
+    @Test
+    fun cachedSessionRequiresTokenAndFutureExpiryBuffer() {
+        assertFalse(ShopStateReducers.canUseCachedSession(null, nowMs = 1_000))
+        assertFalse(ShopStateReducers.canUseCachedSession(ShopSessionDto(accessToken = "", expiresAt = 90_000), nowMs = 1_000))
+        assertFalse(ShopStateReducers.canUseCachedSession(ShopSessionDto(accessToken = "token", expiresAt = 30_000), nowMs = 1_000))
+        assertTrue(ShopStateReducers.canUseCachedSession(ShopSessionDto(accessToken = "token", expiresAt = 90_000), nowMs = 1_000))
+    }
+
+    @Test
+    fun cachedIdentityRequiresMatchingActiveAccount() {
+        val session = ShopSessionDto(accessToken = "token", expiresAt = 90_000)
+        val profile = ShopProfileDto(id = "profile-a", adisChatUserId = "firebase-a")
+
+        assertTrue(ShopStateReducers.canUseCachedIdentity(session, profile, "firebase-a", nowMs = 1_000))
+        assertFalse(ShopStateReducers.canUseCachedIdentity(session, profile, "firebase-b", nowMs = 1_000))
+        assertFalse(ShopStateReducers.canUseCachedIdentity(session, profile, "", nowMs = 1_000))
+        assertFalse(ShopStateReducers.canUseCachedIdentity(session, null, "firebase-a", nowMs = 1_000))
+    }
+
+    @Test
+    fun shopSessionMemoryClearsProtectedIdentityState() {
+        ShopSessionMemory.update(
+            ShopSessionDto(accessToken = "token", refreshToken = "refresh", expiresAt = 90_000),
+            ShopProfileDto(id = "profile-a", displayName = "Account A"),
+        )
+
+        assertEquals("token", ShopSessionMemory.session()?.accessToken)
+        assertEquals("profile-a", ShopSessionMemory.profile()?.id)
+
+        ShopSessionMemory.clear()
+
+        assertEquals(null, ShopSessionMemory.session())
+        assertEquals(null, ShopSessionMemory.profile())
+    }
+
+    @Test
+    fun safeErrorMessageHidesTechnicalDetails() {
+        assertEquals("Your cart is temporarily unavailable.", ShopStateReducers.safeErrorMessage("JWT policy failed", "Your cart is temporarily unavailable."))
+        assertEquals("Check your connection and try again.", ShopStateReducers.safeErrorMessage("", "Check your connection and try again."))
+        assertEquals("Unable to add this product.", ShopStateReducers.safeErrorMessage("Unable to add this product.", "Your cart is temporarily unavailable."))
+    }
+
+    @Test
+    fun sellerRouteMatchesStatus() {
+        assertEquals("apply", ShopStateReducers.sellerRoute("not_started"))
+        assertEquals("status", ShopStateReducers.sellerRoute("under_review"))
+        assertEquals("dashboard", ShopStateReducers.sellerRoute("approved"))
+    }
+
+    @Test
+    fun shopRootTabMappingMatchesNativeDestinations() {
+        assertEquals("home", ShopStateReducers.rootTabForRoute("home"))
+        assertEquals("trending", ShopStateReducers.rootTabForRoute("trending"))
+        assertEquals("cart", ShopStateReducers.rootTabForRoute("cart"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("orders"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("saved"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("recently_viewed"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("addresses"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("seller_apply"))
+        assertEquals("account", ShopStateReducers.rootTabForRoute("buyer_protection"))
+    }
+
+    @Test
+    fun profileShopRoutesMapToAccountSubpages() {
+        assertEquals("orders", ShopStateReducers.accountSubpageForRoute("orders"))
+        assertEquals("saved", ShopStateReducers.accountSubpageForRoute("saved"))
+        assertEquals("recently_viewed", ShopStateReducers.accountSubpageForRoute("recently_viewed"))
+        assertEquals("addresses", ShopStateReducers.accountSubpageForRoute("addresses"))
+        assertEquals("reviews", ShopStateReducers.accountSubpageForRoute("reviews"))
+        assertEquals("seller", ShopStateReducers.accountSubpageForRoute("seller_status"))
+        assertEquals("buyer_protection", ShopStateReducers.accountSubpageForRoute("buyer_protection"))
+        assertEquals(null, ShopStateReducers.accountSubpageForRoute("home"))
+    }
+
+    @Test
+    fun cartBadgeUsesServerCartCountReducer() {
+        val cart = ShopCartDto(items = listOf(
+            ShopCartItemDto(quantity = 1),
+            ShopCartItemDto(quantity = 2),
+        ))
+
+        assertEquals(3, ShopStateReducers.cartItemCount(cart))
+    }
+}
