@@ -739,9 +739,9 @@ function adminError(raw = "") {
   return { code: "admin_action_failed", message: "Admin action could not be completed.", status: 500 };
 }
 
-async function adminRpc(request: Request, rpcName: string, args: Json, responseKey: string) {
+async function adminRpc(request: Request, rpcName: string, args: Json, responseKey: string, profileParam = "p_profile_id") {
   const { client, profileId } = await currentSession(request);
-  const { data, error } = await client.rpc(rpcName, { p_profile_id: profileId, ...args });
+  const { data, error } = await client.rpc(rpcName, { [profileParam]: profileId, ...args });
   if (error) {
     const mapped = adminError(error.message);
     return structuredError(mapped.code, mapped.message, mapped.status, mapped.status >= 500);
@@ -785,7 +785,7 @@ async function adminReviewSeller(request: Request) {
     p_reason: String(body.reason || ""),
     p_private_notes: String(body.privateNotes || ""),
     p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
-  }, "sellerApplicationDetail");
+  }, "sellerApplicationDetail", "p_actor_profile_id");
 }
 
 async function adminProducts(request: Request) {
@@ -807,7 +807,7 @@ async function adminReviewProduct(request: Request) {
     p_public_reason: String(body.publicReason || body.reason || ""),
     p_private_notes: String(body.privateNotes || ""),
     p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
-  }, "productDetail");
+  }, "productDetail", "p_actor_profile_id");
 }
 
 async function adminOrders(request: Request) {
