@@ -40,6 +40,11 @@ private fun Throwable.shopSellerActionMessage(fallback: String): String {
             ?: ""
         val normalized = "${code} ${message}".lowercase()
         return when {
+            normalized.contains("seller_product_locked") -> "This product is locked while it is in review."
+            normalized.contains("seller_product_not_found") -> "Product not found for this seller."
+            normalized.contains("seller_store_not_found") -> "Your approved seller store could not be found."
+            normalized.contains("category_not_found") -> "Choose an active product category."
+            normalized.contains("product_validation_failed") -> "Product is missing required details."
             normalized.contains("delivery_code_invalid") || normalized.contains("invalid-delivery-code") || normalized.contains("incorrect") -> "The delivery code is incorrect."
             normalized.contains("delivery_code_locked") || normalized.contains("delivery-code-locked") -> "Too many incorrect delivery code attempts. Try again later."
             normalized.contains("delivery_code_not_revealed") || normalized.contains("delivery-code-not-revealed") -> "Ask the customer to reveal the delivery code first."
@@ -381,6 +386,37 @@ class SellerRepository(
     suspend fun orderGroups(): Result<List<ShopOrderGroupDto>> = runCatching {
         val service = api ?: error("Couldn't load seller orders.")
         withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
+    }
+
+    suspend fun products(status: String = "all"): Result<List<ShopSellerProductDto>> = runCatching {
+        val service = api ?: error("Couldn't load seller products.")
+        withSellerAuthRetry { token -> service.sellerProducts(token, status) }.sellerProducts.orEmpty()
+    }
+
+    suspend fun createProduct(requestId: String): Result<ShopSellerProductDto> = runCatching {
+        val service = api ?: error("Product creation is temporarily unavailable.")
+        withSellerAuthRetry { token -> service.sellerCreateProduct(token, ShopSellerProductCreateRequest(requestId)) }.sellerProduct
+            ?: error("Product creation is temporarily unavailable.")
+    }
+
+    suspend fun saveProduct(productId: String, payload: ShopSellerProductDraftPayload, requestId: String): Result<ShopSellerProductDto> = runCatching {
+        val service = api ?: error("Product save is temporarily unavailable.")
+        try {
+            withSellerAuthRetry { token -> service.sellerUpdateProduct(token, ShopSellerProductUpdateRequest(productId, payload, requestId)) }.sellerProduct
+                ?: error("Product save is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Product save is temporarily unavailable."))
+        }
+    }
+
+    suspend fun submitProduct(productId: String, requestId: String): Result<ShopSellerProductDto> = runCatching {
+        val service = api ?: error("Product submission is temporarily unavailable.")
+        try {
+            withSellerAuthRetry { token -> service.sellerSubmitProduct(token, ShopSellerProductSubmitRequest(productId, requestId)) }.sellerProduct
+                ?: error("Product submission is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Product is missing required details."))
+        }
     }
 
     suspend fun transition(orderGroupId: String, action: String, reason: String = "", carrier: String? = null, trackingNumber: String? = null): Result<List<ShopOrderGroupDto>> = runCatching {

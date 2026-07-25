@@ -19,6 +19,7 @@ import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopAdminRepository
 import com.adischat.app.feature.shop.data.ShopAdminReviewProductRequest
 import com.adischat.app.feature.shop.data.ShopAdminReviewSellerRequest
+import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
 import com.adischat.app.feature.shop.data.ShopStateReducers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -336,6 +337,75 @@ class ShopViewModel(
         loadProtected { sellerRepository.orderGroups().onSuccess { groups ->
             _protectedState.value = _protectedState.value.copy(sellerOrderGroups = groups, error = null)
         } }
+    }
+
+    fun loadSellerProducts() {
+        loadProtected { sellerRepository.products().onSuccess { products ->
+            _protectedState.value = _protectedState.value.copy(sellerProducts = products, error = null)
+        } }
+    }
+
+    fun createSellerProductDraft() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(loading = true, error = null)
+            sellerRepository.createProduct("android-seller-product-create-${UUID.randomUUID()}")
+                .onSuccess { product ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = product,
+                        sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                        loading = false,
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Draft product created")
+                }
+                .onFailure { showProtectedError(it, "Product creation is temporarily unavailable.") }
+        }
+    }
+
+    fun editSellerProduct(productId: String) {
+        val product = _protectedState.value.sellerProducts.firstOrNull { it.id == productId } ?: return
+        _protectedState.value = _protectedState.value.copy(selectedSellerProduct = product)
+    }
+
+    fun clearSellerProductEditor() {
+        _protectedState.value = _protectedState.value.copy(selectedSellerProduct = null)
+    }
+
+    fun saveSellerProduct(productId: String, payload: ShopSellerProductDraftPayload) {
+        if (productId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(productId, true)
+            sellerRepository.saveProduct(productId, payload, "android-seller-product-save-$productId-${UUID.randomUUID()}")
+                .onSuccess { product ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = product,
+                        sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Product saved")
+                }
+                .onFailure { showProtectedError(it, "Product save is temporarily unavailable.") }
+            setBusy(productId, false)
+        }
+    }
+
+    fun submitSellerProduct(productId: String) {
+        if (productId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(productId, true)
+            sellerRepository.submitProduct(productId, "android-seller-product-submit-$productId-${UUID.randomUUID()}")
+                .onSuccess { product ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = product,
+                        sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Product submitted for review")
+                    loadAdminDashboard()
+                }
+                .onFailure { showProtectedError(it, "Product is missing required details.") }
+            setBusy(productId, false)
+        }
     }
 
     fun sellerOrderAction(orderGroupId: String, action: String, reason: String = "", carrier: String? = null, trackingNumber: String? = null) {

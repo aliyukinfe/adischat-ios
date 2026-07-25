@@ -115,6 +115,21 @@ verify_jwt = false
 [functions.adishop-seller-verify-delivery-code]
 verify_jwt = false
 
+[functions.adishop-seller-products]
+verify_jwt = false
+
+[functions.adishop-seller-product-detail]
+verify_jwt = false
+
+[functions.adishop-seller-create-product]
+verify_jwt = false
+
+[functions.adishop-seller-update-product]
+verify_jwt = false
+
+[functions.adishop-seller-submit-product]
+verify_jwt = false
+
 [functions.adishop-admin-session]
 verify_jwt = false
 

@@ -721,6 +721,78 @@ function deliveryCodeError(raw = "") {
   return { code: "delivery_code_unavailable", message: "Delivery code could not be verified.", retryable: true };
 }
 
+function sellerProductError(raw = "") {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("seller-store-not-found")) {
+    return { code: "seller_store_not_found", message: "Your approved seller store could not be found.", status: 403, retryable: false };
+  }
+  if (normalized.includes("seller-product-not-found")) {
+    return { code: "seller_product_not_found", message: "Product not found for this seller.", status: 404, retryable: false };
+  }
+  if (normalized.includes("seller-product-locked")) {
+    return { code: "seller_product_locked", message: "This product is locked while it is in review.", status: 409, retryable: true };
+  }
+  if (normalized.includes("category-not-found")) {
+    return { code: "category_not_found", message: "Choose an active product category.", status: 409, retryable: true };
+  }
+  if (normalized.includes("product-validation-failed")) {
+    return { code: "product_validation_failed", message: "Product is missing required details.", status: 409, retryable: true };
+  }
+  return { code: "seller_product_unavailable", message: "Seller product action could not be completed.", status: 500, retryable: true };
+}
+
+async function sellerProductRpc(request: Request, rpcName: string, args: Json, responseKey: string) {
+  const { client, profileId } = await currentSession(request);
+  const { data, error } = await client.rpc(rpcName, { p_profile_id: profileId, ...args });
+  if (error) {
+    const mapped = sellerProductError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, [responseKey]: data as Json });
+}
+
+async function listSellerProducts(request: Request) {
+  const url = new URL(request.url);
+  return sellerProductRpc(request, "adishop_seller_list_products", {
+    p_status: url.searchParams.get("status") || "all",
+    p_limit: Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 30))),
+    p_offset: Math.max(0, Number(url.searchParams.get("offset") || 0)),
+  }, "sellerProducts");
+}
+
+async function getSellerProduct(request: Request) {
+  const url = new URL(request.url);
+  return sellerProductRpc(request, "adishop_seller_get_product", {
+    p_product_id: String(url.searchParams.get("productId") || ""),
+  }, "sellerProduct");
+}
+
+async function createSellerProduct(request: Request) {
+  const body = await jsonBody(request);
+  return sellerProductRpc(request, "adishop_seller_create_product", {
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "sellerProduct");
+}
+
+async function updateSellerProduct(request: Request) {
+  const body = await jsonBody(request);
+  const productId = String(body.productId || "");
+  const payload = (body.product || body.payload || {}) as Json;
+  return sellerProductRpc(request, "adishop_seller_update_product", {
+    p_product_id: productId,
+    p_payload: payload,
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "sellerProduct");
+}
+
+async function submitSellerProduct(request: Request) {
+  const body = await jsonBody(request);
+  return sellerProductRpc(request, "adishop_seller_submit_product", {
+    p_product_id: String(body.productId || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "sellerProduct");
+}
+
 function adminError(raw = "") {
   const normalized = raw.toLowerCase();
   if (normalized.includes("admin-forbidden")) return { code: "admin_forbidden", message: "You do not have access to AdisGebeya Admin.", status: 403 };
@@ -730,6 +802,7 @@ function adminError(raw = "") {
   if (normalized.includes("order-not-found")) return { code: "order_not_found", message: "Order not found.", status: 404 };
   if (normalized.includes("invalid-seller-application-state")) return { code: "invalid_state", message: "This seller application has already moved to another state.", status: 409 };
   if (normalized.includes("invalid-product-state")) return { code: "invalid_state", message: "This product has already moved to another state.", status: 409 };
+  if (normalized.includes("self-product-review-blocked")) return { code: "self_review_blocked", message: "A seller cannot review their own product.", status: 403 };
   if (normalized.includes("product-validation-failed")) return { code: "product_validation_failed", message: "Product is missing required details.", status: 409 };
   if (normalized.includes("missing-images")) return { code: "missing_images", message: "At least one product image is required.", status: 409 };
   if (normalized.includes("missing-stock")) return { code: "missing_stock", message: "Product stock is required before approval.", status: 409 };
@@ -991,6 +1064,11 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-seller-mark-ready-for-pickup") return await transitionSellerOrderGroup(request, "ready_for_pickup");
     if (name === "adishop-seller-hand-to-carrier") return await transitionSellerOrderGroup(request, "handed_to_carrier");
     if (name === "adishop-seller-verify-delivery-code") return await verifySellerDeliveryCode(request);
+    if (name === "adishop-seller-products") return await listSellerProducts(request);
+    if (name === "adishop-seller-product-detail") return await getSellerProduct(request);
+    if (name === "adishop-seller-create-product") return await createSellerProduct(request);
+    if (name === "adishop-seller-update-product") return await updateSellerProduct(request);
+    if (name === "adishop-seller-submit-product") return await submitSellerProduct(request);
     if (name === "adishop-create-checkout") return await createCheckout(request);
     if (name === "adishop-confirm-checkout") return await confirmCheckout(request);
     if (name === "adishop-submit-seller-application") return await submitSellerApplication(request);

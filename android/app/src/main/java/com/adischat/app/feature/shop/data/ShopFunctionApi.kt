@@ -118,6 +118,24 @@ interface ShopFunctionApi {
     @POST("functions/v1/adishop-seller-verify-delivery-code")
     suspend fun sellerVerifyDeliveryCode(@Header("Authorization") authorization: String, @Body body: ShopSellerDeliveryCodeRequest): ShopEnvelope<Unit>
 
+    @GET("functions/v1/adishop-seller-products")
+    suspend fun sellerProducts(
+        @Header("Authorization") authorization: String,
+        @Query("status") status: String = "all",
+    ): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-seller-product-detail")
+    suspend fun sellerProductDetail(@Header("Authorization") authorization: String, @Query("productId") productId: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-create-product")
+    suspend fun sellerCreateProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductCreateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-update-product")
+    suspend fun sellerUpdateProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductUpdateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-submit-product")
+    suspend fun sellerSubmitProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductSubmitRequest): ShopEnvelope<Unit>
+
     @GET("functions/v1/adishop-admin-session")
     suspend fun adminSession(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
 

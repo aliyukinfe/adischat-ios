@@ -159,6 +159,8 @@ import com.adischat.app.feature.shop.data.ShopOrderDto
 import com.adischat.app.feature.shop.data.ShopProductDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopRecentlyViewedDto
+import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
+import com.adischat.app.feature.shop.data.ShopSellerProductDto
 import com.adischat.app.feature.shop.data.ShopStoreDto
 import com.adischat.app.ui.theme.AdisGebeyaColors
 import kotlinx.coroutines.delay
@@ -613,18 +615,26 @@ private fun AdisGebeyaPageTheme(content: @Composable () -> Unit) {
 @Composable
 fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
     val vm: ShopViewModel = viewModel()
+    val state by vm.state.collectAsStateWithLifecycle()
     val protectedState by vm.protectedState.collectAsStateWithLifecycle()
     BackHandler { onBackToHome() }
     AdisGebeyaPageTheme {
         SellerCenterScreen(
             protectedState = protectedState,
+            categories = state.categories,
             onBack = onBackToHome,
             onLoad = {
                 vm.loadSellerStatus()
                 vm.loadSellerOrders()
+                vm.loadSellerProducts()
             },
             onSubmit = vm::submitSellerApplication,
             onSellerAction = vm::sellerOrderAction,
+            onCreateProduct = vm::createSellerProductDraft,
+            onEditProduct = vm::editSellerProduct,
+            onCloseProductEditor = vm::clearSellerProductEditor,
+            onSaveProduct = vm::saveSellerProduct,
+            onSubmitProduct = vm::submitSellerProduct,
         )
     }
 }
@@ -3048,10 +3058,16 @@ private fun OrderDetailCard(order: ShopOrderDto, deliveryCode: com.adischat.app.
 @Composable
 private fun SellerCenterScreen(
     protectedState: ShopProtectedState,
+    categories: List<ShopCategoryDto>,
     onBack: () -> Unit,
     onLoad: () -> Unit,
     onSubmit: (String) -> Unit,
     onSellerAction: (String, String, String, String?, String?) -> Unit,
+    onCreateProduct: () -> Unit,
+    onEditProduct: (String) -> Unit,
+    onCloseProductEditor: () -> Unit,
+    onSaveProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onSubmitProduct: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(SellerCenterTab.Dashboard) }
     var orderFilter by remember { mutableStateOf("New") }
@@ -3114,11 +3130,14 @@ private fun SellerCenterScreen(
                 }
                 SellerCenterTab.Products -> {
                     item {
-                        SellerUnavailableModulePage(
-                            title = "Products",
-                            icon = Icons.Default.Inventory2,
-                            body = "Seller product management needs a protected seller-products endpoint before Android can safely show, edit, archive or submit products for review.",
-                            actions = listOf("Published", "Pending review", "Drafts", "Out of stock"),
+                        SellerProductsPage(
+                            protectedState = protectedState,
+                            categories = categories,
+                            onCreateProduct = onCreateProduct,
+                            onEditProduct = onEditProduct,
+                            onCloseEditor = onCloseProductEditor,
+                            onSaveProduct = onSaveProduct,
+                            onSubmitProduct = onSubmitProduct,
                         )
                     }
                 }
@@ -3173,6 +3192,221 @@ private fun SellerCenterBottomBar(selectedTab: SellerCenterTab, onSelect: (Selle
         }
     }
 }
+
+@Composable
+private fun SellerProductsPage(
+    protectedState: ShopProtectedState,
+    categories: List<ShopCategoryDto>,
+    onCreateProduct: () -> Unit,
+    onEditProduct: (String) -> Unit,
+    onCloseEditor: () -> Unit,
+    onSaveProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onSubmitProduct: (String) -> Unit,
+) {
+    val selected = protectedState.selectedSellerProduct
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Column {
+                Text("Products", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                Text("Create drafts and submit them for review.", color = ShopMuted, fontSize = 13.sp)
+            }
+            Button(
+                onClick = onCreateProduct,
+                enabled = !protectedState.loading,
+                colors = ButtonDefaults.buttonColors(containerColor = ShopGreen, contentColor = ShopOnColor),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("New")
+            }
+        }
+
+        selected?.let { product ->
+            SellerProductEditor(
+                product = product,
+                categories = categories,
+                busy = protectedState.busyIds.contains(product.id),
+                onClose = onCloseEditor,
+                onSave = { onSaveProduct(product.id, it) },
+                onSubmit = { onSubmitProduct(product.id) },
+            )
+        }
+
+        if (protectedState.sellerProducts.isEmpty()) {
+            EmptyCard("No seller products yet. Create your first draft product.")
+        } else {
+            protectedState.sellerProducts.forEach { product ->
+                SellerProductCard(product = product, busy = protectedState.busyIds.contains(product.id), onEdit = { onEditProduct(product.id) }, onSubmit = { onSubmitProduct(product.id) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun SellerProductCard(product: ShopSellerProductDto, busy: Boolean, onEdit: () -> Unit, onSubmit: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(ShopSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.size(54.dp).clip(RoundedCornerShape(16.dp)).background(ShopGreenSoft), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Inventory2, contentDescription = null, tint = ShopGreen)
+                }
+                Column(Modifier.weight(1f)) {
+                    Text(product.title.ifBlank { "Untitled product" }, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text("${productStatusLabel(product)} • ${formatEtb(product.priceMinor)}", color = ShopMuted, fontSize = 12.sp)
+                }
+                StatusPill(product.moderationStatus)
+            }
+            if (product.validationErrors.isNotEmpty()) {
+                Text(product.validationErrors.joinToString(" • "), color = ShopRed, fontSize = 12.sp)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onEdit, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) {
+                    Text("Edit")
+                }
+                Button(
+                    onClick = onSubmit,
+                    enabled = !busy && product.moderationStatus !in listOf("submitted", "under_review", "approved", "suspended", "archived"),
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopOrange, contentColor = ShopOnColor),
+                ) {
+                    if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = ShopOnColor)
+                    else Text("Submit")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusPill(status: String) {
+    val color = when (status) {
+        "approved" -> ShopGreen
+        "submitted", "under_review" -> ShopOrange
+        "rejected", "changes_requested" -> ShopRed
+        else -> ShopMuted
+    }
+    Surface(shape = RoundedCornerShape(999.dp), color = color.copy(alpha = .12f)) {
+        Text(productStatusText(status), color = color, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+    }
+}
+
+@Composable
+private fun SellerProductEditor(
+    product: ShopSellerProductDto,
+    categories: List<ShopCategoryDto>,
+    busy: Boolean,
+    onClose: () -> Unit,
+    onSave: (ShopSellerProductDraftPayload) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    var title by remember(product.id) { mutableStateOf(product.title.takeUnless { it == "Untitled product" }.orEmpty()) }
+    var brand by remember(product.id) { mutableStateOf(product.brand.orEmpty()) }
+    var selectedCategoryId by remember(product.id) { mutableStateOf(product.categoryId.orEmpty()) }
+    var shortDescription by remember(product.id) { mutableStateOf(product.shortDescription.orEmpty()) }
+    var description by remember(product.id) { mutableStateOf(product.description.orEmpty()) }
+    var price by remember(product.id) { mutableStateOf(if (product.priceMinor > 0) (product.priceMinor / 100).toString() else "") }
+    var stock by remember(product.id) { mutableStateOf(product.inventory.firstOrNull { it.variantId == null }?.quantityAvailable?.takeIf { it > 0 }?.toString().orEmpty()) }
+    var imageUrl by remember(product.id) { mutableStateOf(product.images.firstOrNull()?.imageUrl.orEmpty()) }
+    var shipping by remember(product.id) { mutableStateOf(product.shippingDetails?.get("notes")?.toString().orEmpty()) }
+    var returns by remember(product.id) { mutableStateOf(product.returnPolicy?.get("notes")?.toString().orEmpty()) }
+    var specs by remember(product.id) { mutableStateOf(product.specifications?.entries?.joinToString("\n") { "${it.key}: ${it.value}" }.orEmpty()) }
+
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(ShopSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = .25f)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column {
+                    Text("Product draft", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                    Text(productStatusLabel(product), color = ShopMuted, fontSize = 12.sp)
+                }
+                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close product editor") }
+            }
+            OutlinedTextField(title, { title = it }, label = { Text("Product name") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(brand, { brand = it }, label = { Text("Brand optional") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            Text("Category", color = ShopInk, fontWeight = FontWeight.SemiBold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(categories, key = { it.id }) { category ->
+                    val selected = selectedCategoryId == category.id
+                    OutlinedButton(
+                        onClick = { selectedCategoryId = category.id },
+                        shape = RoundedCornerShape(999.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (selected) ShopGreen else ShopInk),
+                    ) { Text(category.name, maxLines = 1) }
+                }
+            }
+            OutlinedTextField(shortDescription, { shortDescription = it }, label = { Text("Short description") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            OutlinedTextField(description, { description = it }, label = { Text("Full description") }, modifier = Modifier.fillMaxWidth(), minLines = 4)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(price, { price = it.filter { char -> char.isDigit() } }, label = { Text("Price ETB") }, modifier = Modifier.weight(1f), singleLine = true)
+                OutlinedTextField(stock, { stock = it.filter { char -> char.isDigit() } }, label = { Text("Stock") }, modifier = Modifier.weight(1f), singleLine = true)
+            }
+            OutlinedTextField(imageUrl, { imageUrl = it }, label = { Text("Product image URL") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+            OutlinedTextField(shipping, { shipping = it }, label = { Text("Shipping notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            OutlinedTextField(returns, { returns = it }, label = { Text("Return policy") }, modifier = Modifier.fillMaxWidth(), minLines = 2)
+            OutlinedTextField(specs, { specs = it }, label = { Text("Specifications, one per line") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+            if (product.validationErrors.isNotEmpty()) ErrorCardMessage(product.validationErrors.joinToString("\n"))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onClose, modifier = Modifier.weight(.8f), shape = RoundedCornerShape(14.dp)) { Text("Close") }
+                Button(
+                    onClick = {
+                        onSave(
+                            ShopSellerProductDraftPayload(
+                                title = title.trim(),
+                                brand = brand.trim().takeIf { it.isNotBlank() },
+                                categoryId = selectedCategoryId.takeIf { it.isNotBlank() },
+                                shortDescription = shortDescription.trim(),
+                                description = description.trim(),
+                                priceMinor = (price.toIntOrNull() ?: 0) * 100,
+                                stockQuantity = stock.toIntOrNull() ?: 0,
+                                images = imageUrl.trim().takeIf { it.isNotBlank() }?.let { listOf(mapOf("imageUrl" to it, "altText" to title.trim())) }.orEmpty(),
+                                shippingDetails = mapOf("notes" to shipping.trim()),
+                                returnPolicy = mapOf("notes" to returns.trim()),
+                                specifications = specs.lines().mapNotNull { line ->
+                                    val parts = line.split(":", limit = 2)
+                                    if (parts.size == 2 && parts[0].isNotBlank()) parts[0].trim() to parts[1].trim() else null
+                                }.toMap(),
+                            )
+                        )
+                    },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopGreen, contentColor = ShopOnColor),
+                ) { Text("Save") }
+                Button(
+                    onClick = onSubmit,
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopOrange, contentColor = ShopOnColor),
+                ) { Text("Submit") }
+            }
+        }
+    }
+}
+
+private fun productStatusText(status: String): String = when (status) {
+    "draft", "pending" -> "Draft"
+    "submitted" -> "Submitted"
+    "under_review" -> "Under review"
+    "changes_requested" -> "Changes requested"
+    "approved" -> "Approved"
+    "rejected" -> "Rejected"
+    "suspended" -> "Suspended"
+    "archived" -> "Archived"
+    else -> status.replace("_", " ").replaceFirstChar { it.uppercase() }
+}
+
+private fun productStatusLabel(product: ShopSellerProductDto): String = "${productStatusText(product.moderationStatus)} • ${product.status.replace("_", " ")}"
 
 @Composable
 private fun SellerHeader(
