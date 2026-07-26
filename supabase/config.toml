@@ -76,6 +76,15 @@ verify_jwt = false
 [functions.adishop-reveal-delivery-code]
 verify_jwt = false
 
+[functions.adishop-buyer-order-issue-options]
+verify_jwt = false
+
+[functions.adishop-buyer-create-order-issue]
+verify_jwt = false
+
+[functions.adishop-buyer-order-issues]
+verify_jwt = false
+
 [functions.adishop-list-notifications]
 verify_jwt = false
 
@@ -130,6 +139,15 @@ verify_jwt = false
 [functions.adishop-seller-submit-product]
 verify_jwt = false
 
+[functions.adishop-seller-upload-product-media]
+verify_jwt = false
+
+[functions.adishop-seller-delete-product-media]
+verify_jwt = false
+
+[functions.adishop-seller-reorder-product-media]
+verify_jwt = false
+
 [functions.adishop-admin-session]
 verify_jwt = false
 
@@ -155,6 +173,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.adishop-admin-orders]
+verify_jwt = false
+
+[functions.adishop-admin-order-detail]
+verify_jwt = false
+
+[functions.adishop-admin-update-order-issue]
 verify_jwt = false
 
 [functions.adishop-admin-add-order-note]

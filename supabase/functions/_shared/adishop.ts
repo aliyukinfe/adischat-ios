@@ -463,7 +463,73 @@ async function getOrder(request: Request) {
     .eq("profile_id", profileId)
     .single();
   if (error) return safeError("We couldn't load your order.", 404);
-  return response({ ok: true, order: data });
+  const issues = await client.rpc("adishop_buyer_order_issues", { p_profile_id: profileId, p_order_id: id });
+  return response({ ok: true, order: { ...(data as Json), issues: issues.data || [] } });
+}
+
+function issueError(raw = "") {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("order-not-found") || normalized.includes("order-group-not-found")) {
+    return { code: "order_not_found", message: "Order not found.", status: 404, retryable: false };
+  }
+  if (normalized.includes("invalid-issue-reason")) {
+    return { code: "invalid_issue_reason", message: "Choose an available issue reason.", status: 400, retryable: true };
+  }
+  if (normalized.includes("issue-description-required")) {
+    return { code: "issue_description_required", message: "Add a short description for this issue.", status: 400, retryable: true };
+  }
+  if (normalized.includes("duplicate key") || normalized.includes("one_active")) {
+    return { code: "issue_already_open", message: "This order already has an active issue for that reason.", status: 409, retryable: false };
+  }
+  return { code: "issue_unavailable", message: "Buyer Protection is temporarily unavailable.", status: 500, retryable: true };
+}
+
+async function buyerOrderIssueOptions(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const orderId = String(body.orderId || new URL(request.url).searchParams.get("orderId") || "");
+  const { data, error } = await client.rpc("adishop_buyer_order_issue_options", {
+    p_profile_id: profileId,
+    p_order_id: orderId,
+  });
+  if (error) {
+    const mapped = issueError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, issueOptions: data as Json });
+}
+
+async function buyerOrderIssues(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const orderId = String(new URL(request.url).searchParams.get("orderId") || "");
+  const { data, error } = await client.rpc("adishop_buyer_order_issues", {
+    p_profile_id: profileId,
+    p_order_id: orderId,
+  });
+  if (error) {
+    const mapped = issueError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, issues: data as Json });
+}
+
+async function buyerCreateOrderIssue(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const { data, error } = await client.rpc("adishop_buyer_create_order_issue", {
+    p_profile_id: profileId,
+    p_order_id: String(body.orderId || ""),
+    p_order_group_id: body.orderGroupId ? String(body.orderGroupId) : null,
+    p_reason_code: String(body.reasonCode || ""),
+    p_description: String(body.description || ""),
+    p_idempotency_key: String(body.idempotencyKey || request.headers.get("x-idempotency-key") || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  });
+  if (error) {
+    const mapped = issueError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, issue: (data as Json)?.issue || data });
 }
 
 async function cancelOrder(request: Request) {
@@ -667,6 +733,8 @@ async function transitionSellerOrderGroup(request: Request, action: string) {
   const orderGroupId = String(body.orderGroupId || "");
   const reason = String(body.reason || "");
   const metadata = {
+    reasonCode: body.reasonCode || null,
+    requestId: body.requestId || request.headers.get("x-request-id") || null,
     carrier: body.carrier || null,
     trackingNumber: body.trackingNumber || null,
   };
@@ -677,8 +745,19 @@ async function transitionSellerOrderGroup(request: Request, action: string) {
     p_reason: reason,
     p_metadata: metadata,
   });
-  if (error) return safeError("This seller action is not allowed for the current order state.", 409);
-  await audit(client, profileId, `seller_order.${action}`, "shop_order_group", orderGroupId);
+  if (error) {
+    const normalized = error.message.toLowerCase();
+    if (normalized.includes("rejection-reason-required")) {
+      return structuredError("rejection_reason_required", "Choose a rejection reason.", 400, true);
+    }
+    if (normalized.includes("invalid-rejection-reason")) {
+      return structuredError("invalid_rejection_reason", "Choose a valid rejection reason.", 400, true);
+    }
+    if (normalized.includes("rejection-explanation-required")) {
+      return structuredError("rejection_explanation_required", "Add an explanation for Other.", 400, true);
+    }
+    return safeError("This seller action is not allowed for the current order state.", 409);
+  }
   return response({ ok: true, sellerOrderGroup: data as Json });
 }
 
@@ -700,7 +779,6 @@ async function verifySellerDeliveryCode(request: Request) {
     const mapped = deliveryCodeError(String((data as Json)?.code || (data as Json)?.error || ""));
     return structuredError(mapped.code, mapped.message, 409, mapped.retryable);
   }
-  await audit(client, profileId, "seller_order.verify_delivery_code", "shop_order_group", orderGroupId);
   return response({ ok: true, sellerOrderGroup: data as Json });
 }
 
@@ -737,6 +815,12 @@ function sellerProductError(raw = "") {
   }
   if (normalized.includes("product-validation-failed")) {
     return { code: "product_validation_failed", message: "Product is missing required details.", status: 409, retryable: true };
+  }
+  if (normalized.includes("seller-product-media-limit")) {
+    return { code: "seller_product_media_limit", message: "A product can have up to 10 images.", status: 409, retryable: false };
+  }
+  if (normalized.includes("seller-product-media-not-found")) {
+    return { code: "seller_product_media_not_found", message: "Product image not found for this seller.", status: 404, retryable: false };
   }
   return { code: "seller_product_unavailable", message: "Seller product action could not be completed.", status: 500, retryable: true };
 }
@@ -778,6 +862,11 @@ async function updateSellerProduct(request: Request) {
   const body = await jsonBody(request);
   const productId = String(body.productId || "");
   const payload = (body.product || body.payload || {}) as Json;
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const mutablePayload = payload as Record<string, unknown>;
+    if (mutablePayload.images == null || (Array.isArray(mutablePayload.images) && mutablePayload.images.length === 0)) delete mutablePayload.images;
+    if (mutablePayload.variants == null || (Array.isArray(mutablePayload.variants) && mutablePayload.variants.length === 0)) delete mutablePayload.variants;
+  }
   return sellerProductRpc(request, "adishop_seller_update_product", {
     p_product_id: productId,
     p_payload: payload,
@@ -791,6 +880,177 @@ async function submitSellerProduct(request: Request) {
     p_product_id: String(body.productId || ""),
     p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
   }, "sellerProduct");
+}
+
+function sanitizePathPart(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
+}
+
+async function sellerOwnedEditableProduct(client: ReturnType<typeof adminClient>, profileId: string, productId: string) {
+  const { data, error } = await client
+    .from("shop_products")
+    .select("id,store_id,status,moderation_status,shop_stores!inner(id,owner_profile_id,status,approval_status,deleted_at)")
+    .eq("id", productId)
+    .is("deleted_at", null)
+    .single();
+  const product = data as Json | null;
+  const store = (product?.shop_stores || {}) as Json;
+  if (error || !product || String(store.owner_profile_id || "") !== profileId) throw new Error("seller-product-not-found");
+  if (store.status !== "active" || store.approval_status !== "approved" || store.deleted_at) throw new Error("seller-store-not-found");
+  if (["submitted", "under_review", "approved", "suspended", "archived"].includes(String(product.moderation_status || ""))) {
+    throw new Error("seller-product-locked");
+  }
+  return product;
+}
+
+function mediaError(raw = "") {
+  const mapped = sellerProductError(raw);
+  if (mapped.code !== "seller_product_unavailable") return mapped;
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("unsupported-media-type")) return { code: "unsupported_media_type", message: "Use a JPEG, PNG or WebP image.", status: 415, retryable: false };
+  if (normalized.includes("media-too-large")) return { code: "media_too_large", message: "Image is too large. Choose a smaller photo.", status: 413, retryable: false };
+  if (normalized.includes("bad-media")) return { code: "bad_media", message: "Image could not be uploaded.", status: 400, retryable: true };
+  return { code: "seller_product_media_unavailable", message: "Product image action could not be completed.", status: 500, retryable: true };
+}
+
+async function uploadSellerProductMedia(request: Request) {
+  try {
+    const { client, profileId } = await currentSession(request);
+    const form = await request.formData();
+    const productId = String(form.get("productId") || "");
+    const requestId = sanitizePathPart(String(form.get("requestId") || request.headers.get("x-request-id") || randomId("media")));
+    const altText = String(form.get("altText") || "").slice(0, 160);
+    const width = Math.max(0, Math.min(12000, Number(form.get("width") || 0)));
+    const height = Math.max(0, Math.min(12000, Number(form.get("height") || 0)));
+    const file = form.get("image");
+    if (!productId || !(file instanceof File)) throw new Error("bad-media");
+    const mime = file.type;
+    const extension = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : mime === "image/jpeg" ? "jpg" : "";
+    if (!extension) throw new Error("unsupported-media-type");
+    if (file.size <= 0) throw new Error("bad-media");
+    if (file.size > 5 * 1024 * 1024) throw new Error("media-too-large");
+
+    const product = await sellerOwnedEditableProduct(client, profileId, productId);
+    const storeId = String(product.store_id || "");
+    const existingCount = await client
+      .from("shop_product_images")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", productId)
+      .is("deleted_at", null);
+    if ((existingCount.count || 0) >= 10) throw new Error("seller-product-media-limit");
+
+    const bucket = "shop-product-images";
+    const storagePath = `seller-products/${profileId}/${storeId}/${productId}/${requestId}.${extension}`;
+    const existing = await client
+      .from("shop_product_images")
+      .select("*")
+      .eq("bucket", bucket)
+      .eq("storage_path", storagePath)
+      .maybeSingle();
+    if (existing.data) return response({ ok: true, sellerProductImage: existing.data as Json });
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const upload = await client.storage.from(bucket).upload(storagePath, bytes, { contentType: mime, upsert: false });
+    if (upload.error) throw new Error("bad-media");
+    const publicUrl = client.storage.from(bucket).getPublicUrl(storagePath).data.publicUrl;
+    const primary = (existingCount.count || 0) === 0;
+    if (primary) {
+      await client.from("shop_product_images").update({ is_primary: false }).eq("product_id", productId);
+    }
+    const inserted = await client
+      .from("shop_product_images")
+      .insert({
+        product_id: productId,
+        seller_profile_id: profileId,
+        store_id: storeId,
+        bucket,
+        storage_path: storagePath,
+        image_url: publicUrl,
+        alt_text: altText || null,
+        is_primary: primary,
+        display_order: existingCount.count || 0,
+        mime_type: mime,
+        width: width || null,
+        height: height || null,
+        size_bytes: file.size,
+        moderation_status: String(product.moderation_status || "draft"),
+      })
+      .select("*")
+      .single();
+    if (inserted.error || !inserted.data) throw new Error("bad-media");
+    await audit(client, profileId, "seller_product_media.upload", "shop_product", productId, { imageId: String((inserted.data as Json).id || "") });
+    return response({ ok: true, sellerProductImage: inserted.data as Json });
+  } catch (error) {
+    const mapped = mediaError(error instanceof Error ? error.message : "");
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+}
+
+async function deleteSellerProductMedia(request: Request) {
+  try {
+    const { client, profileId } = await currentSession(request);
+    const body = await jsonBody(request);
+    const productId = String(body.productId || "");
+    const imageId = String(body.imageId || "");
+    await sellerOwnedEditableProduct(client, profileId, productId);
+    const found = await client
+      .from("shop_product_images")
+      .select("*")
+      .eq("id", imageId)
+      .eq("product_id", productId)
+      .eq("seller_profile_id", profileId)
+      .is("deleted_at", null)
+      .single();
+    if (found.error || !found.data) throw new Error("seller-product-media-not-found");
+    const row = found.data as Json;
+    await client.from("shop_product_images").update({ deleted_at: new Date().toISOString(), is_primary: false }).eq("id", imageId);
+    if (row.storage_path) await client.storage.from(String(row.bucket || "shop-product-images")).remove([String(row.storage_path)]);
+    const replacement = await client
+      .from("shop_product_images")
+      .select("id")
+      .eq("product_id", productId)
+      .is("deleted_at", null)
+      .order("display_order", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (replacement.data) await client.from("shop_product_images").update({ is_primary: true }).eq("id", String((replacement.data as Json).id || ""));
+    await audit(client, profileId, "seller_product_media.delete", "shop_product", productId, { imageId });
+    const product = await client.rpc("adishop_seller_get_product", { p_profile_id: profileId, p_product_id: productId });
+    return response({ ok: true, sellerProduct: product.data as Json });
+  } catch (error) {
+    const mapped = mediaError(error instanceof Error ? error.message : "");
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+}
+
+async function reorderSellerProductMedia(request: Request) {
+  try {
+    const { client, profileId } = await currentSession(request);
+    const body = await jsonBody(request);
+    const productId = String(body.productId || "");
+    const orderedIds = Array.isArray(body.imageIds) ? body.imageIds.map((id) => String(id)).filter(Boolean).slice(0, 10) : [];
+    const primaryId = String(body.primaryImageId || orderedIds[0] || "");
+    if (!orderedIds.length || !primaryId) throw new Error("bad-media");
+    await sellerOwnedEditableProduct(client, profileId, productId);
+    const rows = await client
+      .from("shop_product_images")
+      .select("id")
+      .eq("product_id", productId)
+      .eq("seller_profile_id", profileId)
+      .is("deleted_at", null)
+      .in("id", orderedIds);
+    if (rows.error || (rows.data || []).length !== orderedIds.length) throw new Error("seller-product-media-not-found");
+    await client.from("shop_product_images").update({ is_primary: false }).eq("product_id", productId);
+    for (let index = 0; index < orderedIds.length; index += 1) {
+      await client.from("shop_product_images").update({ display_order: index, is_primary: orderedIds[index] === primaryId }).eq("id", orderedIds[index]);
+    }
+    await audit(client, profileId, "seller_product_media.reorder", "shop_product", productId, { count: orderedIds.length });
+    const product = await client.rpc("adishop_seller_get_product", { p_profile_id: profileId, p_product_id: productId });
+    return response({ ok: true, sellerProduct: product.data as Json });
+  } catch (error) {
+    const mapped = mediaError(error instanceof Error ? error.message : "");
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
 }
 
 function adminError(raw = "") {
@@ -885,7 +1145,12 @@ async function adminReviewProduct(request: Request) {
 
 async function adminOrders(request: Request) {
   const params = pageParams(request);
-  return adminRpc(request, "adishop_admin_list_orders", { p_search: params.p_search, p_limit: params.p_limit, p_offset: params.p_offset }, "orders");
+  return adminRpc(request, "adishop_admin_list_orders", { p_search: params.p_search, p_limit: params.p_limit, p_offset: params.p_offset }, "adminOrders");
+}
+
+async function adminOrderDetail(request: Request) {
+  const url = new URL(request.url);
+  return adminRpc(request, "adishop_admin_get_order", { p_order_id: String(url.searchParams.get("orderId") || "") }, "orderDetail");
 }
 
 async function adminAddOrderNote(request: Request) {
@@ -895,6 +1160,17 @@ async function adminAddOrderNote(request: Request) {
     p_note: String(body.note || ""),
     p_visibility: String(body.visibility || "private"),
   }, "orderNote");
+}
+
+async function adminUpdateOrderIssue(request: Request) {
+  const body = await jsonBody(request);
+  return adminRpc(request, "adishop_admin_update_order_issue", {
+    p_issue_id: String(body.issueId || ""),
+    p_status: String(body.status || ""),
+    p_buyer_visible_message: String(body.buyerVisibleMessage || ""),
+    p_private_note: String(body.privateNote || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "issue", "p_actor_profile_id");
 }
 
 async function adminAuditLog(request: Request) {
@@ -1051,6 +1327,9 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-get-order") return await getOrder(request);
     if (name === "adishop-request-order-cancellation") return await cancelOrder(request);
     if (name === "adishop-reveal-delivery-code") return await revealDeliveryCode(request);
+    if (name === "adishop-buyer-order-issue-options") return await buyerOrderIssueOptions(request);
+    if (name === "adishop-buyer-create-order-issue") return await buyerCreateOrderIssue(request);
+    if (name === "adishop-buyer-order-issues") return await buyerOrderIssues(request);
     if (name === "adishop-list-notifications") return await listNotifications(request);
     if (name === "adishop-notification-unread-count") return await notificationUnreadCount(request);
     if (name === "adishop-mark-notification-read") return await markNotificationRead(request, false);
@@ -1069,6 +1348,9 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-seller-create-product") return await createSellerProduct(request);
     if (name === "adishop-seller-update-product") return await updateSellerProduct(request);
     if (name === "adishop-seller-submit-product") return await submitSellerProduct(request);
+    if (name === "adishop-seller-upload-product-media") return await uploadSellerProductMedia(request);
+    if (name === "adishop-seller-delete-product-media") return await deleteSellerProductMedia(request);
+    if (name === "adishop-seller-reorder-product-media") return await reorderSellerProductMedia(request);
     if (name === "adishop-create-checkout") return await createCheckout(request);
     if (name === "adishop-confirm-checkout") return await confirmCheckout(request);
     if (name === "adishop-submit-seller-application") return await submitSellerApplication(request);
@@ -1082,6 +1364,8 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-admin-product-detail") return await adminProductDetail(request);
     if (name === "adishop-admin-review-product") return await adminReviewProduct(request);
     if (name === "adishop-admin-orders") return await adminOrders(request);
+    if (name === "adishop-admin-order-detail") return await adminOrderDetail(request);
+    if (name === "adishop-admin-update-order-issue") return await adminUpdateOrderIssue(request);
     if (name === "adishop-admin-add-order-note") return await adminAddOrderNote(request);
     if (name === "adishop-admin-audit-log") return await adminAuditLog(request);
     if (name === "adishop-admin-users") return await adminUsers(request);

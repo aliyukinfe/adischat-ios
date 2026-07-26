@@ -3,6 +3,9 @@ package com.adischat.app.feature.shop.data
 import com.adischat.app.network.CloudflareClient
 import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.JsonParser
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MultipartBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import retrofit2.HttpException
 
 private fun Throwable.shopCheckoutMessage(fallback: String): String {
@@ -45,6 +48,10 @@ private fun Throwable.shopSellerActionMessage(fallback: String): String {
             normalized.contains("seller_store_not_found") -> "Your approved seller store could not be found."
             normalized.contains("category_not_found") -> "Choose an active product category."
             normalized.contains("product_validation_failed") -> "Product is missing required details."
+            normalized.contains("unsupported_media_type") -> "Use a JPEG, PNG or WebP image."
+            normalized.contains("media_too_large") -> "Image is too large. Choose a smaller photo."
+            normalized.contains("seller_product_media_limit") -> "A product can have up to 10 images."
+            normalized.contains("seller_product_media_not_found") -> "Product image not found for this seller."
             normalized.contains("delivery_code_invalid") || normalized.contains("invalid-delivery-code") || normalized.contains("incorrect") -> "The delivery code is incorrect."
             normalized.contains("delivery_code_locked") || normalized.contains("delivery-code-locked") -> "Too many incorrect delivery code attempts. Try again later."
             normalized.contains("delivery_code_not_revealed") || normalized.contains("delivery-code-not-revealed") -> "Ask the customer to reveal the delivery code first."
@@ -282,6 +289,33 @@ class OrderRepository(
         val service = api ?: error("Delivery code is not available yet.")
         service.revealDeliveryCode(identity.authorization(), orderId).deliveryCode ?: error("Delivery code is not available yet.")
     }
+
+    suspend fun issueOptions(orderId: String): Result<ShopIssueOptionsDto> = runCatching {
+        val service = api ?: error("Buyer Protection is temporarily unavailable.")
+        service.buyerOrderIssueOptions(identity.authorization(), orderId).issueOptions
+            ?: error("Buyer Protection is temporarily unavailable.")
+    }
+
+    suspend fun issues(orderId: String): Result<List<ShopOrderIssueDto>> = runCatching {
+        val service = api ?: error("Buyer Protection is temporarily unavailable.")
+        service.buyerOrderIssues(identity.authorization(), orderId).issues.orEmpty()
+    }
+
+    suspend fun createIssue(orderId: String, orderGroupId: String?, reasonCode: String, description: String): Result<ShopOrderIssueDto> = runCatching {
+        val service = api ?: error("Buyer Protection is temporarily unavailable.")
+        val requestId = "android-issue-${java.util.UUID.randomUUID()}"
+        service.buyerCreateOrderIssue(
+            identity.authorization(),
+            ShopBuyerCreateIssueRequest(
+                orderId = orderId,
+                orderGroupId = orderGroupId,
+                reasonCode = reasonCode,
+                description = description,
+                idempotencyKey = requestId,
+                requestId = requestId,
+            ),
+        ).issue ?: error("Buyer Protection is temporarily unavailable.")
+    }
 }
 
 class ShopNotificationRepository(
@@ -419,9 +453,72 @@ class SellerRepository(
         }
     }
 
-    suspend fun transition(orderGroupId: String, action: String, reason: String = "", carrier: String? = null, trackingNumber: String? = null): Result<List<ShopOrderGroupDto>> = runCatching {
+    suspend fun uploadProductMedia(
+        productId: String,
+        bytes: ByteArray,
+        mimeType: String,
+        width: Int,
+        height: Int,
+        altText: String,
+        requestId: String,
+    ): Result<ShopProductImageDto> = runCatching {
+        val service = api ?: error("Image upload is temporarily unavailable.")
+        val mediaType = mimeType.toMediaType()
+        val extension = when (mimeType) {
+            "image/png" -> "png"
+            "image/webp" -> "webp"
+            else -> "jpg"
+        }
+        val imageBody = bytes.toRequestBody(mediaType)
+        val imagePart = MultipartBody.Part.createFormData("image", "product-$requestId.$extension", imageBody)
+        val textMediaType = "text/plain".toMediaType()
+        try {
+            withSellerAuthRetry { token ->
+                service.sellerUploadProductMedia(
+                    authorization = token,
+                    image = imagePart,
+                    productId = productId.toRequestBody(textMediaType),
+                    requestId = requestId.toRequestBody(textMediaType),
+                    altText = altText.toRequestBody(textMediaType),
+                    width = width.toString().toRequestBody(textMediaType),
+                    height = height.toString().toRequestBody(textMediaType),
+                )
+            }.sellerProductImage ?: error("Image upload is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Image upload is temporarily unavailable."))
+        }
+    }
+
+    suspend fun deleteProductMedia(productId: String, imageId: String): Result<ShopSellerProductDto> = runCatching {
+        val service = api ?: error("Image removal is temporarily unavailable.")
+        try {
+            withSellerAuthRetry { token -> service.sellerDeleteProductMedia(token, ShopSellerProductMediaDeleteRequest(productId, imageId)) }.sellerProduct
+                ?: error("Image removal is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Image removal is temporarily unavailable."))
+        }
+    }
+
+    suspend fun reorderProductMedia(productId: String, imageIds: List<String>, primaryImageId: String): Result<ShopSellerProductDto> = runCatching {
+        val service = api ?: error("Image order is temporarily unavailable.")
+        try {
+            withSellerAuthRetry { token -> service.sellerReorderProductMedia(token, ShopSellerProductMediaReorderRequest(productId, imageIds, primaryImageId)) }.sellerProduct
+                ?: error("Image order is temporarily unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Image order is temporarily unavailable."))
+        }
+    }
+
+    suspend fun transition(orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null): Result<List<ShopOrderGroupDto>> = runCatching {
         val service = api ?: error("Seller action is temporarily unavailable.")
-        val body = ShopSellerOrderActionRequest(orderGroupId = orderGroupId, reason = reason, carrier = carrier, trackingNumber = trackingNumber)
+        val body = ShopSellerOrderActionRequest(
+            orderGroupId = orderGroupId,
+            reason = reason,
+            reasonCode = reasonCode,
+            requestId = if (action == "reject") "android-reject-${java.util.UUID.randomUUID()}" else null,
+            carrier = carrier,
+            trackingNumber = trackingNumber,
+        )
         try {
             withSellerAuthRetry { token ->
                 when (action) {
@@ -530,7 +627,17 @@ class ShopAdminRepository(
         }
     }
 
-    suspend fun reviewProduct(request: ShopAdminReviewProductRequest): Result<ShopAdminProductDto?> = runCatching {
+    suspend fun productDetail(productId: String): Result<ShopAdminProductDetailDto> = runCatching {
+        val service = api ?: error("Couldn't load product details.")
+        try {
+            withAdminAuth { token -> service.adminProductDetail(token, productId) }.productDetail
+                ?: error("Couldn't load product details.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load product details."))
+        }
+    }
+
+    suspend fun reviewProduct(request: ShopAdminReviewProductRequest): Result<ShopAdminProductDetailDto?> = runCatching {
         val service = api ?: error("Product review is temporarily unavailable.")
         try {
             withAdminAuth { token -> service.adminReviewProduct(token, request) }.productDetail
@@ -545,6 +652,31 @@ class ShopAdminRepository(
             withAdminAuth { token -> service.adminOrders(token, search) }.adminOrders.orEmpty()
         } catch (error: Throwable) {
             throw IllegalStateException(error.adminMessage("Couldn't load orders."))
+        }
+    }
+
+    suspend fun orderDetail(orderId: String): Result<ShopAdminOrderDetailDto> = runCatching {
+        val service = api ?: error("Couldn't load order details.")
+        try {
+            withAdminAuth { token -> service.adminOrderDetail(token, orderId) }.orderDetail
+                ?: error("Couldn't load order details.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load order details."))
+        }
+    }
+
+    suspend fun updateOrderIssue(issueId: String, status: String, buyerVisibleMessage: String, privateNote: String): Result<ShopOrderIssueDto?> = runCatching {
+        val service = api ?: error("Issue update is temporarily unavailable.")
+        val requestId = "android-admin-issue-${java.util.UUID.randomUUID()}"
+        try {
+            withAdminAuth { token ->
+                service.adminUpdateOrderIssue(
+                    token,
+                    ShopAdminIssueUpdateRequest(issueId, status, buyerVisibleMessage, privateNote, requestId),
+                )
+            }.issue
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Issue update could not be saved."))
         }
     }
 

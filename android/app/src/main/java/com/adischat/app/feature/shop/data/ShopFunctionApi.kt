@@ -3,8 +3,12 @@ package com.adischat.app.feature.shop.data
 import retrofit2.http.Body
 import retrofit2.http.GET
 import retrofit2.http.Header
+import retrofit2.http.Multipart
 import retrofit2.http.POST
+import retrofit2.http.Part
 import retrofit2.http.Query
+import okhttp3.MultipartBody
+import okhttp3.RequestBody
 
 interface ShopFunctionApi {
     @POST("functions/v1/adishop-exchange-adischat-session")
@@ -73,6 +77,15 @@ interface ShopFunctionApi {
     @GET("functions/v1/adishop-reveal-delivery-code")
     suspend fun revealDeliveryCode(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
 
+    @GET("functions/v1/adishop-buyer-order-issue-options")
+    suspend fun buyerOrderIssueOptions(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-order-issues")
+    suspend fun buyerOrderIssues(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-create-order-issue")
+    suspend fun buyerCreateOrderIssue(@Header("Authorization") authorization: String, @Body body: ShopBuyerCreateIssueRequest): ShopEnvelope<Unit>
+
     @GET("functions/v1/adishop-list-notifications")
     suspend fun notifications(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
 
@@ -136,6 +149,24 @@ interface ShopFunctionApi {
     @POST("functions/v1/adishop-seller-submit-product")
     suspend fun sellerSubmitProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductSubmitRequest): ShopEnvelope<Unit>
 
+    @Multipart
+    @POST("functions/v1/adishop-seller-upload-product-media")
+    suspend fun sellerUploadProductMedia(
+        @Header("Authorization") authorization: String,
+        @Part image: MultipartBody.Part,
+        @Part("productId") productId: RequestBody,
+        @Part("requestId") requestId: RequestBody,
+        @Part("altText") altText: RequestBody,
+        @Part("width") width: RequestBody,
+        @Part("height") height: RequestBody,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-delete-product-media")
+    suspend fun sellerDeleteProductMedia(@Header("Authorization") authorization: String, @Body body: ShopSellerProductMediaDeleteRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-reorder-product-media")
+    suspend fun sellerReorderProductMedia(@Header("Authorization") authorization: String, @Body body: ShopSellerProductMediaReorderRequest): ShopEnvelope<Unit>
+
     @GET("functions/v1/adishop-admin-session")
     suspend fun adminSession(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
 
@@ -159,14 +190,29 @@ interface ShopFunctionApi {
         @Query("search") search: String = "",
     ): ShopEnvelope<Unit>
 
+    @GET("functions/v1/adishop-admin-product-detail")
+    suspend fun adminProductDetail(
+        @Header("Authorization") authorization: String,
+        @Query("productId") productId: String,
+    ): ShopEnvelope<Unit>
+
     @POST("functions/v1/adishop-admin-review-product")
     suspend fun adminReviewProduct(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewProductRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-admin-orders")
     suspend fun adminOrders(@Header("Authorization") authorization: String, @Query("search") search: String = ""): ShopEnvelope<Unit>
 
+    @GET("functions/v1/adishop-admin-order-detail")
+    suspend fun adminOrderDetail(
+        @Header("Authorization") authorization: String,
+        @Query("orderId") orderId: String,
+    ): ShopEnvelope<Unit>
+
     @POST("functions/v1/adishop-admin-add-order-note")
     suspend fun adminAddOrderNote(@Header("Authorization") authorization: String, @Body body: ShopAdminOrderNoteRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-update-order-issue")
+    suspend fun adminUpdateOrderIssue(@Header("Authorization") authorization: String, @Body body: ShopAdminIssueUpdateRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-admin-audit-log")
     suspend fun adminAuditLog(@Header("Authorization") authorization: String): ShopEnvelope<Unit>

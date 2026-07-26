@@ -1,5 +1,6 @@
 package com.adischat.app.feature.shop.data
 
+import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -99,5 +100,27 @@ class ShopStateReducersTest {
         ))
 
         assertEquals(3, ShopStateReducers.cartItemCount(cart))
+    }
+
+    @Test
+    fun sellerProductUpdatePayloadOmitsNullMediaCollections() {
+        val request = ShopSellerProductUpdateRequest(
+            productId = "product-a",
+            requestId = "request-a",
+            product = ShopSellerProductDraftPayload(
+                title = "Gallery product",
+                shortDescription = "Short description",
+                description = "Long description",
+                priceMinor = 1_299_00,
+                stockQuantity = 12,
+                images = null,
+                variants = null,
+            ),
+        )
+
+        val json = Gson().toJson(request)
+
+        assertFalse(json.contains("\"images\""))
+        assertFalse(json.contains("\"variants\""))
     }
 }

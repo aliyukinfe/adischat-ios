@@ -201,8 +201,39 @@ class ShopViewModel(
     fun loadOrderDetail(orderId: String) {
         if (orderId.isBlank()) return
         loadProtected { orderRepository.detail(orderId).onSuccess { order ->
-            _protectedState.value = _protectedState.value.copy(selectedOrder = order, error = null)
+            _protectedState.value = _protectedState.value.copy(
+                selectedOrder = order,
+                selectedOrderIssues = order.issues,
+                error = null,
+            )
+            loadIssueOptions(orderId)
         } }
+    }
+
+    fun loadIssueOptions(orderId: String) {
+        if (orderId.isBlank()) return
+        viewModelScope.launch {
+            orderRepository.issueOptions(orderId)
+                .onSuccess { options -> _protectedState.value = _protectedState.value.copy(issueOptions = options, error = null) }
+                .onFailure { _protectedState.value = _protectedState.value.copy(issueOptions = null) }
+            orderRepository.issues(orderId)
+                .onSuccess { issues -> _protectedState.value = _protectedState.value.copy(selectedOrderIssues = issues) }
+        }
+    }
+
+    fun submitOrderIssue(orderId: String, orderGroupId: String?, reasonCode: String, description: String) {
+        if (orderId.isBlank() || reasonCode.isBlank()) return
+        viewModelScope.launch {
+            val busyKey = "issue-$orderId"
+            setBusy(busyKey, true)
+            orderRepository.createIssue(orderId, orderGroupId, reasonCode, description)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Buyer Protection issue submitted")
+                    loadOrderDetail(orderId)
+                }
+                .onFailure { showProtectedError(it, "Buyer Protection is temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
     }
 
     fun requestOrderCancellation(orderId: String, reason: String = "") {
@@ -408,11 +439,75 @@ class ShopViewModel(
         }
     }
 
-    fun sellerOrderAction(orderGroupId: String, action: String, reason: String = "", carrier: String? = null, trackingNumber: String? = null) {
+    fun uploadSellerProductMedia(productId: String, bytes: ByteArray, mimeType: String, width: Int, height: Int, altText: String) {
+        if (productId.isBlank() || bytes.isEmpty()) return
+        viewModelScope.launch {
+            setBusy("media-$productId", true)
+            sellerRepository.uploadProductMedia(
+                productId = productId,
+                bytes = bytes,
+                mimeType = mimeType,
+                width = width,
+                height = height,
+                altText = altText,
+                requestId = "android-seller-product-media-$productId-${UUID.randomUUID()}",
+            ).onSuccess {
+                sellerRepository.products()
+                    .onSuccess { products ->
+                        val refreshed = products.firstOrNull { product -> product.id == productId }
+                        _protectedState.value = _protectedState.value.copy(
+                            sellerProducts = products,
+                            selectedSellerProduct = refreshed ?: _protectedState.value.selectedSellerProduct,
+                            error = null,
+                        )
+                    }
+                _state.value = _state.value.copy(message = "Image uploaded")
+            }.onFailure { showProtectedError(it, "Image upload is temporarily unavailable.") }
+            setBusy("media-$productId", false)
+        }
+    }
+
+    fun deleteSellerProductMedia(productId: String, imageId: String) {
+        if (productId.isBlank() || imageId.isBlank()) return
+        viewModelScope.launch {
+            setBusy("media-$productId", true)
+            sellerRepository.deleteProductMedia(productId, imageId)
+                .onSuccess { product ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = product,
+                        sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Image removed")
+                }
+                .onFailure { showProtectedError(it, "Image removal is temporarily unavailable.") }
+            setBusy("media-$productId", false)
+        }
+    }
+
+    fun reorderSellerProductMedia(productId: String, imageIds: List<String>, primaryImageId: String) {
+        if (productId.isBlank() || imageIds.isEmpty() || primaryImageId.isBlank()) return
+        viewModelScope.launch {
+            setBusy("media-$productId", true)
+            sellerRepository.reorderProductMedia(productId, imageIds, primaryImageId)
+                .onSuccess { product ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = product,
+                        sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Image order updated")
+                }
+                .onFailure { showProtectedError(it, "Image order is temporarily unavailable.") }
+            setBusy("media-$productId", false)
+        }
+    }
+
+    fun sellerOrderAction(orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null) {
         if (orderGroupId.isBlank()) return
         viewModelScope.launch {
             setBusy(orderGroupId, true)
-            sellerRepository.transition(orderGroupId, action, reason, carrier, trackingNumber)
+            sellerRepository.transition(orderGroupId, action, reason, reasonCode, carrier, trackingNumber)
                 .onSuccess { groups ->
                     _protectedState.value = _protectedState.value.copy(sellerOrderGroups = groups, error = null)
                     _state.value = _state.value.copy(message = "Seller order updated")
@@ -481,12 +576,67 @@ class ShopViewModel(
         }
     }
 
+    fun loadAdminProductDetail(productId: String) {
+        if (productId.isBlank()) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.productDetail(productId)
+                .onSuccess { detail ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedAdminProduct = detail,
+                        adminLoading = false,
+                        adminError = null,
+                    )
+                }
+                .onFailure { showAdminError(it, "Couldn't load product details.") }
+        }
+    }
+
+    fun clearAdminProductDetail() {
+        _protectedState.value = _protectedState.value.copy(selectedAdminProduct = null, adminError = null)
+    }
+
     fun loadAdminOrders() {
         viewModelScope.launch {
             _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
             adminRepository.orders()
                 .onSuccess { orders -> _protectedState.value = _protectedState.value.copy(adminOrders = orders, adminLoading = false, adminError = null) }
                 .onFailure { showAdminError(it, "Couldn't load orders.") }
+        }
+    }
+
+    fun loadAdminOrderDetail(orderId: String) {
+        if (orderId.isBlank()) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.orderDetail(orderId)
+                .onSuccess { detail ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedAdminOrder = detail,
+                        adminLoading = false,
+                        adminError = null,
+                    )
+                }
+                .onFailure { showAdminError(it, "Couldn't load order details.") }
+        }
+    }
+
+    fun clearAdminOrderDetail() {
+        _protectedState.value = _protectedState.value.copy(selectedAdminOrder = null, adminError = null)
+    }
+
+    fun adminUpdateOrderIssue(issueId: String, status: String, buyerVisibleMessage: String, privateNote: String = "") {
+        if (issueId.isBlank() || status.isBlank()) return
+        val currentOrderId = _protectedState.value.selectedAdminOrder?.order?.id.orEmpty()
+        viewModelScope.launch {
+            setBusy("admin-issue-$issueId", true)
+            adminRepository.updateOrderIssue(issueId, status, buyerVisibleMessage, privateNote)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Issue updated")
+                    if (currentOrderId.isNotBlank()) loadAdminOrderDetail(currentOrderId)
+                }
+                .onFailure { showAdminError(it, "Issue update could not be saved.") }
+            setBusy("admin-issue-$issueId", false)
         }
     }
 
@@ -532,7 +682,10 @@ class ShopViewModel(
                     privateNotes = reason,
                     requestId = "android-admin-product-$productId-$action-${UUID.randomUUID()}",
                 ),
-            ).onSuccess {
+            ).onSuccess { detail ->
+                if (detail != null) {
+                    _protectedState.value = _protectedState.value.copy(selectedAdminProduct = detail)
+                }
                 _state.value = _state.value.copy(message = "Product moderation updated")
                 loadAdminDashboard()
                 loadAdminQueues()
