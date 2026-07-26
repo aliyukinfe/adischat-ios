@@ -4740,6 +4740,7 @@ private fun SellerOrderGroupCard(
                     }
                 }
             }
+            SellerBuyerProtectionSection(group.issues)
             if (fulfillment == "packed") {
                 OutlinedTextField(
                     value = trackingNumber,
@@ -4790,6 +4791,32 @@ private fun SellerOrderGroupCard(
                 onSellerAction(group.id, "reject", explanation, reasonCode, null, null)
             },
         )
+    }
+}
+
+@Composable
+private fun SellerBuyerProtectionSection(issues: List<ShopOrderIssueDto>) {
+    if (issues.isEmpty()) return
+    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopSoft)) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Buyer Protection", color = ShopInk, fontWeight = FontWeight.Black)
+            issues.forEach { issue ->
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        MiniBadge(issueStatusLabel(issue.status), orderStatusBg(issue.status), orderStatusColor(issue.status))
+                        Text(issue.reasonLabel ?: issueReasonLabel(issue.reasonCode), color = ShopInk, fontWeight = FontWeight.SemiBold)
+                    }
+                    if (issue.description.isNotBlank()) {
+                        Text(issue.description, color = ShopMuted, lineHeight = 19.sp)
+                    }
+                    issue.createdAt?.let { Text("Submitted $it", color = ShopMuted, fontSize = 11.sp) }
+                    val latestUpdate = issue.events.lastOrNull { it.publicMessage?.isNotBlank() == true }
+                    latestUpdate?.publicMessage?.let { message ->
+                        Text(message, color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 

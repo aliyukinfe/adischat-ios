@@ -342,6 +342,7 @@ data class ShopOrderGroupDto(
     val payment: ShopOrderPaymentSnapshotDto? = null,
     val history: List<ShopOrderStatusHistoryDto>? = null,
     @SerializedName("delivery_code_status") val deliveryCodeStatus: ShopDeliveryCodeStatusDto? = null,
+    val issues: List<ShopOrderIssueDto> = emptyList(),
 )
 
 data class ShopDeliveryCodeDto(

@@ -612,6 +612,19 @@ async function sellerStoreIds(client: ReturnType<typeof adminClient>, profileId:
 }
 
 async function enrichSellerOrderGroups(client: ReturnType<typeof adminClient>, groups: Json[]) {
+  const issueReasonLabel = (reason: unknown) => {
+    switch (String(reason || "").trim().toLowerCase()) {
+      case "item_not_received": return "Item not received";
+      case "wrong_item": return "Wrong item received";
+      case "damaged_item": return "Item arrived damaged";
+      case "incomplete_order": return "Incomplete order";
+      case "not_as_described": return "Item not as described";
+      case "seller_issue": return "Seller issue";
+      case "delivery_issue": return "Delivery issue";
+      case "other": return "Other issue";
+      default: return "Order issue";
+    }
+  };
   const orderIds = Array.from(new Set(groups.map((group) => String((group.shop_orders as Json | undefined)?.id || "")).filter(Boolean)));
   const profileIds = Array.from(new Set(groups.map((group) => String((group.shop_orders as Json | undefined)?.profile_id || "")).filter(Boolean)));
   if (orderIds.length === 0) return groups;
@@ -634,6 +647,20 @@ async function enrichSellerOrderGroups(client: ReturnType<typeof adminClient>, g
     .from("shop_delivery_confirmation_codes")
     .select("order_id,revealed_at,verified_at,failed_attempts,locked_until")
     .in("order_id", orderIds);
+  const issues = await client
+    .from("shop_order_issues")
+    .select("id,order_id,order_group_id,reason_code,description,status,buyer_visible_resolution,created_at,updated_at")
+    .in("order_id", orderIds)
+    .order("created_at", { ascending: false });
+  const issueIds = (issues.data || []).map((row: Json) => String(row.id || "")).filter(Boolean);
+  const issueEvents = issueIds.length === 0
+    ? { data: [] as Json[] }
+    : await client
+      .from("shop_order_issue_events")
+      .select("issue_id,event_code,next_status,public_message,created_at")
+      .in("issue_id", issueIds)
+      .not("public_message", "is", null)
+      .order("created_at", { ascending: true });
   const profiles = profileIds.length === 0
     ? { data: [] as Json[] }
     : await client.from("shop_profiles").select("id,display_name,phone").in("id", profileIds);
@@ -646,6 +673,18 @@ async function enrichSellerOrderGroups(client: ReturnType<typeof adminClient>, g
   });
   const profileById = new Map((profiles.data || []).map((row: Json) => [String(row.id), row]));
   const codeByOrder = new Map((deliveryCodes.data || []).map((row: Json) => [String(row.order_id), row]));
+  const eventsByIssue = new Map<string, Json[]>();
+  (issueEvents.data || []).forEach((row: Json) => {
+    const issueId = String(row.issue_id || "");
+    if (!issueId) return;
+    eventsByIssue.set(issueId, [...(eventsByIssue.get(issueId) || []), row]);
+  });
+  const issuesByOrder = new Map<string, Json[]>();
+  (issues.data || []).forEach((row: Json) => {
+    const orderId = String(row.order_id || "");
+    if (!orderId) return;
+    issuesByOrder.set(orderId, [...(issuesByOrder.get(orderId) || []), row]);
+  });
   const historyByOrder = new Map<string, Json[]>();
   (history.data || []).forEach((row: Json) => {
     const orderId = String(row.order_id || "");
@@ -660,6 +699,27 @@ async function enrichSellerOrderGroups(client: ReturnType<typeof adminClient>, g
     const address = addressByOrder.get(orderId) || {};
     const payment = paymentByOrder.get(orderId) || null;
     const code = codeByOrder.get(orderId) || {};
+    const groupId = String(group.id || "");
+    const sellerVisibleIssues = (issuesByOrder.get(orderId) || [])
+      .filter((row) => String(row.order_group_id || "") === groupId)
+      .map((row) => {
+        const issueId = String(row.id || "");
+        return {
+          reason_code: row.reason_code || null,
+          reason_label: issueReasonLabel(row.reason_code),
+          description: row.description || "",
+          status: row.status || "open",
+          buyer_visible_resolution: row.buyer_visible_resolution || null,
+          created_at: row.created_at || null,
+          updated_at: row.updated_at || null,
+          events: (eventsByIssue.get(issueId) || []).map((event) => ({
+            event_code: event.event_code || null,
+            next_status: event.next_status || null,
+            public_message: event.public_message || null,
+            created_at: event.created_at || null,
+          })),
+        };
+      });
     const { profile_id: _profileId, ...publicOrder } = order;
     return {
       ...group,
@@ -693,6 +753,7 @@ async function enrichSellerOrderGroups(client: ReturnType<typeof adminClient>, g
         failed_attempts: Number(code.failed_attempts || 0),
         locked: code.locked_until ? new Date(String(code.locked_until)).getTime() > Date.now() : false,
       },
+      issues: sellerVisibleIssues,
     };
   });
 }

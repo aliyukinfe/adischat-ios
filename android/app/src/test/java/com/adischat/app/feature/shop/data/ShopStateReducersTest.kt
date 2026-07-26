@@ -123,4 +123,50 @@ class ShopStateReducersTest {
         assertFalse(json.contains("\"images\""))
         assertFalse(json.contains("\"variants\""))
     }
+
+    @Test
+    fun sellerOrderGroupMapsSellerVisibleIssuesOnly() {
+        val json = """
+            {
+              "id": "group-a",
+              "status": "delivered",
+              "issues": [
+                {
+                  "status": "under_review",
+                  "reason_code": "not_as_described",
+                  "reason_label": "Item not as described",
+                  "description": "Buyer-visible description",
+                  "created_at": "2026-07-26T12:00:00Z",
+                  "events": [
+                    {
+                      "event_code": "admin_issue.status_change",
+                      "next_status": "under_review",
+                      "public_message": "Support is reviewing this issue.",
+                      "created_at": "2026-07-26T12:10:00Z"
+                    }
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val group = Gson().fromJson(json, ShopOrderGroupDto::class.java)
+
+        assertEquals(1, group.issues.size)
+        assertEquals("under_review", group.issues.first().status)
+        assertEquals("Item not as described", group.issues.first().reasonLabel)
+        assertEquals("Buyer-visible description", group.issues.first().description)
+        assertEquals("", group.issues.first().id)
+        assertEquals("", group.issues.first().orderId)
+        assertEquals(null, group.issues.first().orderGroupId)
+        assertEquals(1, group.issues.first().events.size)
+        assertEquals("", group.issues.first().events.first().id)
+    }
+
+    @Test
+    fun sellerOrderGroupNoIssueStateDefaultsToEmptyList() {
+        val group = Gson().fromJson("""{"id":"group-a","status":"delivered"}""", ShopOrderGroupDto::class.java)
+
+        assertTrue(group.issues.isEmpty())
+    }
 }
