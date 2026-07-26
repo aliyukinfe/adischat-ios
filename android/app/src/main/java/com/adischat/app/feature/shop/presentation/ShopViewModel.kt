@@ -204,10 +204,30 @@ class ShopViewModel(
             _protectedState.value = _protectedState.value.copy(
                 selectedOrder = order,
                 selectedOrderIssues = order.issues,
+                selectedOrderActions = order.postDeliveryActions,
+                selectedOrderReviews = order.reviews,
+                selectedRefundRequests = order.refundRequests,
+                selectedExchangeRequests = order.exchangeRequests,
                 error = null,
             )
             loadIssueOptions(orderId)
+            loadPostDeliveryPayloads(orderId)
         } }
+    }
+
+    fun loadPostDeliveryPayloads(orderId: String) {
+        if (orderId.isBlank()) return
+        viewModelScope.launch {
+            orderRepository.postDeliveryActions(orderId)
+                .onSuccess { actions -> _protectedState.value = _protectedState.value.copy(selectedOrderActions = actions, error = null) }
+                .onFailure { _protectedState.value = _protectedState.value.copy(selectedOrderActions = null) }
+            orderRepository.reviews(orderId)
+                .onSuccess { reviews -> _protectedState.value = _protectedState.value.copy(selectedOrderReviews = reviews) }
+            orderRepository.requestPayloads(orderId)
+                .onSuccess { (refunds, exchanges) ->
+                    _protectedState.value = _protectedState.value.copy(selectedRefundRequests = refunds, selectedExchangeRequests = exchanges)
+                }
+        }
     }
 
     fun loadIssueOptions(orderId: String) {
@@ -234,6 +254,95 @@ class ShopViewModel(
                 .onFailure { showProtectedError(it, "Buyer Protection is temporarily unavailable.") }
             setBusy(busyKey, false)
         }
+    }
+
+    fun submitProductReview(orderId: String, orderItemId: String, rating: Int, title: String, body: String) {
+        if (orderId.isBlank() || orderItemId.isBlank()) return
+        val busyKey = "review-$orderItemId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            orderRepository.createProductReview(orderId, orderItemId, rating, title, body)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Product review submitted")
+                    loadOrderDetail(orderId)
+                }
+                .onFailure { showProtectedError(it, "Review submission is temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun submitStoreReview(orderId: String, orderGroupId: String, rating: Int, body: String) {
+        if (orderId.isBlank() || orderGroupId.isBlank()) return
+        val busyKey = "store-review-$orderGroupId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            orderRepository.createStoreReview(orderId, orderGroupId, rating, body)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Store review submitted")
+                    loadOrderDetail(orderId)
+                }
+                .onFailure { showProtectedError(it, "Store review is temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun submitRefundRequest(orderId: String, orderItemId: String, quantity: Int, reasonCode: String, description: String) {
+        if (orderId.isBlank() || orderItemId.isBlank()) return
+        val busyKey = "refund-$orderItemId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            orderRepository.createRefundRequest(orderId, orderItemId, quantity, reasonCode, description)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Refund request submitted")
+                    loadOrderDetail(orderId)
+                }
+                .onFailure { showProtectedError(it, "Refund requests are temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun submitExchangeRequest(orderId: String, orderItemId: String, quantity: Int, reasonCode: String, description: String) {
+        if (orderId.isBlank() || orderItemId.isBlank()) return
+        val busyKey = "exchange-$orderItemId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            orderRepository.createExchangeRequest(orderId, orderItemId, quantity, reasonCode, description)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Exchange request submitted")
+                    loadOrderDetail(orderId)
+                }
+                .onFailure { showProtectedError(it, "Exchange requests are temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun buyAgainFromOrder(orderId: String) {
+        if (orderId.isBlank()) return
+        val busyKey = "buy-again-$orderId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            orderRepository.buyAgain(orderId)
+                .onSuccess { result ->
+                    _protectedState.value = _protectedState.value.copy(lastBuyAgainResult = result, error = null)
+                    _state.value = _state.value.copy(message = "Eligible items were added to cart")
+                    loadCart()
+                }
+                .onFailure { showProtectedError(it, "Buy Again is temporarily unavailable.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun loadReceipt(orderId: String) {
+        if (orderId.isBlank()) return
+        viewModelScope.launch {
+            orderRepository.receipt(orderId)
+                .onSuccess { receipt -> _protectedState.value = _protectedState.value.copy(selectedReceipt = receipt, error = null) }
+                .onFailure { showProtectedError(it, "Receipt is temporarily unavailable.") }
+        }
+    }
+
+    fun clearReceipt() {
+        _protectedState.value = _protectedState.value.copy(selectedReceipt = null)
     }
 
     fun requestOrderCancellation(orderId: String, reason: String = "") {
@@ -373,6 +482,12 @@ class ShopViewModel(
     fun loadSellerProducts() {
         loadProtected { sellerRepository.products().onSuccess { products ->
             _protectedState.value = _protectedState.value.copy(sellerProducts = products, error = null)
+        } }
+    }
+
+    fun loadSellerRequests() {
+        loadProtected { sellerRepository.requests().onSuccess { requests ->
+            _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
         } }
     }
 
@@ -567,9 +682,11 @@ class ShopViewModel(
                 showAdminError(it, "Couldn't load products for review.")
                 return@launch
             }
+            val stores = adminRepository.stores().getOrDefault(emptyList())
             _protectedState.value = _protectedState.value.copy(
                 adminSellerApplications = sellers,
                 adminProducts = products,
+                adminStores = stores,
                 adminLoading = false,
                 adminError = null,
             )
@@ -623,6 +740,44 @@ class ShopViewModel(
 
     fun clearAdminOrderDetail() {
         _protectedState.value = _protectedState.value.copy(selectedAdminOrder = null, adminError = null)
+    }
+
+    fun loadAdminStores() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.stores()
+                .onSuccess { stores -> _protectedState.value = _protectedState.value.copy(adminStores = stores, adminLoading = false, adminError = null) }
+                .onFailure { showAdminError(it, "Couldn't load stores.") }
+        }
+    }
+
+    fun loadAdminStoreDetail(storeId: String) {
+        if (storeId.isBlank()) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
+            adminRepository.storeDetail(storeId)
+                .onSuccess { detail -> _protectedState.value = _protectedState.value.copy(selectedAdminStore = detail, adminLoading = false, adminError = null) }
+                .onFailure { showAdminError(it, "Couldn't load store detail.") }
+        }
+    }
+
+    fun clearAdminStoreDetail() {
+        _protectedState.value = _protectedState.value.copy(selectedAdminStore = null, adminError = null)
+    }
+
+    fun adminUpdateStoreStatus(storeId: String, action: String, reason: String) {
+        if (storeId.isBlank() || action.isBlank()) return
+        viewModelScope.launch {
+            setBusy("admin-store-$storeId", true)
+            adminRepository.updateStoreStatus(storeId, action, reason)
+                .onSuccess { detail ->
+                    if (detail != null) _protectedState.value = _protectedState.value.copy(selectedAdminStore = detail)
+                    _state.value = _state.value.copy(message = "Store moderation updated")
+                    loadAdminStores()
+                }
+                .onFailure { showAdminError(it, "Store moderation could not be saved.") }
+            setBusy("admin-store-$storeId", false)
+        }
     }
 
     fun adminUpdateOrderIssue(issueId: String, status: String, buyerVisibleMessage: String, privateNote: String = "") {

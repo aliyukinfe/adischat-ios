@@ -464,7 +464,20 @@ async function getOrder(request: Request) {
     .single();
   if (error) return safeError("We couldn't load your order.", 404);
   const issues = await client.rpc("adishop_buyer_order_issues", { p_profile_id: profileId, p_order_id: id });
-  return response({ ok: true, order: { ...(data as Json), issues: issues.data || [] } });
+  const postDeliveryActions = await client.rpc("adishop_post_delivery_actions", { p_profile_id: profileId, p_order_id: id });
+  const reviews = await client.rpc("adishop_buyer_order_reviews", { p_profile_id: profileId, p_order_id: id });
+  const requests = await client.rpc("adishop_buyer_request_payloads", { p_profile_id: profileId, p_order_id: id });
+  return response({
+    ok: true,
+    order: {
+      ...(data as Json),
+      issues: issues.data || [],
+      postDeliveryActions: postDeliveryActions.data || null,
+      reviews: reviews.data || { productReviews: [], storeReviews: [] },
+      refundRequests: ((requests.data as Json | null)?.refundRequests as unknown[]) || [],
+      exchangeRequests: ((requests.data as Json | null)?.exchangeRequests as unknown[]) || [],
+    },
+  });
 }
 
 function issueError(raw = "") {
@@ -530,6 +543,198 @@ async function buyerCreateOrderIssue(request: Request) {
     return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
   }
   return response({ ok: true, issue: (data as Json)?.issue || data });
+}
+
+function postDeliveryError(raw = "") {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("order-not-found") || normalized.includes("order-item-not-found") || normalized.includes("order-group-not-found")) {
+    return { code: "order_not_found", message: "Order not found.", status: 404, retryable: false };
+  }
+  if (normalized.includes("invalid-rating")) {
+    return { code: "invalid_rating", message: "Choose a rating from 1 to 5.", status: 400, retryable: true };
+  }
+  if (normalized.includes("invalid-quantity")) {
+    return { code: "invalid_quantity", message: "Choose a valid quantity.", status: 400, retryable: true };
+  }
+  if (normalized.includes("description-required")) {
+    return { code: "description_required", message: "Add a short description.", status: 400, retryable: true };
+  }
+  if (normalized.includes("invalid-variant")) {
+    return { code: "invalid_variant", message: "Choose a valid replacement option.", status: 400, retryable: true };
+  }
+  if (normalized.includes("review-already-exists")) {
+    return { code: "review_already_exists", message: "You already reviewed this item.", status: 409, retryable: false };
+  }
+  if (normalized.includes("refund-already-active")) {
+    return { code: "refund_already_active", message: "A refund request is already open for this item.", status: 409, retryable: false };
+  }
+  if (normalized.includes("exchange-already-active")) {
+    return { code: "exchange_already_active", message: "An exchange request is already open for this item.", status: 409, retryable: false };
+  }
+  if (normalized.includes("conflicting-refund-request") || normalized.includes("conflicting-exchange-request")) {
+    return { code: "conflicting_request", message: "This item already has another active request.", status: 409, retryable: false };
+  }
+  if (normalized.includes("review-not-eligible")) {
+    return { code: "review_not_eligible", message: "This order is not eligible for review.", status: 409, retryable: false };
+  }
+  if (normalized.includes("refund-not-eligible")) {
+    return { code: "refund_not_eligible", message: "This order is not eligible for refund.", status: 409, retryable: false };
+  }
+  if (normalized.includes("exchange-not-eligible")) {
+    return { code: "exchange_not_eligible", message: "This order is not eligible for exchange.", status: 409, retryable: false };
+  }
+  return { code: "post_delivery_unavailable", message: "This order action is temporarily unavailable.", status: 500, retryable: true };
+}
+
+async function buyerRpc(request: Request, rpcName: string, args: Json, responseKey: string) {
+  const { client, profileId } = await currentSession(request);
+  const { data, error } = await client.rpc(rpcName, { p_profile_id: profileId, ...args });
+  if (error) {
+    const mapped = postDeliveryError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, [responseKey]: data as Json });
+}
+
+function idempotencyKey(request: Request, body: Json) {
+  return String(body.idempotencyKey || body.requestId || request.headers.get("x-idempotency-key") || request.headers.get("x-request-id") || "").trim();
+}
+
+async function buyerPostDeliveryActions(request: Request) {
+  const orderId = String(new URL(request.url).searchParams.get("orderId") || (await jsonBody(request)).orderId || "");
+  return buyerRpc(request, "adishop_post_delivery_actions", { p_order_id: orderId }, "postDeliveryActions");
+}
+
+async function buyerReviewOptions(request: Request) {
+  const orderId = String(new URL(request.url).searchParams.get("orderId") || (await jsonBody(request)).orderId || "");
+  const { client, profileId } = await currentSession(request);
+  const actions = await client.rpc("adishop_post_delivery_actions", { p_profile_id: profileId, p_order_id: orderId });
+  const reviews = await client.rpc("adishop_buyer_order_reviews", { p_profile_id: profileId, p_order_id: orderId });
+  if (actions.error || reviews.error) {
+    const mapped = postDeliveryError(actions.error?.message || reviews.error?.message || "");
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.retryable);
+  }
+  return response({ ok: true, reviewOptions: { actions: actions.data, reviews: reviews.data } });
+}
+
+async function buyerCreateProductReview(request: Request) {
+  const body = await jsonBody(request);
+  return buyerRpc(request, "adishop_buyer_create_product_review", {
+    p_order_id: String(body.orderId || ""),
+    p_order_item_id: String(body.orderItemId || ""),
+    p_rating: Math.max(1, Math.min(5, Number(body.rating || 0))),
+    p_title: String(body.title || ""),
+    p_body: String(body.body || body.reviewBody || ""),
+    p_idempotency_key: idempotencyKey(request, body),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || idempotencyKey(request, body)),
+  }, "productReview");
+}
+
+async function buyerCreateStoreReview(request: Request) {
+  const body = await jsonBody(request);
+  return buyerRpc(request, "adishop_buyer_create_store_review", {
+    p_order_id: String(body.orderId || ""),
+    p_order_group_id: String(body.orderGroupId || ""),
+    p_rating: Math.max(1, Math.min(5, Number(body.rating || 0))),
+    p_service_rating: Math.max(1, Math.min(5, Number(body.serviceRating || body.rating || 0))),
+    p_communication_rating: Math.max(1, Math.min(5, Number(body.communicationRating || body.rating || 0))),
+    p_delivery_rating: Math.max(1, Math.min(5, Number(body.deliveryRating || body.rating || 0))),
+    p_body: String(body.body || body.reviewBody || ""),
+    p_idempotency_key: idempotencyKey(request, body),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || idempotencyKey(request, body)),
+  }, "storeReview");
+}
+
+async function buyerOrderReviews(request: Request) {
+  const orderId = String(new URL(request.url).searchParams.get("orderId") || (await jsonBody(request)).orderId || "");
+  return buyerRpc(request, "adishop_buyer_order_reviews", { p_order_id: orderId }, "reviews");
+}
+
+async function publicProductReviews(request: Request) {
+  const client = adminClient();
+  const url = new URL(request.url);
+  const productId = String(url.searchParams.get("productId") || "");
+  if (!productId) return structuredError("product_not_found", "Product not found.", 404, false);
+  const { data, error } = await client
+    .from("shop_reviews")
+    .select("id,product_id,store_id,rating,title,body,verified_purchase,created_at,shop_profiles(display_name)")
+    .eq("product_id", productId)
+    .eq("status", "published")
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 30))));
+  if (error) return safeError("Reviews are temporarily unavailable.", 500);
+  return response({ ok: true, reviews: data || [] });
+}
+
+async function publicStoreReviews(request: Request) {
+  const client = adminClient();
+  const url = new URL(request.url);
+  const storeId = String(url.searchParams.get("storeId") || "");
+  if (!storeId) return structuredError("store_not_found", "Store not found.", 404, false);
+  const { data, error } = await client
+    .from("shop_store_reviews")
+    .select("id,store_id,rating,service_rating,communication_rating,delivery_rating,body,verified_purchase,created_at,shop_profiles(display_name)")
+    .eq("store_id", storeId)
+    .eq("status", "published")
+    .order("created_at", { ascending: false })
+    .limit(Math.max(1, Math.min(100, Number(url.searchParams.get("limit") || 30))));
+  if (error) return safeError("Reviews are temporarily unavailable.", 500);
+  return response({ ok: true, reviews: data || [] });
+}
+
+async function buyerCreateRefundRequest(request: Request) {
+  const body = await jsonBody(request);
+  return buyerRpc(request, "adishop_buyer_create_refund_request", {
+    p_order_id: String(body.orderId || ""),
+    p_order_item_id: String(body.orderItemId || ""),
+    p_quantity: Math.max(1, Number(body.quantity || 1)),
+    p_reason_code: String(body.reasonCode || "other"),
+    p_description: String(body.description || ""),
+    p_idempotency_key: idempotencyKey(request, body),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || idempotencyKey(request, body)),
+  }, "refundRequest");
+}
+
+async function buyerCreateExchangeRequest(request: Request) {
+  const body = await jsonBody(request);
+  return buyerRpc(request, "adishop_buyer_create_exchange_request", {
+    p_order_id: String(body.orderId || ""),
+    p_order_item_id: String(body.orderItemId || ""),
+    p_requested_variant_id: body.requestedVariantId ? String(body.requestedVariantId) : null,
+    p_quantity: Math.max(1, Number(body.quantity || 1)),
+    p_reason_code: String(body.reasonCode || "other"),
+    p_description: String(body.description || ""),
+    p_idempotency_key: idempotencyKey(request, body),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || idempotencyKey(request, body)),
+  }, "exchangeRequest");
+}
+
+async function buyerRequests(request: Request, responseKey: "refundRequests" | "exchangeRequests" | "requests") {
+  const orderId = new URL(request.url).searchParams.get("orderId");
+  const result = await buyerRpc(request, "adishop_buyer_request_payloads", { p_order_id: orderId || null }, "requests");
+  if (responseKey === "requests") return result;
+  const body = await result.clone().json().catch(() => null) as Json | null;
+  return response({ ok: true, [responseKey]: ((body?.requests as Json | undefined)?.[responseKey] as unknown[]) || [] });
+}
+
+async function buyerBuyAgain(request: Request) {
+  const body = await jsonBody(request);
+  return buyerRpc(request, "adishop_buyer_buy_again", {
+    p_order_id: String(body.orderId || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || idempotencyKey(request, body) || randomId("buy_again")),
+  }, "buyAgain");
+}
+
+async function buyerOrderReceipt(request: Request) {
+  const orderId = String(new URL(request.url).searchParams.get("orderId") || (await jsonBody(request)).orderId || "");
+  return buyerRpc(request, "adishop_buyer_order_receipt", { p_order_id: orderId }, "receipt");
+}
+
+async function sellerRequests(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const { data, error } = await client.rpc("adishop_seller_request_payloads", { p_profile_id: profileId });
+  if (error) return structuredError("seller_requests_unavailable", "Seller requests are temporarily unavailable.", 500, true);
+  return response({ ok: true, sellerRequests: data as Json });
 }
 
 async function cancelOrder(request: Request) {
@@ -1243,6 +1448,33 @@ async function adminUsers(request: Request) {
   return adminRpc(request, "adishop_admin_users", {}, "adminUsers");
 }
 
+async function adminStores(request: Request) {
+  const params = pageParams(request);
+  return adminRpc(request, "adishop_admin_list_stores", {
+    p_status: params.p_status,
+    p_search: params.p_search,
+    p_limit: params.p_limit,
+    p_offset: params.p_offset,
+  }, "stores");
+}
+
+async function adminStoreDetail(request: Request) {
+  const url = new URL(request.url);
+  return adminRpc(request, "adishop_admin_get_store", { p_store_id: String(url.searchParams.get("storeId") || "") }, "storeDetail");
+}
+
+async function adminUpdateStoreStatus(request: Request) {
+  const body = await jsonBody(request);
+  return adminRpc(request, "adishop_admin_update_store_status", {
+    p_store_id: String(body.storeId || ""),
+    p_action: String(body.action || ""),
+    p_reason_code: String(body.reasonCode || ""),
+    p_seller_visible_message: String(body.sellerVisibleMessage || body.reason || ""),
+    p_private_note: String(body.privateNote || ""),
+    p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
+  }, "storeDetail", "p_actor_profile_id");
+}
+
 async function adminRoleMutation(request: Request, mode: "assign" | "revoke") {
   const { client, profileId } = await currentSession(request);
   const body = await jsonBody(request);
@@ -1386,6 +1618,19 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-set-default-address") return await setDefaultAddress(request);
     if (name === "adishop-list-orders") return await listOrders(request);
     if (name === "adishop-get-order") return await getOrder(request);
+    if (name === "adishop-buyer-post-delivery-actions") return await buyerPostDeliveryActions(request);
+    if (name === "adishop-buyer-review-options") return await buyerReviewOptions(request);
+    if (name === "adishop-buyer-create-product-review") return await buyerCreateProductReview(request);
+    if (name === "adishop-buyer-create-store-review") return await buyerCreateStoreReview(request);
+    if (name === "adishop-buyer-order-reviews") return await buyerOrderReviews(request);
+    if (name === "adishop-product-reviews") return await publicProductReviews(request);
+    if (name === "adishop-store-reviews") return await publicStoreReviews(request);
+    if (name === "adishop-buyer-create-refund-request") return await buyerCreateRefundRequest(request);
+    if (name === "adishop-buyer-refund-requests") return await buyerRequests(request, "refundRequests");
+    if (name === "adishop-buyer-create-exchange-request") return await buyerCreateExchangeRequest(request);
+    if (name === "adishop-buyer-exchange-requests") return await buyerRequests(request, "exchangeRequests");
+    if (name === "adishop-buyer-buy-again") return await buyerBuyAgain(request);
+    if (name === "adishop-buyer-order-receipt") return await buyerOrderReceipt(request);
     if (name === "adishop-request-order-cancellation") return await cancelOrder(request);
     if (name === "adishop-reveal-delivery-code") return await revealDeliveryCode(request);
     if (name === "adishop-buyer-order-issue-options") return await buyerOrderIssueOptions(request);
@@ -1404,6 +1649,7 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-seller-mark-ready-for-pickup") return await transitionSellerOrderGroup(request, "ready_for_pickup");
     if (name === "adishop-seller-hand-to-carrier") return await transitionSellerOrderGroup(request, "handed_to_carrier");
     if (name === "adishop-seller-verify-delivery-code") return await verifySellerDeliveryCode(request);
+    if (name === "adishop-seller-requests") return await sellerRequests(request);
     if (name === "adishop-seller-products") return await listSellerProducts(request);
     if (name === "adishop-seller-product-detail") return await getSellerProduct(request);
     if (name === "adishop-seller-create-product") return await createSellerProduct(request);
@@ -1430,6 +1676,9 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-admin-add-order-note") return await adminAddOrderNote(request);
     if (name === "adishop-admin-audit-log") return await adminAuditLog(request);
     if (name === "adishop-admin-users") return await adminUsers(request);
+    if (name === "adishop-admin-stores") return await adminStores(request);
+    if (name === "adishop-admin-store-detail") return await adminStoreDetail(request);
+    if (name === "adishop-admin-update-store-status") return await adminUpdateStoreStatus(request);
     if (name === "adishop-admin-assign-role") return await adminRoleMutation(request, "assign");
     if (name === "adishop-admin-revoke-role") return await adminRoleMutation(request, "revoke");
     return safeError("Shop action unavailable.", 404);

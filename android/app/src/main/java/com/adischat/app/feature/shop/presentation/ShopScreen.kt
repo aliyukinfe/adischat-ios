@@ -164,18 +164,26 @@ import com.adischat.app.feature.shop.data.ShopAdminProductDetailDto
 import com.adischat.app.feature.shop.data.ShopAdminProductDto
 import com.adischat.app.feature.shop.data.ShopAdminProductReviewDto
 import com.adischat.app.feature.shop.data.ShopAdminSellerApplicationDto
+import com.adischat.app.feature.shop.data.ShopAdminStoreDetailDto
+import com.adischat.app.feature.shop.data.ShopAdminStoreDto
 import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopCartItemDto
 import com.adischat.app.feature.shop.data.ShopFavoriteDto
 import com.adischat.app.feature.shop.data.ShopHomeState
 import com.adischat.app.feature.shop.data.ShopIssueOptionsDto
+import com.adischat.app.feature.shop.data.ShopExchangeRequestDto
 import com.adischat.app.feature.shop.data.ShopOrderIssueDto
 import com.adischat.app.feature.shop.data.ShopOrderGroupDto
 import com.adischat.app.feature.shop.data.ShopOrderDto
+import com.adischat.app.feature.shop.data.ShopPostDeliveryActionsDto
 import com.adischat.app.feature.shop.data.ShopProductImageDto
 import com.adischat.app.feature.shop.data.ShopProductDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopRecentlyViewedDto
+import com.adischat.app.feature.shop.data.ShopReceiptDto
+import com.adischat.app.feature.shop.data.ShopRefundRequestDto
+import com.adischat.app.feature.shop.data.ShopReviewDto
+import com.adischat.app.feature.shop.data.ShopSellerRequestsDto
 import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
 import com.adischat.app.feature.shop.data.ShopSellerProductDto
 import com.adischat.app.feature.shop.data.ShopStoreDto
@@ -380,6 +388,7 @@ sealed class ShopRoute {
     data object Admin : ShopRoute()
     data class AdminProductDetail(val productId: String) : ShopRoute()
     data class AdminOrderDetail(val orderId: String) : ShopRoute()
+    data class AdminStoreDetail(val storeId: String) : ShopRoute()
     data object Checkout : ShopRoute()
     data class Product(val product: ShopProductDto) : ShopRoute()
     data class Category(val category: ShopCategoryDto) : ShopRoute()
@@ -438,7 +447,7 @@ fun ShopRootScreen(
     var detailRoute by remember(initialRoute) {
         mutableStateOf<ShopRoute?>(
             when (initialRoute) {
-                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, ShopRoute.Support, ShopRoute.Admin, is ShopRoute.AdminProductDetail, is ShopRoute.AdminOrderDetail, ShopRoute.Checkout -> initialRoute
+                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, ShopRoute.Support, ShopRoute.Admin, is ShopRoute.AdminProductDetail, is ShopRoute.AdminOrderDetail, is ShopRoute.AdminStoreDetail, ShopRoute.Checkout -> initialRoute
                 else -> null
             }
         )
@@ -533,17 +542,20 @@ fun ShopRootScreen(
                             vm.loadAdminQueues()
                             vm.loadAdminOrders()
                             vm.loadAdminAuditLog()
+                            vm.loadAdminStores()
                         },
                         onRefresh = {
                             vm.loadAdminDashboard()
                             vm.loadAdminQueues()
                             vm.loadAdminOrders()
                             vm.loadAdminAuditLog()
+                            vm.loadAdminStores()
                         },
                         onReviewSeller = vm::adminReviewSeller,
                         onReviewProduct = vm::adminReviewProduct,
                         onOpenProduct = { productId -> detailRoute = ShopRoute.AdminProductDetail(productId) },
                         onOpenOrder = { orderId -> detailRoute = ShopRoute.AdminOrderDetail(orderId) },
+                        onOpenStore = { storeId -> detailRoute = ShopRoute.AdminStoreDetail(storeId) },
                     )
                     is ShopRoute.AdminProductDetail -> AdminProductDetailScreen(
                         productId = activeDetail.productId,
@@ -566,6 +578,17 @@ fun ShopRootScreen(
                         onLoad = { vm.loadAdminOrderDetail(activeDetail.orderId) },
                         onRefresh = { vm.loadAdminOrderDetail(activeDetail.orderId) },
                         onUpdateIssue = vm::adminUpdateOrderIssue,
+                    )
+                    is ShopRoute.AdminStoreDetail -> AdminStoreDetailScreen(
+                        storeId = activeDetail.storeId,
+                        protectedState = protectedState,
+                        onBack = {
+                            vm.clearAdminStoreDetail()
+                            detailRoute = ShopRoute.Admin
+                        },
+                        onLoad = { vm.loadAdminStoreDetail(activeDetail.storeId) },
+                        onRefresh = { vm.loadAdminStoreDetail(activeDetail.storeId) },
+                        onUpdateStore = vm::adminUpdateStoreStatus,
                     )
                     else -> detailRoute = null
                 }
@@ -624,6 +647,13 @@ fun ShopRootScreen(
                             requestOrderCancellation = vm::requestOrderCancellation,
                             revealDeliveryCode = vm::revealDeliveryCode,
                             submitOrderIssue = vm::submitOrderIssue,
+                            submitProductReview = vm::submitProductReview,
+                            submitStoreReview = vm::submitStoreReview,
+                            submitRefundRequest = vm::submitRefundRequest,
+                            submitExchangeRequest = vm::submitExchangeRequest,
+                            buyAgainFromOrder = vm::buyAgainFromOrder,
+                            loadReceipt = vm::loadReceipt,
+                            clearReceipt = vm::clearReceipt,
                             loadNotifications = vm::loadNotifications,
                             markAllNotificationsRead = vm::markAllNotificationsRead,
                             loadSellerStatus = vm::loadSellerStatus,
@@ -695,6 +725,7 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
                 vm.loadSellerStatus()
                 vm.loadSellerOrders()
                 vm.loadSellerProducts()
+                vm.loadSellerRequests()
             },
             onSubmit = vm::submitSellerApplication,
             onSellerAction = vm::sellerOrderAction,
@@ -719,6 +750,13 @@ private data class ShopAccountActions(
     val requestOrderCancellation: (String, String) -> Unit,
     val revealDeliveryCode: (String) -> Unit,
     val submitOrderIssue: (String, String?, String, String) -> Unit,
+    val submitProductReview: (String, String, Int, String, String) -> Unit,
+    val submitStoreReview: (String, String, Int, String) -> Unit,
+    val submitRefundRequest: (String, String, Int, String, String) -> Unit,
+    val submitExchangeRequest: (String, String, Int, String, String) -> Unit,
+    val buyAgainFromOrder: (String) -> Unit,
+    val loadReceipt: (String) -> Unit,
+    val clearReceipt: () -> Unit,
     val loadNotifications: () -> Unit,
     val markAllNotificationsRead: () -> Unit,
     val loadSellerStatus: () -> Unit,
@@ -866,6 +904,13 @@ private fun ShopAccountScreen(
             actions.requestOrderCancellation,
             actions.revealDeliveryCode,
             actions.submitOrderIssue,
+            actions.submitProductReview,
+            actions.submitStoreReview,
+            actions.submitRefundRequest,
+            actions.submitExchangeRequest,
+            actions.buyAgainFromOrder,
+            actions.loadReceipt,
+            actions.clearReceipt,
         )
         ShopAccountSubpage.Saved -> SavedProductsScreen(protectedState, state.cartCount, onSubpageBack, actions.loadFavorites, onProduct, actions.toggleFavorite, actions.addToCart)
         ShopAccountSubpage.RecentlyViewed -> RecentlyViewedScreen(protectedState, state.cartCount, onSubpageBack, actions.loadRecentlyViewed, onProduct, actions.addToCart)
@@ -982,6 +1027,7 @@ private fun AccountGroup(
 private enum class AdminTab(val label: String) {
     Sellers("Sellers"),
     Products("Products"),
+    Stores("Stores"),
     Orders("Orders"),
     Audit("Audit"),
 }
@@ -996,6 +1042,7 @@ private fun AdminCenterScreen(
     onReviewProduct: (String, String, String) -> Unit,
     onOpenProduct: (String) -> Unit,
     onOpenOrder: (String) -> Unit,
+    onOpenStore: (String) -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf(AdminTab.Sellers) }
     var reason by remember { mutableStateOf("") }
@@ -1074,6 +1121,12 @@ private fun AdminCenterScreen(
                     AdminProductCard(product, protectedState.busyIds.contains(product.id), reason, onReviewProduct, onOpenProduct)
                 }
             }
+            AdminTab.Stores -> {
+                if (protectedState.adminStores.isEmpty()) item { EmptyCard("No stores found.") }
+                items(protectedState.adminStores, key = { it.id }) { store ->
+                    AdminStoreCard(store, onOpen = { onOpenStore(store.id) })
+                }
+            }
             AdminTab.Orders -> {
                 if (protectedState.adminOrders.isEmpty()) item { EmptyCard("No open orders found.") }
                 items(protectedState.adminOrders, key = { it.id }) { order ->
@@ -1106,6 +1159,170 @@ private fun AdminDashboardCards(protectedState: ShopProtectedState) {
                     Text(metric.first, color = ShopMuted, fontSize = 12.sp)
                     Text(metric.second.toString(), color = ShopInk, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminStoreCard(store: ShopAdminStoreDto, onOpen: () -> Unit) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(ShopSurface),
+        elevation = CardDefaults.cardElevation(1.dp),
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onOpen),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(store.name.ifBlank { "Unnamed store" }, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 16.sp)
+                    Text(store.ownerName ?: store.ownerEmail ?: "Store owner", color = ShopMuted, fontSize = 12.sp)
+                }
+                MiniBadge(backendLabel(store.status), orderStatusBg(store.status), orderStatusColor(store.status))
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniBadge("${store.productCount} products", ShopSoft, ShopMuted)
+                MiniBadge("${store.completedOrderCount} orders", ShopGreenSoft, ShopGreen)
+                if (store.warningCount > 0) MiniBadge("${store.warningCount} warnings", ShopAmberSoft, ShopOrangeDark)
+            }
+            Text("Issues ${store.openIssueCount} • Rating ${store.ratingAverage ?: 0.0} (${store.ratingCount ?: 0})", color = ShopMuted, fontSize = 12.sp)
+        }
+    }
+}
+
+@Composable
+private fun AdminStoreDetailScreen(
+    storeId: String,
+    protectedState: ShopProtectedState,
+    onBack: () -> Unit,
+    onLoad: () -> Unit,
+    onRefresh: () -> Unit,
+    onUpdateStore: (String, String, String) -> Unit,
+) {
+    var reason by remember(storeId) { mutableStateOf("") }
+    var pendingAction by remember(storeId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(storeId) { onLoad() }
+    val detail = protectedState.selectedAdminStore
+    val store = detail?.store
+    val busy = protectedState.busyIds.contains("admin-store-$storeId")
+
+    pendingAction?.let { action ->
+        AlertDialog(
+            onDismissRequest = { pendingAction = null },
+            title = { Text("${backendLabel(action)} store", color = ShopInk, fontWeight = FontWeight.SemiBold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Confirm this action for ${store?.name ?: "the selected store"}. Historical orders stay preserved.", color = ShopMuted)
+                    OutlinedTextField(reason, { reason = it }, label = { Text("Seller-visible reason") }, minLines = 2, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onUpdateStore(storeId, action, reason.ifBlank { defaultStoreActionReason(action) })
+                        pendingAction = null
+                    },
+                    enabled = !busy,
+                    colors = ButtonDefaults.buttonColors(containerColor = if (action == "reactivate") ShopGreen else ShopOrange),
+                ) { Text(if (busy) "Saving..." else backendLabel(action)) }
+            },
+            dismissButton = { TextButton(onClick = { pendingAction = null }) { Text("Cancel") } },
+            containerColor = ShopSurface,
+        )
+    }
+
+    LazyColumn(
+        Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk) }
+                Column(Modifier.weight(1f)) {
+                    Text("Store Detail", color = ShopInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Store moderation and compliance", color = ShopMuted, fontSize = 12.sp)
+                }
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "Refresh store", tint = ShopGreen) }
+            }
+        }
+        if (protectedState.adminLoading && detail == null) item { EmptyCard("Loading store detail...") }
+        protectedState.adminError?.takeIf { it.isNotBlank() }?.let { item { EmptyCard(it) } }
+        if (detail == null || store == null) {
+            item { EmptyCard("Store detail is unavailable.") }
+        } else {
+            item {
+                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(store.name.ifBlank { "Store" }, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 22.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            MiniBadge(backendLabel(store.status), orderStatusBg(store.status), orderStatusColor(store.status))
+                            MiniBadge(backendLabel(store.approvalStatus), ShopSoft, ShopMuted)
+                        }
+                        AdminInfoRow("Owner", store.ownerName ?: detail.owner?.displayName ?: "Seller")
+                        AdminInfoRow("Products", store.productCount.toString())
+                        AdminInfoRow("Completed orders", store.completedOrderCount.toString())
+                        AdminInfoRow("Open issues", store.openIssueCount.toString())
+                    }
+                }
+            }
+            item {
+                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionTitle("Moderation actions")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { pendingAction = "warn" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Warn") }
+                            OutlinedButton(onClick = { pendingAction = "suspend" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Suspend") }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { pendingAction = "reactivate" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Reactivate") }
+                            TextButton(onClick = { pendingAction = "archive" }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Archive", color = ShopOrangeDark, fontWeight = FontWeight.SemiBold) }
+                        }
+                    }
+                }
+            }
+            item { AdminRequestSummary("Refund requests", detail.refundRequests) }
+            item { AdminRequestSummary("Exchange requests", detail.exchangeRequests) }
+            item { AdminSimpleMapList("Warnings", detail.warnings) }
+            item { AdminSimpleMapList("Violations", detail.violations) }
+        }
+    }
+}
+
+private fun defaultStoreActionReason(action: String): String = when (action) {
+    "warn" -> "Please review and follow AdisGebeya marketplace policies."
+    "suspend" -> "Store temporarily suspended for marketplace review."
+    "archive" -> "Store archived by Admin after review."
+    else -> "Store reactivated after Admin review."
+}
+
+@Composable
+private fun AdminRequestSummary(title: String, requests: List<Any>) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle(title)
+            if (requests.isEmpty()) Text("No requests.", color = ShopMuted)
+            requests.take(5).forEach { request ->
+                val status = when (request) {
+                    is ShopRefundRequestDto -> request.status
+                    is ShopExchangeRequestDto -> request.status
+                    else -> ""
+                }
+                Text(backendLabel(status), color = ShopInk, fontWeight = FontWeight.SemiBold)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdminSimpleMapList(title: String, rows: List<Map<String, Any>>) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            SectionTitle(title)
+            if (rows.isEmpty()) Text("No records.", color = ShopMuted)
+            rows.take(5).forEach { row ->
+                Text(backendLabel(row["reason_code"]?.toString() ?: row["event_code"]?.toString() ?: "record"), color = ShopInk, fontWeight = FontWeight.SemiBold)
+                Text(row["created_at"]?.toString().orEmpty(), color = ShopMuted, fontSize = 12.sp)
             }
         }
     }
@@ -3593,6 +3810,13 @@ private fun OrdersScreen(
     onCancel: (String, String) -> Unit,
     onRevealCode: (String) -> Unit,
     onSubmitIssue: (String, String?, String, String) -> Unit,
+    onSubmitProductReview: (String, String, Int, String, String) -> Unit,
+    onSubmitStoreReview: (String, String, Int, String) -> Unit,
+    onSubmitRefund: (String, String, Int, String, String) -> Unit,
+    onSubmitExchange: (String, String, Int, String, String) -> Unit,
+    onBuyAgain: (String) -> Unit,
+    onLoadReceipt: (String) -> Unit,
+    onClearReceipt: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf("All") }
     val tabs = listOf("All", "To Pay", "Processing", "Shipped", "Delivered", "Cancelled")
@@ -3630,8 +3854,21 @@ private fun OrdersScreen(
                 deliveryCode = protectedState.deliveryCode?.takeIf { it.orderId == order.id },
                 issueOptions = protectedState.issueOptions,
                 issues = protectedState.selectedOrderIssues,
+                actions = protectedState.selectedOrderActions ?: order.postDeliveryActions,
+                productReviews = protectedState.selectedOrderReviews?.productReviews.orEmpty(),
+                storeReviews = protectedState.selectedOrderReviews?.storeReviews.orEmpty(),
+                refundRequests = protectedState.selectedRefundRequests,
+                exchangeRequests = protectedState.selectedExchangeRequests,
+                receipt = protectedState.selectedReceipt,
                 busy = protectedState.busyIds.contains("issue-${order.id}"),
                 onSubmitIssue = onSubmitIssue,
+                onSubmitProductReview = onSubmitProductReview,
+                onSubmitStoreReview = onSubmitStoreReview,
+                onSubmitRefund = onSubmitRefund,
+                onSubmitExchange = onSubmitExchange,
+                onBuyAgain = onBuyAgain,
+                onLoadReceipt = onLoadReceipt,
+                onClearReceipt = onClearReceipt,
             )
         }
         if (protectedState.selectedOrder == null) {
@@ -3727,12 +3964,85 @@ private fun OrderDetailCard(
     deliveryCode: com.adischat.app.feature.shop.data.ShopDeliveryCodeDto?,
     issueOptions: ShopIssueOptionsDto?,
     issues: List<ShopOrderIssueDto>,
+    actions: ShopPostDeliveryActionsDto?,
+    productReviews: List<ShopReviewDto>,
+    storeReviews: List<ShopReviewDto>,
+    refundRequests: List<ShopRefundRequestDto>,
+    exchangeRequests: List<ShopExchangeRequestDto>,
+    receipt: ShopReceiptDto?,
     busy: Boolean,
     onSubmitIssue: (String, String?, String, String) -> Unit,
+    onSubmitProductReview: (String, String, Int, String, String) -> Unit,
+    onSubmitStoreReview: (String, String, Int, String) -> Unit,
+    onSubmitRefund: (String, String, Int, String, String) -> Unit,
+    onSubmitExchange: (String, String, Int, String, String) -> Unit,
+    onBuyAgain: (String) -> Unit,
+    onLoadReceipt: (String) -> Unit,
+    onClearReceipt: () -> Unit,
 ) {
     var showIssueForm by remember(order.id) { mutableStateOf(false) }
+    var actionDialog by remember(order.id) { mutableStateOf<String?>(null) }
+    val firstItem = order.groups.orEmpty().flatMap { it.items.orEmpty() }.firstOrNull()
+    val firstGroup = order.groups.orEmpty().firstOrNull()
+    actionDialog?.let { action ->
+        when (action) {
+            "product_review" -> PostDeliveryTextDialog(
+                title = "Write product review",
+                bodyLabel = "Review",
+                showTitle = true,
+                onDismiss = { actionDialog = null },
+                onSubmit = { rating, title, body ->
+                    firstItem?.id?.let { onSubmitProductReview(order.id, it, rating, title, body) }
+                    actionDialog = null
+                },
+            )
+            "store_review" -> PostDeliveryTextDialog(
+                title = "Rate store",
+                bodyLabel = "Store feedback",
+                onDismiss = { actionDialog = null },
+                onSubmit = { rating, _, body ->
+                    firstGroup?.id?.let { onSubmitStoreReview(order.id, it, rating, body) }
+                    actionDialog = null
+                },
+            )
+            "refund" -> PostDeliveryRequestDialog(
+                title = "Request refund",
+                onDismiss = { actionDialog = null },
+                onSubmit = { reason, description ->
+                    firstItem?.id?.let { onSubmitRefund(order.id, it, firstItem.quantity.coerceAtLeast(1), reason, description) }
+                    actionDialog = null
+                },
+            )
+            "exchange" -> PostDeliveryRequestDialog(
+                title = "Request exchange",
+                onDismiss = { actionDialog = null },
+                onSubmit = { reason, description ->
+                    firstItem?.id?.let { onSubmitExchange(order.id, it, firstItem.quantity.coerceAtLeast(1), reason, description) }
+                    actionDialog = null
+                },
+            )
+        }
+    }
+    receipt?.let {
+        ReceiptDialog(receipt = it, onDismiss = onClearReceipt)
+    }
     Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            PostDeliveryActionSection(
+                order = order,
+                actions = actions,
+                productReviews = productReviews,
+                storeReviews = storeReviews,
+                refundRequests = refundRequests,
+                exchangeRequests = exchangeRequests,
+                onAction = { action ->
+                    when (action) {
+                        "buy_again" -> onBuyAgain(order.id)
+                        "receipt" -> onLoadReceipt(order.id)
+                        else -> actionDialog = action
+                    }
+                },
+            )
             Text("Tracking timeline", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 18.sp)
             if (order.history.orEmpty().isEmpty()) {
                 Text("No tracking events yet.", color = ShopMuted)
@@ -3771,6 +4081,183 @@ private fun OrderDetailCard(
                 },
             )
         }
+    }
+}
+
+@Composable
+private fun PostDeliveryActionSection(
+    order: ShopOrderDto,
+    actions: ShopPostDeliveryActionsDto?,
+    productReviews: List<ShopReviewDto>,
+    storeReviews: List<ShopReviewDto>,
+    refundRequests: List<ShopRefundRequestDto>,
+    exchangeRequests: List<ShopExchangeRequestDto>,
+    onAction: (String) -> Unit,
+) {
+    val completed = actions?.isCompleted == true || order.status in listOf("delivered", "completed") || order.fulfillmentStatus == "delivered"
+    if (!completed) return
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(ShopGreenSoft),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = .16f)),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
+                Column {
+                    Text("Completed order actions", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 17.sp)
+                    Text("Reviews, receipt, refund/exchange and Buy Again are verified by the server.", color = ShopMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                }
+            }
+            if (productReviews.isNotEmpty() || storeReviews.isNotEmpty()) {
+                Text("${productReviews.size} product review • ${storeReviews.size} store review", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            }
+            if (refundRequests.isNotEmpty() || exchangeRequests.isNotEmpty()) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    refundRequests.take(2).forEach { RequestStatusRow("Refund", it.reasonLabel ?: backendLabel(it.reasonCode), it.status) }
+                    exchangeRequests.take(2).forEach { RequestStatusRow("Exchange", it.reasonLabel ?: backendLabel(it.reasonCode), it.status) }
+                }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionPill("Review", actions?.canReviewProduct == true, Icons.Default.Star) { onAction("product_review") }
+                ActionPill("Rate Store", actions?.canReviewStore == true, Icons.Default.Reviews) { onAction("store_review") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionPill("Refund", actions?.canRequestRefund == true, Icons.Default.Security) { onAction("refund") }
+                ActionPill("Exchange", actions?.canRequestExchange == true, Icons.Default.LocalShipping) { onAction("exchange") }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionPill("Buy Again", actions?.canBuyAgain != false, Icons.Default.ShoppingCart) { onAction("buy_again") }
+                ActionPill("Receipt", actions?.canViewReceipt != false, Icons.Default.ReceiptLong) { onAction("receipt") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.ActionPill(label: String, enabled: Boolean, icon: ImageVector, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = enabled,
+        modifier = Modifier.weight(1f).height(46.dp),
+        shape = RoundedCornerShape(14.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (enabled) ShopGreen else ShopMuted),
+        border = androidx.compose.foundation.BorderStroke(1.dp, if (enabled) ShopGreen.copy(alpha = .42f) else ShopLine),
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(label, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+@Composable
+private fun RequestStatusRow(type: String, reason: String, status: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("$type request", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text(reason, color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        MiniBadge(backendLabel(status), orderStatusBg(status), orderStatusColor(status))
+    }
+}
+
+@Composable
+private fun PostDeliveryTextDialog(
+    title: String,
+    bodyLabel: String,
+    showTitle: Boolean = false,
+    onDismiss: () -> Unit,
+    onSubmit: (Int, String, String) -> Unit,
+) {
+    var rating by remember { mutableStateOf(5) }
+    var reviewTitle by remember { mutableStateOf("") }
+    var body by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, color = ShopInk, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    (1..5).forEach { value ->
+                        Icon(
+                            Icons.Default.Star,
+                            contentDescription = "$value stars",
+                            tint = if (value <= rating) ShopOrange else ShopLine,
+                            modifier = Modifier.size(32.dp).clickable { rating = value },
+                        )
+                    }
+                }
+                if (showTitle) {
+                    OutlinedTextField(reviewTitle, { reviewTitle = it.take(120) }, label = { Text("Title") }, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
+                }
+                OutlinedTextField(body, { body = it.take(800) }, label = { Text(bodyLabel) }, minLines = 3, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSubmit(rating, reviewTitle, body) }, enabled = body.isNotBlank(), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Submit") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = ShopSurface,
+    )
+}
+
+@Composable
+private fun PostDeliveryRequestDialog(
+    title: String,
+    onDismiss: () -> Unit,
+    onSubmit: (String, String) -> Unit,
+) {
+    var reason by remember { mutableStateOf("not_as_described") }
+    var description by remember { mutableStateOf("") }
+    val reasons = listOf("not_as_described", "damaged_item", "wrong_item", "defective_item", "other")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, color = ShopInk, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(reasons) { item -> FilterChipLike(backendLabel(item), reason == item) { reason = item } }
+                }
+                OutlinedTextField(description, { description = it.take(1000) }, label = { Text("Description") }, minLines = 3, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
+                Text("Submitting a request does not move money automatically. The seller and support team will review it.", color = ShopMuted, fontSize = 12.sp, lineHeight = 17.sp)
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSubmit(reason, description) }, enabled = description.isNotBlank() || reason != "other", colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Submit") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        containerColor = ShopSurface,
+    )
+}
+
+@Composable
+private fun ReceiptDialog(receipt: ShopReceiptDto, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Order receipt", color = ShopInk, fontWeight = FontWeight.SemiBold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ReceiptRow("Order", receipt.orderNumber ?: "Order")
+                ReceiptRow("Date", receipt.orderDate ?: "")
+                ReceiptRow("Payment", paymentStatusLabel(receipt.paymentStatus))
+                ReceiptRow("Delivery", fulfillmentStatusLabel(receipt.fulfillmentStatus))
+                HorizontalDivider(color = ShopLine)
+                ReceiptRow("Subtotal", formatEtb(receipt.subtotalMinor))
+                ReceiptRow("Delivery", formatEtb(receipt.deliveryFeeMinor))
+                if (receipt.discountMinor > 0) ReceiptRow("Discount", "-${formatEtb(receipt.discountMinor)}")
+                ReceiptRow("Total", formatEtb(receipt.totalMinor), strong = true)
+            }
+        },
+        confirmButton = { Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Done") } },
+        containerColor = ShopSurface,
+    )
+}
+
+@Composable
+private fun ReceiptRow(label: String, value: String, strong: Boolean = false) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = ShopMuted, fontSize = 13.sp)
+        Text(value.ifBlank { "Not set" }, color = ShopInk, fontWeight = if (strong) FontWeight.Black else FontWeight.Medium, fontSize = if (strong) 16.sp else 13.sp)
     }
 }
 
@@ -3970,6 +4457,9 @@ private fun SellerCenterScreen(
                         )
                     }
                 }
+                SellerCenterTab.Requests -> {
+                    item { SellerRequestsPage(protectedState.sellerRequests) }
+                }
                 SellerCenterTab.Messages -> {
                     item {
                         SellerUnavailableModulePage(
@@ -3992,6 +4482,7 @@ private enum class SellerCenterTab(val label: String, val icon: ImageVector) {
     Dashboard("Dashboard", Icons.Default.Analytics),
     Orders("Orders", Icons.Default.ReceiptLong),
     Products("Products", Icons.Default.Inventory2),
+    Requests("Requests", Icons.Default.Assignment),
     Messages("Messages", Icons.Default.Message),
     More("More", Icons.Default.MoreHoriz),
 }
@@ -4444,6 +4935,54 @@ private fun SellerApplicationCard(
                 "suspended" -> Text("Seller actions are restricted while your store is suspended.", color = ShopMuted, lineHeight = 20.sp)
                 else -> Text("Your application is under review. Store management unlocks only after approval.", color = ShopMuted, lineHeight = 20.sp)
             }
+        }
+    }
+}
+
+@Composable
+private fun SellerRequestsPage(requests: ShopSellerRequestsDto?) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("Returns and Requests", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 22.sp)
+        Text("Refund and exchange requests for your own stores. Private Admin notes are hidden.", color = ShopMuted, lineHeight = 19.sp)
+        val refunds = requests?.refundRequests.orEmpty()
+        val exchanges = requests?.exchangeRequests.orEmpty()
+        if (refunds.isEmpty() && exchanges.isEmpty()) {
+            EmptyCard("No refund or exchange requests yet.")
+        }
+        refunds.forEach { request ->
+            SellerRequestCard(
+                type = "Refund",
+                title = request.reasonLabel ?: backendLabel(request.reasonCode),
+                status = request.status,
+                body = request.buyerVisibleUpdate ?: request.description.orEmpty(),
+                amount = formatEtb(request.requestedAmount),
+            )
+        }
+        exchanges.forEach { request ->
+            SellerRequestCard(
+                type = "Exchange",
+                title = request.reasonLabel ?: backendLabel(request.reasonCode),
+                status = request.status,
+                body = request.buyerVisibleUpdate ?: request.description.orEmpty(),
+                amount = "",
+            )
+        }
+    }
+}
+
+@Composable
+private fun SellerRequestCard(type: String, title: String, status: String, body: String, amount: String) {
+    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                Column(Modifier.weight(1f)) {
+                    Text(type, color = ShopGreen, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                    Text(title, color = ShopInk, fontWeight = FontWeight.SemiBold)
+                }
+                MiniBadge(backendLabel(status), orderStatusBg(status), orderStatusColor(status))
+            }
+            if (body.isNotBlank()) Text(body, color = ShopMuted, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            if (amount.isNotBlank()) Text(amount, color = ShopGreen, fontWeight = FontWeight.Black)
         }
     }
 }

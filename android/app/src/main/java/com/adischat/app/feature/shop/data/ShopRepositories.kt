@@ -316,6 +316,91 @@ class OrderRepository(
             ),
         ).issue ?: error("Buyer Protection is temporarily unavailable.")
     }
+
+    suspend fun postDeliveryActions(orderId: String): Result<ShopPostDeliveryActionsDto> = runCatching {
+        val service = api ?: error("Order actions are temporarily unavailable.")
+        service.postDeliveryActions(identity.authorization(), orderId).postDeliveryActions
+            ?: error("Order actions are temporarily unavailable.")
+    }
+
+    suspend fun reviews(orderId: String): Result<ShopOrderReviewsDto> = runCatching {
+        val service = api ?: error("Reviews are temporarily unavailable.")
+        service.buyerOrderReviews(identity.authorization(), orderId).reviews ?: ShopOrderReviewsDto()
+    }
+
+    suspend fun createProductReview(orderId: String, orderItemId: String, rating: Int, title: String, body: String): Result<ShopReviewDto> = runCatching {
+        val service = api ?: error("Review submission is temporarily unavailable.")
+        val requestId = "android-product-review-${java.util.UUID.randomUUID()}"
+        service.createProductReview(
+            identity.authorization(),
+            ShopReviewCreateRequest(
+                orderId = orderId,
+                orderItemId = orderItemId,
+                rating = rating,
+                title = title,
+                body = body,
+                idempotencyKey = requestId,
+                requestId = requestId,
+            ),
+        ).productReview ?: error("Review submission is temporarily unavailable.")
+    }
+
+    suspend fun createStoreReview(orderId: String, orderGroupId: String, rating: Int, body: String): Result<ShopReviewDto> = runCatching {
+        val service = api ?: error("Store review is temporarily unavailable.")
+        val requestId = "android-store-review-${java.util.UUID.randomUUID()}"
+        service.createStoreReview(
+            identity.authorization(),
+            ShopReviewCreateRequest(
+                orderId = orderId,
+                orderGroupId = orderGroupId,
+                rating = rating,
+                serviceRating = rating,
+                communicationRating = rating,
+                deliveryRating = rating,
+                body = body,
+                idempotencyKey = requestId,
+                requestId = requestId,
+            ),
+        ).storeReview ?: error("Store review is temporarily unavailable.")
+    }
+
+    suspend fun createRefundRequest(orderId: String, orderItemId: String, quantity: Int, reasonCode: String, description: String): Result<ShopRefundRequestDto> = runCatching {
+        val service = api ?: error("Refund requests are temporarily unavailable.")
+        val requestId = "android-refund-${java.util.UUID.randomUUID()}"
+        service.createRefundRequest(
+            identity.authorization(),
+            ShopPostDeliveryRequestBody(orderId, orderItemId = orderItemId, quantity = quantity, reasonCode = reasonCode, description = description, idempotencyKey = requestId, requestId = requestId),
+        ).refundRequest ?: error("Refund requests are temporarily unavailable.")
+    }
+
+    suspend fun createExchangeRequest(orderId: String, orderItemId: String, quantity: Int, reasonCode: String, description: String): Result<ShopExchangeRequestDto> = runCatching {
+        val service = api ?: error("Exchange requests are temporarily unavailable.")
+        val requestId = "android-exchange-${java.util.UUID.randomUUID()}"
+        service.createExchangeRequest(
+            identity.authorization(),
+            ShopPostDeliveryRequestBody(orderId, orderItemId = orderItemId, quantity = quantity, reasonCode = reasonCode, description = description, idempotencyKey = requestId, requestId = requestId),
+        ).exchangeRequest ?: error("Exchange requests are temporarily unavailable.")
+    }
+
+    suspend fun requestPayloads(orderId: String): Result<Pair<List<ShopRefundRequestDto>, List<ShopExchangeRequestDto>>> = runCatching {
+        val service = api ?: error("Order requests are temporarily unavailable.")
+        val token = identity.authorization()
+        val refunds = service.refundRequests(token, orderId).refundRequests.orEmpty()
+        val exchanges = service.exchangeRequests(token, orderId).exchangeRequests.orEmpty()
+        refunds to exchanges
+    }
+
+    suspend fun buyAgain(orderId: String): Result<ShopBuyAgainResultDto> = runCatching {
+        val service = api ?: error("Buy Again is temporarily unavailable.")
+        val requestId = "android-buy-again-${java.util.UUID.randomUUID()}"
+        service.buyAgain(identity.authorization(), ShopBuyAgainRequest(orderId = orderId, requestId = requestId)).buyAgain
+            ?: error("Buy Again is temporarily unavailable.")
+    }
+
+    suspend fun receipt(orderId: String): Result<ShopReceiptDto> = runCatching {
+        val service = api ?: error("Receipt is temporarily unavailable.")
+        service.orderReceipt(identity.authorization(), orderId).receipt ?: error("Receipt is temporarily unavailable.")
+    }
 }
 
 class ShopNotificationRepository(
@@ -420,6 +505,11 @@ class SellerRepository(
     suspend fun orderGroups(): Result<List<ShopOrderGroupDto>> = runCatching {
         val service = api ?: error("Couldn't load seller orders.")
         withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
+    }
+
+    suspend fun requests(): Result<ShopSellerRequestsDto> = runCatching {
+        val service = api ?: error("Couldn't load returns and requests.")
+        withSellerAuthRetry { token -> service.sellerRequests(token) }.sellerRequests ?: ShopSellerRequestsDto()
     }
 
     suspend fun products(status: String = "all"): Result<List<ShopSellerProductDto>> = runCatching {
@@ -695,6 +785,46 @@ class ShopAdminRepository(
             withAdminAuth { token -> service.adminUsers(token) }.adminUsers.orEmpty()
         } catch (error: Throwable) {
             throw IllegalStateException(error.adminMessage("Couldn't load admin users."))
+        }
+    }
+
+    suspend fun stores(status: String = "all", search: String = ""): Result<List<ShopAdminStoreDto>> = runCatching {
+        val service = api ?: error("Couldn't load stores.")
+        try {
+            withAdminAuth { token -> service.adminStores(token, status, search) }.stores.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load stores."))
+        }
+    }
+
+    suspend fun storeDetail(storeId: String): Result<ShopAdminStoreDetailDto> = runCatching {
+        val service = api ?: error("Couldn't load store detail.")
+        try {
+            withAdminAuth { token -> service.adminStoreDetail(token, storeId) }.storeDetail
+                ?: error("Couldn't load store detail.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load store detail."))
+        }
+    }
+
+    suspend fun updateStoreStatus(storeId: String, action: String, reason: String): Result<ShopAdminStoreDetailDto?> = runCatching {
+        val service = api ?: error("Store moderation is temporarily unavailable.")
+        val requestId = "android-admin-store-${java.util.UUID.randomUUID()}"
+        try {
+            withAdminAuth { token ->
+                service.adminUpdateStoreStatus(
+                    token,
+                    ShopAdminStoreStatusRequest(
+                        storeId = storeId,
+                        action = action,
+                        sellerVisibleMessage = reason,
+                        privateNote = if (action == "warn") "" else reason,
+                        requestId = requestId,
+                    ),
+                )
+            }.storeDetail
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Store moderation could not be saved."))
         }
     }
 }

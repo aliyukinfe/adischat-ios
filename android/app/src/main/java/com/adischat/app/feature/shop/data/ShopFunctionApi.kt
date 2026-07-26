@@ -71,6 +71,39 @@ interface ShopFunctionApi {
     @GET("functions/v1/adishop-get-order")
     suspend fun order(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
 
+    @GET("functions/v1/adishop-buyer-post-delivery-actions")
+    suspend fun postDeliveryActions(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-review-options")
+    suspend fun buyerReviewOptions(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-create-product-review")
+    suspend fun createProductReview(@Header("Authorization") authorization: String, @Body body: ShopReviewCreateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-create-store-review")
+    suspend fun createStoreReview(@Header("Authorization") authorization: String, @Body body: ShopReviewCreateRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-order-reviews")
+    suspend fun buyerOrderReviews(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-create-refund-request")
+    suspend fun createRefundRequest(@Header("Authorization") authorization: String, @Body body: ShopPostDeliveryRequestBody): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-refund-requests")
+    suspend fun refundRequests(@Header("Authorization") authorization: String, @Query("orderId") orderId: String? = null): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-create-exchange-request")
+    suspend fun createExchangeRequest(@Header("Authorization") authorization: String, @Body body: ShopPostDeliveryRequestBody): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-exchange-requests")
+    suspend fun exchangeRequests(@Header("Authorization") authorization: String, @Query("orderId") orderId: String? = null): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-buyer-buy-again")
+    suspend fun buyAgain(@Header("Authorization") authorization: String, @Body body: ShopBuyAgainRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-buyer-order-receipt")
+    suspend fun orderReceipt(@Header("Authorization") authorization: String, @Query("orderId") orderId: String): ShopEnvelope<Unit>
+
     @POST("functions/v1/adishop-request-order-cancellation")
     suspend fun cancelOrder(@Header("Authorization") authorization: String, @Body body: ShopCancelOrderRequest): ShopEnvelope<Unit>
 
@@ -130,6 +163,9 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-seller-verify-delivery-code")
     suspend fun sellerVerifyDeliveryCode(@Header("Authorization") authorization: String, @Body body: ShopSellerDeliveryCodeRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-seller-requests")
+    suspend fun sellerRequests(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-seller-products")
     suspend fun sellerProducts(
@@ -225,4 +261,20 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-admin-revoke-role")
     suspend fun adminRevokeRole(@Header("Authorization") authorization: String, @Body body: ShopAdminRoleRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-stores")
+    suspend fun adminStores(
+        @Header("Authorization") authorization: String,
+        @Query("status") status: String = "all",
+        @Query("search") search: String = "",
+    ): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-store-detail")
+    suspend fun adminStoreDetail(
+        @Header("Authorization") authorization: String,
+        @Query("storeId") storeId: String,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-update-store-status")
+    suspend fun adminUpdateStoreStatus(@Header("Authorization") authorization: String, @Body body: ShopAdminStoreStatusRequest): ShopEnvelope<Unit>
 }
