@@ -166,6 +166,27 @@ verify_jwt = false
 [functions.adishop-seller-requests]
 verify_jwt = false
 
+[functions.adishop-seller-respond-refund-request]
+verify_jwt = false
+
+[functions.adishop-seller-respond-exchange-request]
+verify_jwt = false
+
+[functions.adishop-seller-save-application-draft]
+verify_jwt = false
+
+[functions.adishop-seller-upload-application-document]
+verify_jwt = false
+
+[functions.adishop-seller-remove-application-document]
+verify_jwt = false
+
+[functions.adishop-seller-submit-application]
+verify_jwt = false
+
+[functions.adishop-seller-respond-application-info-request]
+verify_jwt = false
+
 [functions.adishop-seller-products]
 verify_jwt = false
 
@@ -188,6 +209,12 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.adishop-seller-reorder-product-media]
+verify_jwt = false
+
+[functions.adishop-messages]
+verify_jwt = false
+
+[functions.adishop-seller-business]
 verify_jwt = false
 
 [functions.adishop-admin-session]
@@ -245,4 +272,28 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.adishop-admin-update-store-status]
+verify_jwt = false
+
+[functions.adishop-admin-refunds]
+verify_jwt = false
+
+[functions.adishop-admin-refund-detail]
+verify_jwt = false
+
+[functions.adishop-admin-update-refund]
+verify_jwt = false
+
+[functions.adishop-admin-exchanges]
+verify_jwt = false
+
+[functions.adishop-admin-exchange-detail]
+verify_jwt = false
+
+[functions.adishop-admin-update-exchange]
+verify_jwt = false
+
+[functions.adishop-admin-reviews]
+verify_jwt = false
+
+[functions.adishop-admin-review-detail]
 verify_jwt = false

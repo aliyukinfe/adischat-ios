@@ -547,6 +547,7 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
                 vm.loadSellerProducts()
                 vm.loadSellerRequests()
                 vm.loadSellerMessages()
+                vm.loadSellerBusiness()
             },
             messageActions = remember(vm) {
                 SellerMessageActions(
@@ -558,6 +559,22 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
                     upload = vm::sendSellerAttachment,
                     update = vm::updateSellerConversation,
                     typing = vm::updateConversationTyping,
+                )
+            },
+            businessActions = remember(vm) {
+                SellerBusinessActions(
+                    refresh = { storeId -> vm.loadSellerBusiness(storeId) },
+                    loadRange = { storeId, start, end -> vm.loadSellerBusiness(storeId, start, end) },
+                    updateStore = vm::updateSellerStore,
+                    updateInventory = vm::updateSellerInventory,
+                    updateInventoryBulk = vm::updateSellerInventoryBulk,
+                    saveCoupon = vm::saveSellerCoupon,
+                    saveCampaign = vm::saveSellerCampaign,
+                    replyReview = vm::replySellerReview,
+                    saveCustomerNote = vm::saveSellerCustomerNote,
+                    openCustomerChat = vm::openSellerCustomerConversation,
+                    saveSettings = vm::saveSellerSettings,
+                    uploadStoreAsset = vm::uploadSellerStoreAsset,
                 )
             },
             onSaveApplicationDraft = vm::saveSellerApplicationDraft,

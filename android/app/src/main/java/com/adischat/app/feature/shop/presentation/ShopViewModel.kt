@@ -15,11 +15,17 @@ import com.adischat.app.feature.shop.data.SellerRepository
 import com.adischat.app.feature.shop.data.ShopAddressRequest
 import com.adischat.app.feature.shop.data.ShopIdentityRepository
 import com.adischat.app.feature.shop.data.ShopNotificationRepository
+import com.adischat.app.feature.shop.data.ShopMessageRepository
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopAdminRepository
 import com.adischat.app.feature.shop.data.ShopAdminReviewProductRequest
 import com.adischat.app.feature.shop.data.ShopAdminReviewSellerRequest
+import com.adischat.app.feature.shop.data.ShopSellerApplicationRequest
 import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
+import com.adischat.app.feature.shop.data.ShopSellerCustomerNoteRequest
+import com.adischat.app.feature.shop.data.ShopSellerInventoryChange
+import com.adischat.app.feature.shop.data.ShopSellerInventoryUpdateRequest
+import com.adischat.app.feature.shop.data.ShopSellerReviewReplyRequest
 import com.adischat.app.feature.shop.data.ShopStateReducers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +44,7 @@ class ShopViewModel(
     private val notificationRepository: ShopNotificationRepository = ShopNotificationRepository(identityRepository),
     private val checkoutRepository: CheckoutRepository = CheckoutRepository(identityRepository),
     private val sellerRepository: SellerRepository = SellerRepository(identityRepository),
+    private val messageRepository: ShopMessageRepository = ShopMessageRepository(identityRepository),
     private val adminRepository: ShopAdminRepository = ShopAdminRepository(identityRepository),
 ) : ViewModel() {
     private val _state = MutableStateFlow(ShopHomeState())
@@ -48,6 +55,7 @@ class ShopViewModel(
 
     private val buyNowIdempotencyKeys = mutableMapOf<String, String>()
     private val confirmIdempotencyKeys = mutableMapOf<String, String>()
+    private var protectedRequestGeneration = 0L
 
     init {
         refresh()
@@ -62,6 +70,7 @@ class ShopViewModel(
     }
 
     fun syncShopIdentity() {
+        ensureActiveAccountState()
         viewModelScope.launch {
             identityRepository.currentProfile()
                 .onSuccess {
@@ -441,8 +450,22 @@ class ShopViewModel(
     }
 
     fun chatSeller(product: ShopProductDto) {
-        val storeName = product.store?.name ?: "this seller"
-        _state.value = _state.value.copy(message = "Chat with $storeName is being connected to AdisChat messaging.")
+        if (product.id.isBlank()) return
+        viewModelScope.launch {
+            setBusy("chat-${product.id}", true)
+            messageRepository.open(productId = product.id)
+                .onSuccess { conversation ->
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedConversation = conversation,
+                        conversationMessages = emptyList(),
+                        error = null,
+                    )
+                    loadConversationMessages(conversation.id)
+                    _state.value = _state.value.copy(message = "Seller conversation opened")
+                }
+                .onFailure { showProtectedError(it, "Conversation could not be started.") }
+            setBusy("chat-${product.id}", false)
+        }
     }
 
     fun confirmCheckout(checkoutSessionId: String, addressId: String, paymentMethodCode: String) {
@@ -489,6 +512,217 @@ class ShopViewModel(
         loadProtected { sellerRepository.requests().onSuccess { requests ->
             _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
         } }
+    }
+
+    fun loadSellerBusiness(storeId: String? = null, start: String? = null, end: String? = null) {
+        loadProtected {
+            sellerRepository.business(storeId, start, end).onSuccess { business ->
+                _protectedState.value = _protectedState.value.copy(sellerBusiness = business, error = null)
+            }
+        }
+    }
+
+    fun updateSellerStore(body: Map<String, Any?>) = runSellerBusinessMutation("store-update", body)
+
+    fun saveSellerCoupon(body: Map<String, Any?>) = runSellerBusinessMutation("coupon-save", body)
+
+    fun saveSellerCampaign(body: Map<String, Any?>) = runSellerBusinessMutation("campaign-save", body)
+
+    fun saveSellerSettings(body: Map<String, Any?>) = runSellerBusinessMutation("settings-save", body)
+
+    fun updateSellerInventory(storeId: String, inventoryId: String, quantity: Int, threshold: Int) {
+        val busyKey = "inventory-$inventoryId"
+        viewModelScope.launch {
+            setBusy(busyKey, true)
+            sellerRepository.updateInventory(
+                ShopSellerInventoryUpdateRequest(
+                    storeId = storeId,
+                    requestId = "android-inventory-${UUID.randomUUID()}",
+                    reason = "manual_adjustment",
+                    items = listOf(ShopSellerInventoryChange(inventoryId, quantity, threshold)),
+                ),
+            ).onSuccess { loadSellerBusiness(storeId) }
+                .onFailure { showProtectedError(it, "Inventory could not be updated.") }
+            setBusy(busyKey, false)
+        }
+    }
+
+    fun updateSellerInventoryBulk(storeId: String, changes: List<ShopSellerInventoryChange>) {
+        if (changes.isEmpty()) return
+        viewModelScope.launch {
+            setBusy("inventory-bulk", true)
+            sellerRepository.updateInventory(
+                ShopSellerInventoryUpdateRequest(
+                    storeId = storeId,
+                    requestId = UUID.randomUUID().toString(),
+                    reason = "bulk_adjustment",
+                    items = changes,
+                ),
+            ).onSuccess { loadSellerBusiness(storeId) }
+                .onFailure { showProtectedError(it, "Inventory could not be updated.") }
+            setBusy("inventory-bulk", false)
+        }
+    }
+
+    fun replySellerReview(storeId: String, reviewId: String, reviewType: String, reply: String) {
+        viewModelScope.launch {
+            setBusy("review-$reviewId", true)
+            sellerRepository.replyToReview(ShopSellerReviewReplyRequest(storeId, reviewId, reviewType, reply))
+                .onSuccess { loadSellerBusiness(storeId) }
+                .onFailure { showProtectedError(it, "Review reply could not be saved.") }
+            setBusy("review-$reviewId", false)
+        }
+    }
+
+    fun saveSellerCustomerNote(storeId: String, orderGroupId: String, note: String) {
+        viewModelScope.launch {
+            sellerRepository.saveCustomerNote(ShopSellerCustomerNoteRequest(storeId, orderGroupId, note))
+                .onSuccess { loadSellerBusiness(storeId) }
+                .onFailure { showProtectedError(it, "Customer note could not be saved.") }
+        }
+    }
+
+    fun uploadSellerStoreAsset(storeId: String, kind: String, bytes: ByteArray, mimeType: String) {
+        viewModelScope.launch {
+            setBusy("store-$kind", true)
+            sellerRepository.uploadStoreAsset(storeId, kind, bytes, mimeType)
+                .onSuccess { loadSellerBusiness(storeId) }
+                .onFailure { showProtectedError(it, "Store image could not be uploaded.") }
+            setBusy("store-$kind", false)
+        }
+    }
+
+    private fun runSellerBusinessMutation(action: String, body: Map<String, Any?>) {
+        viewModelScope.launch {
+            setBusy("seller-$action", true)
+            sellerRepository.businessAction(action, body)
+                .onSuccess { loadSellerBusiness(body["storeId"] as? String) }
+                .onFailure { showProtectedError(it, "Seller changes could not be saved.") }
+            setBusy("seller-$action", false)
+        }
+    }
+
+    fun loadSellerMessages(search: String = "", archived: Boolean = false) {
+        viewModelScope.launch {
+            messageRepository.sellerConversations(search, archived)
+                .onSuccess { (conversations, unreadCount) ->
+                    _protectedState.value = _protectedState.value.copy(
+                        sellerConversations = conversations,
+                        sellerMessageUnreadCount = unreadCount,
+                        error = null,
+                    )
+                }
+                .onFailure { showProtectedError(it, "Seller messages are temporarily unavailable.") }
+        }
+    }
+
+    fun loadConversationMessages(conversationId: String) {
+        fetchConversationMessages(conversationId, allowOpen = true)
+    }
+
+    fun openSellerCustomerConversation(orderGroupId: String) {
+        if (orderGroupId.isBlank()) return
+        viewModelScope.launch {
+            messageRepository.open(orderGroupId = orderGroupId)
+                .onSuccess { conversation -> loadConversationMessages(conversation.id) }
+                .onFailure { showProtectedError(it, "Customer conversation could not be opened.") }
+        }
+    }
+
+    fun refreshConversationMessages(conversationId: String) {
+        fetchConversationMessages(conversationId, allowOpen = false)
+    }
+
+    private fun fetchConversationMessages(conversationId: String, allowOpen: Boolean) {
+        if (conversationId.isBlank()) return
+        viewModelScope.launch {
+            setBusy("conversation-$conversationId", true)
+            messageRepository.messages(conversationId)
+                .onSuccess { (conversation, messages) ->
+                    val selectedId = _protectedState.value.selectedConversation?.id
+                    if (!allowOpen && selectedId != conversationId) {
+                        setBusy("conversation-$conversationId", false)
+                        return@onSuccess
+                    }
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedConversation = conversation ?: _protectedState.value.selectedConversation,
+                        conversationMessages = messages,
+                        error = null,
+                    )
+                    if ((conversation?.unreadCount ?: 0) > 0) {
+                        messageRepository.update(conversationId, "read")
+                    }
+                    loadSellerMessages()
+                }
+                .onFailure { showProtectedError(it, "Messages could not be loaded.") }
+            setBusy("conversation-$conversationId", false)
+        }
+    }
+
+    fun closeConversation() {
+        _protectedState.value = _protectedState.value.copy(
+            selectedConversation = null,
+            conversationMessages = emptyList(),
+        )
+    }
+
+    fun sendSellerMessage(conversationId: String, body: String) {
+        if (conversationId.isBlank() || body.isBlank()) return
+        viewModelScope.launch {
+            setBusy("send-$conversationId", true)
+            messageRepository.send(conversationId, body)
+                .onSuccess { message ->
+                    val merged = (_protectedState.value.conversationMessages + message)
+                        .distinctBy { item -> item.id.ifBlank { item.clientMessageId } }
+                    _protectedState.value = _protectedState.value.copy(conversationMessages = merged, error = null)
+                    loadSellerMessages()
+                }
+                .onFailure { showProtectedError(it, "Message could not be sent.") }
+            setBusy("send-$conversationId", false)
+        }
+    }
+
+    fun sendSellerAttachment(
+        conversationId: String,
+        bytes: ByteArray,
+        mimeType: String,
+        fileName: String,
+    ) {
+        if (conversationId.isBlank() || bytes.isEmpty()) return
+        viewModelScope.launch {
+            setBusy("attachment-$conversationId", true)
+            messageRepository.sendAttachment(conversationId, bytes, mimeType, fileName)
+                .onSuccess { message ->
+                    val merged = (_protectedState.value.conversationMessages + message)
+                        .distinctBy { item -> item.id.ifBlank { item.clientMessageId } }
+                    _protectedState.value = _protectedState.value.copy(conversationMessages = merged, error = null)
+                    loadSellerMessages()
+                }
+                .onFailure { showProtectedError(it, "Attachment could not be sent.") }
+            setBusy("attachment-$conversationId", false)
+        }
+    }
+
+    fun updateSellerConversation(conversationId: String, action: String) {
+        if (conversationId.isBlank()) return
+        viewModelScope.launch {
+            messageRepository.update(conversationId, action)
+                .onSuccess { conversation ->
+                    if (conversation != null && action !in setOf("delete", "archive")) {
+                        _protectedState.value = _protectedState.value.copy(selectedConversation = conversation)
+                    }
+                    if (action == "delete" || action == "archive") closeConversation()
+                    loadSellerMessages()
+                }
+                .onFailure { showProtectedError(it, "Conversation could not be updated.") }
+        }
+    }
+
+    fun updateConversationTyping(conversationId: String, typing: Boolean) {
+        if (conversationId.isBlank()) return
+        viewModelScope.launch {
+            messageRepository.update(conversationId, if (typing) "typing" else "stopped_typing")
+        }
     }
 
     fun createSellerProductDraft() {
@@ -648,7 +882,91 @@ class ShopViewModel(
         }
     }
 
+    fun saveSellerApplicationDraft(request: ShopSellerApplicationRequest) {
+        if (_protectedState.value.busyIds.contains("seller-application")) return
+        viewModelScope.launch {
+            setBusy("seller-application", true)
+            sellerRepository.saveApplicationDraft(request.copy(requestId = "android-seller-draft-${UUID.randomUUID()}"))
+                .onSuccess { (status, application) ->
+                    _protectedState.value = _protectedState.value.copy(sellerStatus = status, sellerApplication = application, error = null)
+                    _state.value = _state.value.copy(message = "Seller application draft saved")
+                }
+                .onFailure { showProtectedError(it, "Couldn't save seller application. Try again.") }
+            setBusy("seller-application", false)
+        }
+    }
+
+    fun submitCompleteSellerApplication(request: ShopSellerApplicationRequest) {
+        if (_protectedState.value.busyIds.contains("seller-application")) return
+        viewModelScope.launch {
+            setBusy("seller-application", true)
+            sellerRepository.submitApplication(request.copy(requestId = "android-seller-submit-${UUID.randomUUID()}"))
+                .onSuccess { (status, application) ->
+                    _protectedState.value = _protectedState.value.copy(sellerStatus = status, sellerApplication = application, error = null)
+                    _state.value = _state.value.copy(message = "Seller application submitted")
+                }
+                .onFailure { showProtectedError(it, "Couldn't submit seller application. Complete required fields and try again.") }
+            setBusy("seller-application", false)
+        }
+    }
+
+    fun respondSellerApplicationInfoRequest(message: String) {
+        if (_protectedState.value.busyIds.contains("seller-application")) return
+        viewModelScope.launch {
+            setBusy("seller-application", true)
+            sellerRepository.respondApplicationInfoRequest(message)
+                .onSuccess { (status, application) ->
+                    _protectedState.value = _protectedState.value.copy(sellerStatus = status, sellerApplication = application, error = null)
+                    _state.value = _state.value.copy(message = "Application response sent")
+                }
+                .onFailure { showProtectedError(it, "Couldn't send your response. Try again.") }
+            setBusy("seller-application", false)
+        }
+    }
+
+    fun uploadSellerApplicationDocument(documentType: String, bytes: ByteArray, fileName: String, mimeType: String) {
+        if (_protectedState.value.busyIds.contains("seller-application-document")) return
+        viewModelScope.launch {
+            setBusy("seller-application-document", true)
+            sellerRepository.uploadApplicationDocument(documentType, bytes, fileName, mimeType)
+                .onSuccess { (status, application) ->
+                    _protectedState.value = _protectedState.value.copy(sellerStatus = status, sellerApplication = application, error = null)
+                    _state.value = _state.value.copy(message = "Document uploaded securely")
+                }
+                .onFailure { showProtectedError(it, "Document could not be uploaded. Use JPG, PNG or PDF up to 10 MB.") }
+            setBusy("seller-application-document", false)
+        }
+    }
+
+    fun removeSellerApplicationDocument(documentId: String) {
+        if (documentId.isBlank() || _protectedState.value.busyIds.contains("seller-application-document")) return
+        viewModelScope.launch {
+            setBusy("seller-application-document", true)
+            sellerRepository.removeApplicationDocument(documentId)
+                .onSuccess { (status, application) ->
+                    _protectedState.value = _protectedState.value.copy(sellerStatus = status, sellerApplication = application, error = null)
+                    _state.value = _state.value.copy(message = "Document removed")
+                }
+                .onFailure { showProtectedError(it, "Document could not be removed. Try again.") }
+            setBusy("seller-application-document", false)
+        }
+    }
+
+    fun respondSellerRequest(kind: String, requestId: String, message: String) {
+        viewModelScope.launch {
+            setBusy(requestId, true)
+            sellerRepository.respondToRequest(kind, requestId, message)
+                .onSuccess { requests ->
+                    _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
+                    _state.value = _state.value.copy(message = "Response sent")
+                }
+                .onFailure { showProtectedError(it, "Couldn't send the response. Try again.") }
+            setBusy(requestId, false)
+        }
+    }
+
     fun loadAdminSession() {
+        ensureActiveAccountState()
         viewModelScope.launch {
             _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
             adminRepository.session()
@@ -683,10 +1001,16 @@ class ShopViewModel(
                 return@launch
             }
             val stores = adminRepository.stores().getOrDefault(emptyList())
+            val refunds = adminRepository.refunds().getOrDefault(emptyList())
+            val exchanges = adminRepository.exchanges().getOrDefault(emptyList())
+            val reviews = adminRepository.reviews().getOrDefault(emptyList())
             _protectedState.value = _protectedState.value.copy(
                 adminSellerApplications = sellers,
                 adminProducts = products,
                 adminStores = stores,
+                adminRefundRequests = refunds,
+                adminExchangeRequests = exchanges,
+                adminReviews = reviews,
                 adminLoading = false,
                 adminError = null,
             )
@@ -849,15 +1173,81 @@ class ShopViewModel(
         }
     }
 
+    fun updateAdminRefund(requestId: String, action: String, reason: String) {
+        if (requestId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(requestId, true)
+            adminRepository.updateRefund(requestId, action, reason)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Refund updated")
+                    loadAdminQueues()
+                }
+                .onFailure { showAdminError(it, "Refund update could not be saved.") }
+            setBusy(requestId, false)
+        }
+    }
+
+    fun updateAdminExchange(requestId: String, action: String, reason: String) {
+        if (requestId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(requestId, true)
+            adminRepository.updateExchange(requestId, action, reason)
+                .onSuccess {
+                    _state.value = _state.value.copy(message = "Exchange updated")
+                    loadAdminQueues()
+                }
+                .onFailure { showAdminError(it, "Exchange update could not be saved.") }
+            setBusy(requestId, false)
+        }
+    }
+
+    fun moderateAdminReview(reviewId: String, reviewType: String, action: String, reason: String) {
+        if (reviewId.isBlank()) return
+        viewModelScope.launch {
+            setBusy(reviewId, true)
+            adminRepository.moderateReview(reviewId, reviewType, action, reason)
+                .onSuccess {
+                    val actionLabel = action.replaceFirstChar { character ->
+                        if (character.isLowerCase()) character.titlecase() else character.toString()
+                    }
+                    _state.value = _state.value.copy(message = "Review ${actionLabel.lowercase()}.")
+                    loadAdminQueues()
+                }
+                .onFailure { showAdminError(it, "Review moderation could not be saved.") }
+            setBusy(reviewId, false)
+        }
+    }
+
     fun clearMessage() {
         _state.value = _state.value.copy(message = null)
     }
 
     private fun loadProtected(block: suspend () -> Result<*>) {
+        ensureActiveAccountState()
+        val requestGeneration = ++protectedRequestGeneration
         _protectedState.value = _protectedState.value.copy(loading = true, error = null)
         viewModelScope.launch {
-            block().onFailure { showProtectedError(it, "Couldn't load this right now. Try again.") }
-            _protectedState.value = _protectedState.value.copy(loading = false)
+            block().onFailure {
+                if (requestGeneration == protectedRequestGeneration) {
+                    showProtectedError(it, "Couldn't load this right now. Try again.")
+                }
+            }
+            if (requestGeneration == protectedRequestGeneration) {
+                _protectedState.value = _protectedState.value.copy(loading = false)
+            }
+        }
+    }
+
+    private fun ensureActiveAccountState() {
+        val activeUid = identityRepository.activeUserId()
+        val current = _protectedState.value
+        val accountState = ShopStateReducers.stateForActiveIdentity(current, activeUid)
+        if (accountState != current) {
+            _protectedState.value = accountState
+            _state.value = _state.value.copy(cartCount = 0, shopIdentityReady = false, message = null)
+            buyNowIdempotencyKeys.clear()
+            confirmIdempotencyKeys.clear()
+            protectedRequestGeneration++
         }
     }
 

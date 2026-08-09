@@ -143,6 +143,27 @@ interface ShopFunctionApi {
     @POST("functions/v1/adishop-submit-seller-application")
     suspend fun submitSellerApplication(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationRequest): ShopEnvelope<Unit>
 
+    @POST("functions/v1/adishop-seller-save-application-draft")
+    suspend fun saveSellerApplicationDraft(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-submit-application")
+    suspend fun submitCompleteSellerApplication(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-respond-application-info-request")
+    suspend fun respondSellerApplicationInfoRequest(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationInfoResponseRequest): ShopEnvelope<Unit>
+
+    @Multipart
+    @POST("functions/v1/adishop-seller-upload-application-document")
+    suspend fun uploadSellerApplicationDocument(
+        @Header("Authorization") authorization: String,
+        @Part document: MultipartBody.Part,
+        @Part("documentType") documentType: RequestBody,
+        @Part("requestId") requestId: RequestBody,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-remove-application-document")
+    suspend fun removeSellerApplicationDocument(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationDocumentRemoveRequest): ShopEnvelope<Unit>
+
     @GET("functions/v1/adishop-list-seller-order-groups")
     suspend fun sellerOrderGroups(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
 
@@ -166,6 +187,12 @@ interface ShopFunctionApi {
 
     @GET("functions/v1/adishop-seller-requests")
     suspend fun sellerRequests(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-respond-refund-request")
+    suspend fun sellerRespondRefundRequest(@Header("Authorization") authorization: String, @Body body: ShopSellerRequestResponseRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-respond-exchange-request")
+    suspend fun sellerRespondExchangeRequest(@Header("Authorization") authorization: String, @Body body: ShopSellerRequestResponseRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-seller-products")
     suspend fun sellerProducts(
@@ -202,6 +229,92 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-seller-reorder-product-media")
     suspend fun sellerReorderProductMedia(@Header("Authorization") authorization: String, @Body body: ShopSellerProductMediaReorderRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-seller-business")
+    suspend fun sellerBusiness(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "dashboard",
+        @Query("storeId") storeId: String? = null,
+        @Query("start") start: String? = null,
+        @Query("end") end: String? = null,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-business")
+    suspend fun sellerBusinessAction(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String,
+        @Body body: Map<String, @JvmSuppressWildcards Any?>,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-business")
+    suspend fun sellerInventoryUpdate(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "inventory-update",
+        @Body body: ShopSellerInventoryUpdateRequest,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-business")
+    suspend fun sellerReviewReply(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "review-reply",
+        @Body body: ShopSellerReviewReplyRequest,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-business")
+    suspend fun sellerCustomerNote(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "customer-note",
+        @Body body: ShopSellerCustomerNoteRequest,
+    ): ShopEnvelope<Unit>
+
+    @Multipart
+    @POST("functions/v1/adishop-seller-business?action=store-asset")
+    suspend fun sellerStoreAsset(
+        @Header("Authorization") authorization: String,
+        @Part asset: MultipartBody.Part,
+        @Part("storeId") storeId: RequestBody,
+        @Part("kind") kind: RequestBody,
+    ): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-messages?action=seller-list")
+    suspend fun sellerConversations(
+        @Header("Authorization") authorization: String,
+        @Query("search") search: String = "",
+        @Query("archived") archived: Boolean = false,
+    ): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-messages?action=buyer-list")
+    suspend fun buyerConversations(
+        @Header("Authorization") authorization: String,
+        @Query("search") search: String = "",
+        @Query("archived") archived: Boolean = false,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-messages?action=open")
+    suspend fun openConversation(@Header("Authorization") authorization: String, @Body body: ShopOpenConversationRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-messages?action=messages")
+    suspend fun conversationMessages(
+        @Header("Authorization") authorization: String,
+        @Query("conversationId") conversationId: String,
+        @Query("before") before: String? = null,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-messages?action=send")
+    suspend fun sendMessage(@Header("Authorization") authorization: String, @Body body: ShopSendMessageRequest): ShopEnvelope<Unit>
+
+    @Multipart
+    @POST("functions/v1/adishop-messages?action=upload")
+    suspend fun uploadMessageAttachment(
+        @Header("Authorization") authorization: String,
+        @Part attachment: MultipartBody.Part,
+        @Part("conversationId") conversationId: RequestBody,
+        @Part("clientMessageId") clientMessageId: RequestBody,
+        @Part("body") body: RequestBody,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-messages?action=update")
+    suspend fun updateConversation(@Header("Authorization") authorization: String, @Body body: ShopConversationActionRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-admin-session")
     suspend fun adminSession(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
@@ -277,4 +390,22 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-admin-update-store-status")
     suspend fun adminUpdateStoreStatus(@Header("Authorization") authorization: String, @Body body: ShopAdminStoreStatusRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-refunds")
+    suspend fun adminRefunds(@Header("Authorization") authorization: String, @Query("status") status: String = "all", @Query("search") search: String = ""): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-update-refund")
+    suspend fun adminUpdateRefund(@Header("Authorization") authorization: String, @Body body: ShopAdminRequestUpdateRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-exchanges")
+    suspend fun adminExchanges(@Header("Authorization") authorization: String, @Query("status") status: String = "all", @Query("search") search: String = ""): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-update-exchange")
+    suspend fun adminUpdateExchange(@Header("Authorization") authorization: String, @Body body: ShopAdminRequestUpdateRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-reviews")
+    suspend fun adminReviews(@Header("Authorization") authorization: String, @Query("status") status: String = "all", @Query("type") type: String = "all"): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-review-detail")
+    suspend fun adminModerateReview(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewModerationRequest): ShopEnvelope<Unit>
 }
