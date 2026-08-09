@@ -563,6 +563,9 @@ class CheckoutRepository(
     }
 }
 
+internal fun sellerRequestIdempotencyKey(kind: String, requestId: String, expectedVersion: Int): String =
+    "android-seller-$kind-$requestId-v$expectedVersion"
+
 class SellerRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
@@ -657,12 +660,13 @@ class SellerRepository(
         withSellerAuthRetry { token -> service.sellerRequests(token) }.sellerRequests ?: ShopSellerRequestsDto()
     }
 
-    suspend fun respondToRequest(kind: String, requestId: String, message: String): Result<ShopSellerRequestsDto> = runCatching {
+    suspend fun respondToRequest(kind: String, requestId: String, message: String, expectedVersion: Int): Result<ShopSellerRequestsDto> = runCatching {
         val service = api ?: error("Request response is temporarily unavailable.")
         val body = ShopSellerRequestResponseRequest(
             requestId = requestId,
             message = message,
-            idempotencyKey = "android-seller-request-${java.util.UUID.randomUUID()}",
+            idempotencyKey = sellerRequestIdempotencyKey(kind, requestId, expectedVersion),
+            expectedVersion = expectedVersion,
         )
         withSellerAuthRetry { token ->
             if (kind == "exchange") service.sellerRespondExchangeRequest(token, body) else service.sellerRespondRefundRequest(token, body)

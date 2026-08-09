@@ -952,10 +952,10 @@ class ShopViewModel(
         }
     }
 
-    fun respondSellerRequest(kind: String, requestId: String, message: String) {
+    fun respondSellerRequest(kind: String, requestId: String, message: String, expectedVersion: Int) {
         viewModelScope.launch {
             setBusy(requestId, true)
-            sellerRepository.respondToRequest(kind, requestId, message)
+            sellerRepository.respondToRequest(kind, requestId, message, expectedVersion)
                 .onSuccess { requests ->
                     _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
                     _state.value = _state.value.copy(message = "Response sent")

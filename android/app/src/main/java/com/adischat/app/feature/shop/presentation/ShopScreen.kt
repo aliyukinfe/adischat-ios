@@ -921,7 +921,7 @@ private data class ShopAccountActions(
     val saveSellerApplicationDraft: (ShopSellerApplicationRequest) -> Unit,
     val submitCompleteSellerApplication: (ShopSellerApplicationRequest) -> Unit,
     val respondSellerApplicationInfoRequest: (String) -> Unit,
-    val respondSellerRequest: (String, String, String) -> Unit,
+    val respondSellerRequest: (String, String, String, Int) -> Unit,
     val loadAdminSession: () -> Unit,
 )
 
@@ -3940,8 +3940,12 @@ private fun PostDeliveryActionSection(
             }
             if (refundRequests.isNotEmpty() || exchangeRequests.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    refundRequests.take(2).forEach { RequestStatusRow("Refund", it.reasonLabel ?: backendLabel(it.reasonCode), it.status) }
-                    exchangeRequests.take(2).forEach { RequestStatusRow("Exchange", it.reasonLabel ?: backendLabel(it.reasonCode), it.status) }
+                    refundRequests.take(2).forEach {
+                        RequestStatusRow("Refund", it.reasonLabel ?: backendLabel(it.reasonCode), it.status, it.buyerVisibleUpdate)
+                    }
+                    exchangeRequests.take(2).forEach {
+                        RequestStatusRow("Exchange", it.reasonLabel ?: backendLabel(it.reasonCode), it.status, it.buyerVisibleUpdate)
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -3985,11 +3989,14 @@ private fun RowScope.ActionPill(label: String, enabled: Boolean, icon: ImageVect
 }
 
 @Composable
-private fun RequestStatusRow(type: String, reason: String, status: String) {
+private fun RequestStatusRow(type: String, reason: String, status: String, buyerVisibleUpdate: String?) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("$type request", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
             Text(reason, color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            buyerVisibleUpdate?.takeIf { it.isNotBlank() }?.let { update ->
+                Text(update, color = ShopInk, fontSize = 12.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            }
         }
         MiniBadge(backendLabel(status), orderStatusBg(status), orderStatusColor(status))
     }

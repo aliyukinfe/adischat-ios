@@ -737,6 +737,44 @@ async function sellerRequests(request: Request) {
   return response({ ok: true, sellerRequests: data as Json });
 }
 
+async function sellerRespondToRequest(request: Request, kind: "refund" | "exchange") {
+  try {
+    const { client, profileId } = await currentSession(request);
+    const body = await jsonBody(request);
+    const id = String(body.requestId || body.refundRequestId || body.exchangeRequestId || "");
+    const message = String(body.message || body.response || "").trim().slice(0, 1600);
+    const requestId = String(body.idempotencyKey || request.headers.get("x-request-id") || "").trim().slice(0, 160);
+    const expectedVersion = Number(body.expectedVersion);
+    if (!id || message.length < 5 || requestId.length < 8 || !Number.isInteger(expectedVersion) || expectedVersion < 1) {
+      return structuredError("seller_response_required", "Refresh the request and add a response for the buyer.", 400, false);
+    }
+    const result = await client.rpc("adishop_seller_respond_request", {
+      p_profile_id: profileId,
+      p_kind: kind,
+      p_request_id: id,
+      p_message: message,
+      p_idempotency_key: requestId,
+      p_expected_version: expectedVersion,
+    });
+    if (result.error) {
+      const detail = result.error.message.toLowerCase();
+      if (detail.includes("seller-request-not-found")) return structuredError("seller_request_not_found", "Request not found.", 404, false);
+      if (detail.includes("stale-seller-request")) return structuredError("stale_request", "This request changed. Refresh it and try again.", 409, false);
+      if (detail.includes("seller-response-required") || detail.includes("seller-idempotency-key-required")) {
+        return structuredError("seller_response_required", "Add a response for the buyer.", 400, false);
+      }
+      return structuredError("seller_request_failed", "Request response could not be saved.", 500, true);
+    }
+    return sellerRequests(request);
+  } catch (error) {
+    const code = error instanceof Error ? error.message : "";
+    if (["missing-session", "bad-token", "bad-alg", "bad-signature", "bad-claims", "expired", "invalid-session"].includes(code)) {
+      return structuredError("auth_required", "Please sign in again.", 401, false);
+    }
+    return structuredError("seller_request_failed", "Request response could not be saved.", 500, true);
+  }
+}
+
 async function cancelOrder(request: Request) {
   const { client, profileId } = await currentSession(request);
   const body = await jsonBody(request);
@@ -1650,6 +1688,8 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-seller-hand-to-carrier") return await transitionSellerOrderGroup(request, "handed_to_carrier");
     if (name === "adishop-seller-verify-delivery-code") return await verifySellerDeliveryCode(request);
     if (name === "adishop-seller-requests") return await sellerRequests(request);
+    if (name === "adishop-seller-respond-refund-request") return await sellerRespondToRequest(request, "refund");
+    if (name === "adishop-seller-respond-exchange-request") return await sellerRespondToRequest(request, "exchange");
     if (name === "adishop-seller-products") return await listSellerProducts(request);
     if (name === "adishop-seller-product-detail") return await getSellerProduct(request);
     if (name === "adishop-seller-create-product") return await createSellerProduct(request);

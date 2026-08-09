@@ -232,12 +232,13 @@ internal fun SellerCenterScreen(
     onLoad: () -> Unit,
     onLoadSellerFeatures: () -> Unit,
     messageActions: SellerMessageActions,
+    businessActions: SellerBusinessActions,
     onSaveApplicationDraft: (ShopSellerApplicationRequest) -> Unit,
     onSubmitCompleteApplication: (ShopSellerApplicationRequest) -> Unit,
     onRespondApplicationInfoRequest: (String) -> Unit,
     onUploadApplicationDocument: (String, ByteArray, String, String) -> Unit,
     onRemoveApplicationDocument: (String) -> Unit,
-    onRespondSellerRequest: (String, String, String) -> Unit,
+    onRespondSellerRequest: (String, String, String, Int) -> Unit,
     onSellerAction: (String, String, String, String?, String?, String?) -> Unit,
     onCreateProduct: () -> Unit,
     onEditProduct: (String) -> Unit,
@@ -361,7 +362,7 @@ internal fun SellerCenterScreen(
                     }
                 }
                 SellerCenterTab.More -> {
-                    item { SellerMorePage() }
+                    item { SellerBusinessSuite(protectedState.sellerBusiness, protectedState.busyIds, businessActions) }
                 }
             }
         }
@@ -471,7 +472,7 @@ internal fun sellerStatusBg(status: String): Color = when (status) {
 private fun SellerRequestsPage(
     requests: ShopSellerRequestsDto?,
     busyIds: Set<String>,
-    onRespond: (String, String, String) -> Unit,
+    onRespond: (String, String, String, Int) -> Unit,
 ) {
     var responseText by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -498,7 +499,7 @@ private fun SellerRequestsPage(
                 body = request.buyerVisibleUpdate ?: request.description.orEmpty(),
                 amount = formatEtb(request.requestedAmount),
                 busy = busyIds.contains(request.id),
-                onRespond = { onRespond("refund", request.id, responseText.ifBlank { "Seller has acknowledged this refund request." }) },
+                onRespond = { onRespond("refund", request.id, responseText.ifBlank { "Seller has acknowledged this refund request." }, request.version) },
             )
         }
         exchanges.forEach { request ->
@@ -509,7 +510,7 @@ private fun SellerRequestsPage(
                 body = request.buyerVisibleUpdate ?: request.description.orEmpty(),
                 amount = "",
                 busy = busyIds.contains(request.id),
-                onRespond = { onRespond("exchange", request.id, responseText.ifBlank { "Seller has acknowledged this exchange request." }) },
+                onRespond = { onRespond("exchange", request.id, responseText.ifBlank { "Seller has acknowledged this exchange request." }, request.version) },
             )
         }
     }
@@ -671,37 +672,6 @@ private fun SellerUnavailableModulePage(title: String, icon: ImageVector, body: 
                 message = "Unavailable until the protected backend endpoint is enabled.",
                 icon = icon,
             )
-        }
-    }
-}
-
-@Composable
-private fun SellerMorePage() {
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        PremiumSectionHeader("Seller tools", "Only backend-connected modules are interactive")
-        val modules = listOf(
-            Triple("Store Profile", "Banner, logo, business hours and policies", Icons.Default.Storefront),
-            Triple("Inventory", "Stock, reserved items and low-stock tools", Icons.Default.Inventory2),
-            Triple("Marketing", "Coupons, campaigns and featured products", Icons.Default.Campaign),
-            Triple("Finance", "Payouts are not configured yet.", Icons.Default.AccountBalanceWallet),
-            Triple("Analytics", "Only real analytics will appear when backend metrics exist.", Icons.Default.Analytics),
-            Triple("Customers", "Recent buyers without private account identifiers.", Icons.Default.People),
-            Triple("Reviews", "Product and store reviews when review APIs are ready.", Icons.Default.Reviews),
-            Triple("Returns", "Return requests and seller-safe actions.", Icons.Default.Assignment),
-            Triple("Settings", "Seller notifications, shipping, security and help.", Icons.Default.Settings),
-        )
-        modules.chunked(2).forEach { row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { module ->
-                    PremiumUnavailableModuleCard(
-                        title = module.first,
-                        message = module.second,
-                        icon = module.third,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                if (row.size == 1) Spacer(Modifier.weight(1f))
-            }
         }
     }
 }

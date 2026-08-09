@@ -527,6 +527,7 @@ data class ShopRefundRequestDto(
     @SerializedName("requested_amount") val requestedAmount: Int = 0,
     val currency: String = "ETB",
     val status: String = "submitted",
+    val version: Int = 1,
     @SerializedName("seller_response") val sellerResponse: String? = null,
     @SerializedName("buyer_visible_update") val buyerVisibleUpdate: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
@@ -541,6 +542,7 @@ data class ShopExchangeRequestDto(
     @SerializedName("reason_label") val reasonLabel: String? = null,
     val description: String? = null,
     val status: String = "submitted",
+    val version: Int = 1,
     @SerializedName("seller_response") val sellerResponse: String? = null,
     @SerializedName("buyer_visible_update") val buyerVisibleUpdate: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
@@ -1101,6 +1103,7 @@ data class ShopSellerRequestResponseRequest(
     val requestId: String,
     val message: String,
     val idempotencyKey: String,
+    val expectedVersion: Int,
 )
 
 data class ShopAdminReviewModerationRequest(

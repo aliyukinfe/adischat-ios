@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ShopSellerBusinessContractTest {
@@ -48,5 +49,37 @@ class ShopSellerBusinessContractTest {
         assertFalse("firebaseUid" in names)
         assertFalse("email" in names)
         assertFalse("phone" in names)
+    }
+
+    @Test
+    fun sellerResponseIdempotencyKeyIsStableForTheSameRequestVersion() {
+        val first = sellerRequestIdempotencyKey("refund", "request-123", 4)
+        val retry = sellerRequestIdempotencyKey("refund", "request-123", 4)
+
+        assertEquals(first, retry)
+        assertEquals("android-seller-refund-request-123-v4", first)
+    }
+
+    @Test
+    fun sellerResponseIdempotencyKeyChangesWithRequestVersion() {
+        val initial = sellerRequestIdempotencyKey("exchange", "request-123", 1)
+        val nextVersion = sellerRequestIdempotencyKey("exchange", "request-123", 2)
+
+        assertFalse(initial == nextVersion)
+    }
+
+    @Test
+    fun sellerResponsePayloadIncludesExpectedVersion() {
+        val json = Gson().toJson(
+            ShopSellerRequestResponseRequest(
+                requestId = "request-123",
+                message = "Seller acknowledged the request.",
+                idempotencyKey = sellerRequestIdempotencyKey("refund", "request-123", 7),
+                expectedVersion = 7,
+            ),
+        )
+
+        assertTrue(json.contains("\"expectedVersion\":7"))
+        assertTrue(json.contains("\"idempotencyKey\":\"android-seller-refund-request-123-v7\""))
     }
 }
