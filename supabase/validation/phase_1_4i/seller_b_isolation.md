@@ -11,3 +11,9 @@
 - Probe-session cleanup: PASS; the temporary session was revoked after validation
 - No Seller B mutation was performed
 - Final isolation gate: PASS
+# Phase 1.4I.2 Addendum - 2026-08-10
+
+- Controlled Abel account opened Seller Account for the separate `Abel mobile` store.
+- Seller Requests returned an empty state and did not display the Hulu Store refund request.
+- Server-side foreign Seller B response was rejected as not found.
+- Buyer order access remained available only in the buyer context and displayed the single public seller update.
