@@ -1615,6 +1615,497 @@ async function confirmCheckout(request: Request) {
   });
 }
 
+type ShopConversationAccess = {
+  conversation: Json;
+  role: "customer" | "seller";
+};
+
+async function conversationAccess(
+  client: ReturnType<typeof adminClient>,
+  profileId: string,
+  conversationId: string,
+): Promise<ShopConversationAccess | null> {
+  if (!conversationId) return null;
+  const { data, error } = await client
+    .from("shop_conversations")
+    .select("id,store_id,customer_profile_id,context_type,product_id,order_group_id,status,last_message_id,last_message_preview,last_message_at,created_at,updated_at")
+    .eq("id", conversationId)
+    .single();
+  if (error || !data) return null;
+  const conversation = data as Json;
+  if (String(conversation.customer_profile_id || "") === profileId) {
+    return { conversation, role: "customer" };
+  }
+  const stores = await sellerStoreIds(client, profileId);
+  if (stores.includes(String(conversation.store_id || ""))) {
+    return { conversation, role: "seller" };
+  }
+  return null;
+}
+
+async function conversationSummary(
+  client: ReturnType<typeof adminClient>,
+  conversation: Json,
+  profileId: string,
+): Promise<Json> {
+  const storeId = String(conversation.store_id || "");
+  const customerId = String(conversation.customer_profile_id || "");
+  const { data: state } = await client
+    .from("shop_conversation_participant_state")
+    .select("last_read_at,archived_at,muted_until,deleted_at,typing_expires_at")
+    .eq("conversation_id", conversation.id)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  const [{ data: store }, { data: customer }, { count: unreadCount }, { count: typingPeerCount }] = await Promise.all([
+    client.from("shop_stores").select("id,name,logo_url,status,approval_status").eq("id", storeId).maybeSingle(),
+    client.from("shop_profiles").select("id,display_name,status").eq("id", customerId).maybeSingle(),
+    client
+      .from("shop_messages")
+      .select("id", { count: "exact", head: true })
+      .eq("conversation_id", conversation.id)
+      .neq("sender_profile_id", profileId)
+      .gt("created_at", String((state as Json | null)?.last_read_at || "1970-01-01T00:00:00.000Z"))
+      .is("deleted_at", null),
+    client
+      .from("shop_conversation_participant_state")
+      .select("profile_id", { count: "exact", head: true })
+      .eq("conversation_id", conversation.id)
+      .neq("profile_id", profileId)
+      .gt("typing_expires_at", new Date().toISOString()),
+  ]);
+  return {
+    ...conversation,
+    store: store || null,
+    customer: customer || null,
+    participant_state: state || null,
+    unread_count: unreadCount || 0,
+    peer_typing: (typingPeerCount || 0) > 0,
+  };
+}
+
+async function listShopConversations(request: Request, sellerOnly = false) {
+  const { client, profileId } = await currentSession(request);
+  const url = new URL(request.url);
+  const search = String(url.searchParams.get("search") || "").trim().toLowerCase();
+  const archived = url.searchParams.get("archived") === "true";
+  let query = client
+    .from("shop_conversations")
+    .select("id,store_id,customer_profile_id,context_type,product_id,order_group_id,status,last_message_id,last_message_preview,last_message_at,created_at,updated_at")
+    .order("last_message_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (sellerOnly) {
+    const storeIds = await sellerStoreIds(client, profileId);
+    if (storeIds.length === 0) return response({ ok: true, conversations: [], unreadCount: 0 });
+    query = query.in("store_id", storeIds);
+  } else {
+    query = query.eq("customer_profile_id", profileId);
+  }
+
+  const { data, error } = await query;
+  if (error) return safeError("Messages could not be loaded.", 500);
+  const summaries: Json[] = await Promise.all(
+    (data || []).map((row) => conversationSummary(client, row as Json, profileId)),
+  );
+  const visible = summaries.filter((row) => {
+    const state = (row.participant_state || {}) as Json;
+    if (Boolean(state.deleted_at)) return false;
+    if (Boolean(state.archived_at) !== archived) return false;
+    if (!search) return true;
+    const store = (row.store || {}) as Json;
+    const customer = (row.customer || {}) as Json;
+    return [
+      row.last_message_preview,
+      store.name,
+      customer.display_name,
+    ].some((value) => String(value || "").toLowerCase().includes(search));
+  });
+  return response({
+    ok: true,
+    conversations: visible,
+    unreadCount: visible.reduce((sum, row) => sum + Number(row.unread_count || 0), 0),
+  });
+}
+
+async function openShopConversation(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const productId = String(body.productId || "");
+  const orderGroupId = String(body.orderGroupId || "");
+  let storeId = String(body.storeId || "");
+  let contextType: "general" | "product" | "order" = "general";
+
+  if (orderGroupId) {
+    const { data } = await client
+      .from("shop_order_groups")
+      .select("id,store_id,shop_orders!inner(profile_id)")
+      .eq("id", orderGroupId)
+      .single();
+    const order = ((data as Json | null)?.shop_orders || {}) as Json;
+    if (!data || String(order.profile_id || "") !== profileId) {
+      return safeError("Order conversation is unavailable.", 404);
+    }
+    storeId = String((data as Json).store_id || "");
+    contextType = "order";
+  } else if (productId) {
+    const { data } = await client
+      .from("shop_products")
+      .select("id,store_id,status,moderation_status,deleted_at,shop_stores!inner(status,approval_status,deleted_at)")
+      .eq("id", productId)
+      .single();
+    const store = ((data as Json | null)?.shop_stores || {}) as Json;
+    if (
+      !data ||
+      data.status !== "active" ||
+      data.moderation_status !== "approved" ||
+      data.deleted_at ||
+      store.status !== "active" ||
+      store.approval_status !== "approved" ||
+      store.deleted_at
+    ) {
+      return safeError("Product conversation is unavailable.", 404);
+    }
+    storeId = String((data as Json).store_id || "");
+    contextType = "product";
+  }
+
+  if (!storeId) return safeError("Store conversation is unavailable.", 404);
+  const { data: store } = await client
+    .from("shop_stores")
+    .select("id,status,approval_status,deleted_at")
+    .eq("id", storeId)
+    .single();
+  if (!store || store.status !== "active" || store.approval_status !== "approved" || store.deleted_at) {
+    return safeError("Store conversation is unavailable.", 404);
+  }
+
+  let existing = client
+    .from("shop_conversations")
+    .select("*")
+    .eq("store_id", storeId)
+    .eq("customer_profile_id", profileId)
+    .eq("context_type", contextType);
+  existing = contextType === "product"
+    ? existing.eq("product_id", productId)
+    : contextType === "order"
+    ? existing.eq("order_group_id", orderGroupId)
+    : existing.is("product_id", null).is("order_group_id", null);
+  const current = await existing.maybeSingle();
+
+  let conversation = current.data as Json | null;
+  if (!conversation) {
+    const created = await client
+      .from("shop_conversations")
+      .insert({
+        store_id: storeId,
+        customer_profile_id: profileId,
+        context_type: contextType,
+        product_id: productId || null,
+        order_group_id: orderGroupId || null,
+      })
+      .select("*")
+      .single();
+    if (created.error || !created.data) return safeError("Conversation could not be started.", 500);
+    conversation = created.data as Json;
+  }
+
+  await client.from("shop_conversation_participant_state").upsert({
+    conversation_id: conversation.id,
+    profile_id: profileId,
+    deleted_at: null,
+    archived_at: null,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "conversation_id,profile_id" });
+  return response({ ok: true, conversation: await conversationSummary(client, conversation, profileId) });
+}
+
+async function listShopMessages(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const url = new URL(request.url);
+  const conversationId = String(url.searchParams.get("conversationId") || "");
+  const before = String(url.searchParams.get("before") || "");
+  const access = await conversationAccess(client, profileId, conversationId);
+  if (!access) return safeError("Conversation not found.", 404);
+  let query = client
+    .from("shop_messages")
+    .select("id,conversation_id,sender_profile_id,message_type,body,attachment_path,attachment_name,attachment_mime_type,attachment_size_bytes,client_message_id,created_at,edited_at,deleted_at")
+    .eq("conversation_id", conversationId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (before) query = query.lt("created_at", before);
+  const { data, error } = await query;
+  if (error) return safeError("Messages could not be loaded.", 500);
+  const messages = await Promise.all((data || []).map(async (row) => {
+    const message = row as Json;
+    if (!message.attachment_path) return message;
+    const signed = await client.storage
+      .from("shop-chat-attachments")
+      .createSignedUrl(String(message.attachment_path), 300);
+    return { ...message, attachment_url: signed.data?.signedUrl || null };
+  }));
+  return response({
+    ok: true,
+    conversation: await conversationSummary(client, access.conversation, profileId),
+    messages: messages.reverse(),
+  });
+}
+
+async function persistShopMessage(
+  client: ReturnType<typeof adminClient>,
+  profileId: string,
+  access: ShopConversationAccess,
+  values: Json,
+  clientMessageId: string,
+  preview: string,
+) {
+  const conversationId = String(access.conversation.id || "");
+  const existing = await client
+    .from("shop_messages")
+    .select("*")
+    .eq("sender_profile_id", profileId)
+    .eq("client_message_id", clientMessageId)
+    .maybeSingle();
+  if (existing.data) return response({ ok: true, message: existing.data });
+
+  const inserted = await client
+    .from("shop_messages")
+    .insert({
+      ...values,
+      conversation_id: conversationId,
+      sender_profile_id: profileId,
+      client_message_id: clientMessageId,
+    })
+    .select("*")
+    .single();
+  if (inserted.error || !inserted.data) return safeError("Message could not be sent.", 500);
+  const now = new Date().toISOString();
+  await Promise.all([
+    client.from("shop_conversations").update({
+      last_message_id: inserted.data.id,
+      last_message_preview: preview.slice(0, 160),
+      last_message_at: inserted.data.created_at,
+      updated_at: now,
+    }).eq("id", conversationId),
+    client.from("shop_conversation_participant_state").upsert({
+      conversation_id: conversationId,
+      profile_id: profileId,
+      last_read_message_id: inserted.data.id,
+      last_read_at: inserted.data.created_at,
+      archived_at: null,
+      deleted_at: null,
+      typing_expires_at: null,
+      updated_at: now,
+    }, { onConflict: "conversation_id,profile_id" }),
+  ]);
+
+  const recipients = access.role === "seller"
+    ? [String(access.conversation.customer_profile_id || "")]
+    : [] as string[];
+  if (access.role === "customer") {
+    const storeId = String(access.conversation.store_id || "");
+    const [{ data: store }, { data: members }] = await Promise.all([
+      client.from("shop_stores").select("owner_profile_id").eq("id", storeId).single(),
+      client.from("shop_store_members").select("profile_id").eq("store_id", storeId).eq("status", "active"),
+    ]);
+    const recipientSet = new Set<string>([
+      String((store as Json | null)?.owner_profile_id || ""),
+      ...(members || []).map((row) => String((row as Json).profile_id || "")),
+    ]);
+    recipients.push(...[...recipientSet].filter(Boolean));
+  }
+  const uniqueRecipients = [...new Set(recipients.filter(Boolean))];
+  await Promise.all(uniqueRecipients.map((recipientId) =>
+    client.rpc("adishop_create_notification", {
+      p_profile_id: recipientId,
+      p_type: "shop_message",
+      p_title: access.role === "seller" ? "New seller message" : "New customer message",
+      p_body: preview.slice(0, 120),
+      p_data: { conversationId, storeId: access.conversation.store_id },
+    })
+  ));
+  const bridgeUrl = String(Deno.env.get("ADISHOP_PUSH_BRIDGE_URL") || "").trim();
+  const bridgeSecret = String(Deno.env.get("ADISHOP_PUSH_BRIDGE_SECRET") || "").trim();
+  if (bridgeUrl && bridgeSecret && uniqueRecipients.length) {
+    const { data: recipientProfiles } = await client
+      .from("shop_profiles")
+      .select("id,adischat_user_id")
+      .in("id", uniqueRecipients);
+    const title = access.role === "seller" ? "New seller message" : "New customer message";
+    await Promise.all((recipientProfiles || []).map(async (profile) => {
+      const receiverUid = String((profile as Json).adischat_user_id || "").trim();
+      if (!receiverUid) return;
+      await fetch(bridgeUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-adishop-push-secret": bridgeSecret,
+        },
+        body: JSON.stringify({
+          receiverUid,
+          conversationId,
+          messageId: inserted.data.id,
+          storeId: access.conversation.store_id,
+          title,
+          body: preview.slice(0, 120),
+        }),
+      }).catch(() => null);
+    }));
+  }
+  await audit(client, profileId, "message.send", "shop_conversation", conversationId, {
+    messageType: String(values.message_type || "text"),
+  });
+  return response({ ok: true, message: inserted.data });
+}
+
+async function sendShopMessage(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const conversationId = String(body.conversationId || "");
+  const messageBody = String(body.body || "").trim();
+  const clientMessageId = String(body.clientMessageId || "").trim();
+  const access = await conversationAccess(client, profileId, conversationId);
+  if (!access) return safeError("Conversation not found.", 404);
+  if (!messageBody || messageBody.length > 4000 || clientMessageId.length < 8 || clientMessageId.length > 160) {
+    return safeError("Check the message and try again.", 400);
+  }
+  return persistShopMessage(
+    client,
+    profileId,
+    access,
+    { message_type: "text", body: messageBody },
+    clientMessageId,
+    messageBody,
+  );
+}
+
+const SHOP_CHAT_ATTACHMENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+]);
+
+function safeAttachmentName(value: string) {
+  const normalized = value.normalize("NFKC").replace(/[^a-zA-Z0-9._ -]/g, "_").trim();
+  return normalized.slice(0, 120) || "attachment";
+}
+
+function attachmentExtension(mimeType: string) {
+  if (mimeType === "image/jpeg") return "jpg";
+  if (mimeType === "image/png") return "png";
+  if (mimeType === "image/webp") return "webp";
+  if (mimeType === "application/pdf") return "pdf";
+  return "txt";
+}
+
+async function uploadShopMessageAttachment(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const form = await request.formData();
+  const conversationId = String(form.get("conversationId") || "");
+  const clientMessageId = String(form.get("clientMessageId") || "").trim();
+  const caption = String(form.get("body") || "").trim().slice(0, 4000);
+  const attachment = form.get("attachment");
+  const access = await conversationAccess(client, profileId, conversationId);
+  if (!access) return safeError("Conversation not found.", 404);
+  if (!(attachment instanceof File) || attachment.size < 1 || attachment.size > 10 * 1024 * 1024) {
+    return safeError("Choose a file smaller than 10 MB.", 400);
+  }
+  const mimeType = String(attachment.type || "").toLowerCase();
+  if (!SHOP_CHAT_ATTACHMENT_TYPES.has(mimeType)) {
+    return safeError("This file type is not supported.", 400);
+  }
+  if (clientMessageId.length < 8 || clientMessageId.length > 160) {
+    return safeError("Attachment could not be sent.", 400);
+  }
+  const fileName = safeAttachmentName(attachment.name);
+  const path = `${conversationId}/${profileId}/${crypto.randomUUID()}.${attachmentExtension(mimeType)}`;
+  const uploaded = await client.storage.from("shop-chat-attachments").upload(path, attachment, {
+    contentType: mimeType,
+    upsert: false,
+  });
+  if (uploaded.error) return safeError("Attachment could not be uploaded.", 500);
+  const messageType = mimeType.startsWith("image/") ? "image" : "file";
+  const preview = caption || (messageType === "image" ? `Photo: ${fileName}` : `File: ${fileName}`);
+  const result = await persistShopMessage(
+    client,
+    profileId,
+    access,
+    {
+      message_type: messageType,
+      body: caption || null,
+      attachment_path: path,
+      attachment_name: fileName,
+      attachment_mime_type: mimeType,
+      attachment_size_bytes: attachment.size,
+    },
+    clientMessageId,
+    preview,
+  );
+  if (!result.ok) {
+    await client.storage.from("shop-chat-attachments").remove([path]);
+  }
+  return result;
+}
+
+async function updateShopConversation(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const body = await jsonBody(request);
+  const conversationId = String(body.conversationId || "");
+  const action = String(body.action || "");
+  const access = await conversationAccess(client, profileId, conversationId);
+  if (!access) return safeError("Conversation not found.", 404);
+  const now = new Date().toISOString();
+  const values: Json = { conversation_id: conversationId, profile_id: profileId, updated_at: now };
+  if (action === "read") {
+    const [{ data: latest }, { data: currentState }] = await Promise.all([
+      client
+        .from("shop_messages")
+        .select("id,created_at")
+        .eq("conversation_id", conversationId)
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      client
+        .from("shop_conversation_participant_state")
+        .select("last_read_message_id")
+        .eq("conversation_id", conversationId)
+        .eq("profile_id", profileId)
+        .maybeSingle(),
+    ]);
+    if (!latest || String((currentState as Json | null)?.last_read_message_id || "") === String(latest.id)) {
+      return response({ ok: true, conversation: await conversationSummary(client, access.conversation, profileId) });
+    }
+    values.last_read_message_id = latest?.id || null;
+    values.last_read_at = latest.created_at;
+  } else if (action === "archive") {
+    values.archived_at = now;
+  } else if (action === "unarchive") {
+    values.archived_at = null;
+  } else if (action === "mute") {
+    const hours = Math.max(1, Math.min(24 * 30, Number(body.hours || 8)));
+    values.muted_until = new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
+  } else if (action === "unmute") {
+    values.muted_until = null;
+  } else if (action === "delete") {
+    values.deleted_at = now;
+  } else if (action === "typing") {
+    values.typing_expires_at = new Date(Date.now() + 8_000).toISOString();
+  } else if (action === "stopped_typing") {
+    values.typing_expires_at = null;
+  } else {
+    return safeError("Conversation action is unavailable.", 400);
+  }
+  const { error } = await client
+    .from("shop_conversation_participant_state")
+    .upsert(values, { onConflict: "conversation_id,profile_id" });
+  if (error) return safeError("Conversation could not be updated.", 500);
+  return response({ ok: true, conversation: await conversationSummary(client, access.conversation, profileId) });
+}
+
 async function submitSellerApplication(request: Request) {
   const { client, profileId } = await currentSession(request);
   const body = await jsonBody(request);
@@ -1636,6 +2127,17 @@ async function submitSellerApplication(request: Request) {
 
 export async function handleAdishopFunction(name: string, request: Request) {
   try {
+    if (name === "adishop-messages") {
+      const action = new URL(request.url).searchParams.get("action") || "";
+      if (action === "seller-list") return await listShopConversations(request, true);
+      if (action === "buyer-list") return await listShopConversations(request, false);
+      if (action === "open") return await openShopConversation(request);
+      if (action === "messages") return await listShopMessages(request);
+      if (action === "send") return await sendShopMessage(request);
+      if (action === "upload") return await uploadShopMessageAttachment(request);
+      if (action === "update") return await updateShopConversation(request);
+      return safeError("Message action unavailable.", 404);
+    }
     if (name === "adishop-exchange-adischat-session") return await exchange(request);
     if (name === "adishop-refresh-shop-session") return await refresh(request);
     if (name === "adishop-get-current-profile") return await getCurrentProfile(request);

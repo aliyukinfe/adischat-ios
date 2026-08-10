@@ -24,8 +24,17 @@ object ShopStateReducers {
         val message = raw?.trim().orEmpty()
         if (message.isBlank()) return fallback
         val lower = message.lowercase()
+        if ("http 401" in lower || "401 client error" in lower || "unauthorized" in lower) {
+            return "Your session expired. Please sign in again."
+        }
         val blocked = listOf("jwt", "token", "uuid", "policy", "postgres", "supabase", "stack", "service" + "_" + "role")
-        return if (blocked.any { it in lower }) fallback else message
+        val rawHttpFailure = Regex("""\bhttp\s+[45]\d\d\b""").containsMatchIn(lower)
+        return if (rawHttpFailure || blocked.any { it in lower }) fallback else message
+    }
+
+    fun stateForActiveIdentity(state: ShopProtectedState, activeUid: String?): ShopProtectedState {
+        val normalizedUid = activeUid?.trim().orEmpty()
+        return if (state.ownerUid == normalizedUid) state else ShopProtectedState(ownerUid = normalizedUid)
     }
 
     fun sellerRoute(status: String?): String = when (status) {

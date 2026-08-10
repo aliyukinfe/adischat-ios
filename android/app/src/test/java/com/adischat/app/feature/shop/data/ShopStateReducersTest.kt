@@ -5,6 +5,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.runBlocking
+import java.util.concurrent.atomic.AtomicInteger
 
 class ShopStateReducersTest {
     @Test
@@ -58,7 +63,120 @@ class ShopStateReducersTest {
         assertEquals("Your cart is temporarily unavailable.", ShopStateReducers.safeErrorMessage("JWT policy failed", "Your cart is temporarily unavailable."))
         assertEquals("Check your connection and try again.", ShopStateReducers.safeErrorMessage("", "Check your connection and try again."))
         assertEquals("Unable to add this product.", ShopStateReducers.safeErrorMessage("Unable to add this product.", "Your cart is temporarily unavailable."))
+        assertEquals("Your session expired. Please sign in again.", ShopStateReducers.safeErrorMessage("HTTP 401 Client Error", "Couldn't load orders."))
+        assertEquals("Couldn't load orders.", ShopStateReducers.safeErrorMessage("HTTP 503 Server Error", "Couldn't load orders."))
     }
+
+    @Test
+    fun accountSwitchClearsBuyerSellerAdminAndErrorState() {
+        val accountA = ShopProtectedState(
+            ownerUid = "buyer-a",
+            error = "old error",
+            orders = listOf(ShopOrderDto(id = "order-a")),
+            sellerStatus = "approved",
+            adminSession = ShopAdminSessionDto(primaryRole = "super_admin"),
+        )
+
+        val accountB = ShopStateReducers.stateForActiveIdentity(accountA, "buyer-b")
+
+        assertEquals("buyer-b", accountB.ownerUid)
+        assertTrue(accountB.orders.isEmpty())
+        assertEquals("not_started", accountB.sellerStatus)
+        assertEquals(null, accountB.adminSession)
+        assertEquals(null, accountB.error)
+    }
+
+    @Test
+    fun authRetryRefreshesOnceAndClearsSuccessfulRetryPath() = runBlocking {
+        val coordinator = ShopAuthRetryCoordinator { it is TestUnauthorized }
+        var authorization = "Bearer stale"
+        val refreshes = AtomicInteger()
+        val attempts = AtomicInteger()
+
+        val result = coordinator.execute(
+            authorization = { authorization },
+            refreshAuthorization = {
+                refreshes.incrementAndGet()
+                authorization = "Bearer fresh"
+                authorization
+            },
+        ) { token ->
+            attempts.incrementAndGet()
+            if (token == "Bearer stale") throw TestUnauthorized()
+            "orders"
+        }
+
+        assertEquals("orders", result)
+        assertEquals(1, refreshes.get())
+        assertEquals(2, attempts.get())
+    }
+
+    @Test
+    fun concurrentUnauthorizedRequestsShareOneRefresh() = runBlocking {
+        val coordinator = ShopAuthRetryCoordinator { it is TestUnauthorized }
+        var authorization = "Bearer stale"
+        val refreshes = AtomicInteger()
+
+        val results = coroutineScope {
+            List(4) {
+                async {
+                    coordinator.execute(
+                        authorization = { authorization },
+                        refreshAuthorization = {
+                            refreshes.incrementAndGet()
+                            authorization = "Bearer fresh"
+                            authorization
+                        },
+                    ) { token ->
+                        if (token == "Bearer stale") throw TestUnauthorized()
+                        "ok"
+                    }
+                }
+            }.awaitAll()
+        }
+
+        assertEquals(listOf("ok", "ok", "ok", "ok"), results)
+        assertEquals(1, refreshes.get())
+    }
+
+    @Test
+    fun secondUnauthorizedResponseStopsWithoutRefreshLoop() = runBlocking {
+        val coordinator = ShopAuthRetryCoordinator { it is TestUnauthorized }
+        var authorization = "Bearer stale"
+        val refreshes = AtomicInteger()
+
+        val failure = runCatching {
+            coordinator.execute(
+                authorization = { authorization },
+                refreshAuthorization = {
+                    refreshes.incrementAndGet()
+                    authorization = "Bearer fresh"
+                    authorization
+                },
+            ) { throw TestUnauthorized() }
+        }.exceptionOrNull()
+
+        assertTrue(failure is ShopSessionExpiredException)
+        assertEquals("Your session expired. Please sign in again.", failure?.message)
+        assertEquals(1, refreshes.get())
+    }
+
+    @Test
+    fun refreshFailureStopsWithHumanReadableSessionMessage() = runBlocking {
+        val coordinator = ShopAuthRetryCoordinator { it is TestUnauthorized }
+
+        val failure = runCatching {
+            coordinator.execute(
+                authorization = { "Bearer stale" },
+                refreshAuthorization = { throw ShopSessionExpiredException() },
+            ) { throw TestUnauthorized() }
+        }.exceptionOrNull()
+
+        assertTrue(failure is ShopSessionExpiredException)
+        assertEquals("Your session expired. Please sign in again.", failure?.message)
+    }
+
+    private class TestUnauthorized : RuntimeException()
 
     @Test
     fun sellerRouteMatchesStatus() {

@@ -68,6 +68,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import com.adischat.app.feature.shop.data.ShopConversationDto
 import com.adischat.app.feature.shop.data.ShopMessageDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
@@ -336,10 +339,14 @@ private fun ShopConversationDetail(
     var showDeleteConfirmation by remember(conversation.id) { mutableStateOf(false) }
     val muted = conversation.participantState?.mutedUntil != null
     val archived = conversation.participantState?.archivedAt != null
-    LaunchedEffect(conversation.id) {
-        while (true) {
-            delay(10_000)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(conversation.id, lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             onRefresh()
+            while (true) {
+                delay(ShopMessageRefreshPolicy.INTERVAL_MS)
+                onRefresh()
+            }
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -445,6 +452,13 @@ private fun ShopConversationDetail(
             },
         )
     }
+}
+
+internal object ShopMessageRefreshPolicy {
+    const val INTERVAL_MS: Long = 10_000L
+
+    fun isActive(lifecycleState: Lifecycle.State, conversationVisible: Boolean): Boolean =
+        conversationVisible && lifecycleState.isAtLeast(Lifecycle.State.STARTED)
 }
 
 private data class ShopAttachmentSelection(

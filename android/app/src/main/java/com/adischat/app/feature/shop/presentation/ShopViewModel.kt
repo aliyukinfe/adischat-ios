@@ -55,6 +55,7 @@ class ShopViewModel(
 
     private val buyNowIdempotencyKeys = mutableMapOf<String, String>()
     private val confirmIdempotencyKeys = mutableMapOf<String, String>()
+    private val conversationRefreshesInFlight = mutableSetOf<String>()
     private var protectedRequestGeneration = 0L
 
     init {
@@ -603,16 +604,27 @@ class ShopViewModel(
     }
 
     fun loadSellerMessages(search: String = "", archived: Boolean = false) {
+        ensureActiveAccountState()
+        val requestOwnerUid = identityRepository.activeUserId()
+        if (requestOwnerUid.isBlank()) return
         viewModelScope.launch {
             messageRepository.sellerConversations(search, archived)
                 .onSuccess { (conversations, unreadCount) ->
+                    if (identityRepository.activeUserId() != requestOwnerUid) {
+                        ensureActiveAccountState()
+                        return@onSuccess
+                    }
                     _protectedState.value = _protectedState.value.copy(
                         sellerConversations = conversations,
                         sellerMessageUnreadCount = unreadCount,
                         error = null,
                     )
                 }
-                .onFailure { showProtectedError(it, "Seller messages are temporarily unavailable.") }
+                .onFailure {
+                    if (identityRepository.activeUserId() == requestOwnerUid) {
+                        showProtectedError(it, "Seller messages are temporarily unavailable.")
+                    }
+                }
         }
     }
 
@@ -635,27 +647,42 @@ class ShopViewModel(
 
     private fun fetchConversationMessages(conversationId: String, allowOpen: Boolean) {
         if (conversationId.isBlank()) return
+        ensureActiveAccountState()
+        val requestOwnerUid = identityRepository.activeUserId()
+        val refreshKey = "$requestOwnerUid:$conversationId"
+        if (requestOwnerUid.isBlank() || !conversationRefreshesInFlight.add(refreshKey)) return
         viewModelScope.launch {
-            setBusy("conversation-$conversationId", true)
-            messageRepository.messages(conversationId)
-                .onSuccess { (conversation, messages) ->
-                    val selectedId = _protectedState.value.selectedConversation?.id
-                    if (!allowOpen && selectedId != conversationId) {
-                        setBusy("conversation-$conversationId", false)
-                        return@onSuccess
+            try {
+                setBusy("conversation-$conversationId", true)
+                messageRepository.messages(conversationId)
+                    .onSuccess { (conversation, messages) ->
+                        if (identityRepository.activeUserId() != requestOwnerUid) {
+                            ensureActiveAccountState()
+                            return@onSuccess
+                        }
+                        val selectedId = _protectedState.value.selectedConversation?.id
+                        if (!allowOpen && selectedId != conversationId) return@onSuccess
+                        _protectedState.value = _protectedState.value.copy(
+                            selectedConversation = conversation ?: _protectedState.value.selectedConversation,
+                            conversationMessages = messages.distinctBy { message ->
+                                message.id.ifBlank { message.clientMessageId }
+                            },
+                            error = null,
+                        )
+                        if ((conversation?.unreadCount ?: 0) > 0) {
+                            messageRepository.update(conversationId, "read")
+                        }
+                        loadSellerMessages()
                     }
-                    _protectedState.value = _protectedState.value.copy(
-                        selectedConversation = conversation ?: _protectedState.value.selectedConversation,
-                        conversationMessages = messages,
-                        error = null,
-                    )
-                    if ((conversation?.unreadCount ?: 0) > 0) {
-                        messageRepository.update(conversationId, "read")
+                    .onFailure {
+                        if (identityRepository.activeUserId() == requestOwnerUid) {
+                            showProtectedError(it, "Messages could not be loaded.")
+                        }
                     }
-                    loadSellerMessages()
-                }
-                .onFailure { showProtectedError(it, "Messages could not be loaded.") }
-            setBusy("conversation-$conversationId", false)
+            } finally {
+                conversationRefreshesInFlight.remove(refreshKey)
+                setBusy("conversation-$conversationId", false)
+            }
         }
     }
 
@@ -1247,6 +1274,7 @@ class ShopViewModel(
             _state.value = _state.value.copy(cartCount = 0, shopIdentityReady = false, message = null)
             buyNowIdempotencyKeys.clear()
             confirmIdempotencyKeys.clear()
+            conversationRefreshesInFlight.clear()
             protectedRequestGeneration++
         }
     }
