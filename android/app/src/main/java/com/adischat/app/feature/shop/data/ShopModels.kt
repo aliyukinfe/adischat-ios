@@ -1,13 +1,31 @@
 package com.adischat.app.feature.shop.data
 
+import com.adischat.app.BuildConfig
 import com.google.gson.annotations.SerializedName
 
 data class ShopCategoryDto(
     val id: String = "",
+    @SerializedName("parent_id") val parentId: String? = null,
     val name: String = "",
     val slug: String = "",
+    val code: String = "",
+    val description: String? = null,
     @SerializedName("image_url") val imageUrl: String? = null,
     val icon: String? = null,
+    val level: Int = 0,
+    @SerializedName("is_leaf") val isLeaf: Boolean = true,
+    @SerializedName("seller_selectable") val sellerSelectable: Boolean = true,
+    @SerializedName("buyer_visible") val buyerVisible: Boolean = true,
+    @SerializedName("search_terms") val searchTerms: List<String> = emptyList(),
+    @SerializedName("display_order") val displayOrder: Int = 0,
+)
+
+data class ShopSellingUnitDto(
+    val code: String = "PIECE",
+    val name: String = "Piece",
+    val symbol: String = "pc",
+    @SerializedName("quantity_scale") val quantityScale: Int = 0,
+    @SerializedName("display_order") val displayOrder: Int = 0,
 )
 
 data class ShopBannerDto(
@@ -18,6 +36,9 @@ data class ShopBannerDto(
     @SerializedName("action_url") val actionUrl: String? = null,
     @SerializedName("is_active") val isActive: Boolean? = null,
     @SerializedName("display_order") val displayOrder: Int? = null,
+    @SerializedName("start_at") val startAt: String? = null,
+    @SerializedName("end_at") val endAt: String? = null,
+    @SerializedName("is_seed") val isSeed: Boolean? = null,
 )
 
 data class ShopStoreDto(
@@ -66,21 +87,81 @@ data class ShopProductStoreDto(
     @SerializedName("created_at") val createdAt: String? = null,
 )
 
+data class ShopProductSpecificationDto(
+    val code: String = "",
+    val name: String = "",
+    val valueText: String? = null,
+    val valueNumber: Double? = null,
+    val valueBoolean: Boolean? = null,
+    val valueJson: Any? = null,
+    val unit: String? = null,
+)
+
+data class ShopProductOptionValueDto(
+    val id: String = "",
+    val code: String = "",
+    val value: String = "",
+    val displayValue: String = "",
+    val colorHex: String? = null,
+    val position: Int = 0,
+)
+
+data class ShopProductOptionDto(
+    val id: String = "",
+    val code: String = "",
+    val name: String = "",
+    val position: Int = 0,
+    val values: List<ShopProductOptionValueDto> = emptyList(),
+)
+
+data class ShopPublicVariantDto(
+    val id: String = "",
+    val title: String = "",
+    val options: Map<String, String> = emptyMap(),
+    @SerializedName(value = "price_minor", alternate = ["priceMinor"]) val priceMinor: Int = 0,
+    @SerializedName(value = "compare_at_price_minor", alternate = ["compareAtPriceMinor"]) val compareAtPriceMinor: Int? = null,
+    val status: String = "active",
+    val availableQuantity: Int = 0,
+    val lowStockThreshold: Int = 0,
+    val imageIds: List<String> = emptyList(),
+)
+
+data class ShopPriceRangeDto(
+    val minimumMinor: Int = 0,
+    val maximumMinor: Int = 0,
+)
+
 data class ShopProductDto(
     val id: String = "",
+    @SerializedName("created_at") val createdAt: String? = null,
     val title: String = "",
     val slug: String = "",
     val brand: String? = null,
-    @SerializedName("category_slug") val categorySlug: String? = null,
-    @SerializedName("price_minor") val priceMinor: Int = 0,
-    @SerializedName("compare_at_price_minor") val compareAtPriceMinor: Int? = null,
+    @SerializedName(value = "category_slug", alternate = ["categorySlug"]) val categorySlug: String? = null,
+    @SerializedName(value = "price_minor", alternate = ["priceMinor"]) val priceMinor: Int = 0,
+    @SerializedName(value = "compare_at_price_minor", alternate = ["compareAtPriceMinor"]) val compareAtPriceMinor: Int? = null,
     @SerializedName("discount_percent") val discountPercent: Int? = null,
     @SerializedName("rating_average") val averageRating: Double? = null,
     @SerializedName("rating_count") val reviewCount: Int? = null,
     @SerializedName("completed_sales_count") val soldCount: Int? = null,
-    @SerializedName("stock_status") val stockStatus: String? = null,
+    @SerializedName(value = "stock_status", alternate = ["stockStatus"]) val stockStatus: String? = null,
     @SerializedName("shop_product_images") val images: List<ShopProductImageDto>? = null,
     @SerializedName("shop_stores") val store: ShopProductStoreDto? = null,
+    @SerializedName(value = "short_description", alternate = ["shortDescription"]) val shortDescription: String? = null,
+    val description: String? = null,
+    @SerializedName(value = "category_id", alternate = ["categoryId"]) val categoryId: String? = null,
+    @SerializedName(value = "selling_unit_code", alternate = ["sellingUnitCode"]) val sellingUnitCode: String = "PIECE",
+    @SerializedName(value = "selling_unit", alternate = ["sellingUnit"]) val sellingUnit: ShopSellingUnitDto? = null,
+    @SerializedName(value = "minimum_order_quantity", alternate = ["minimumOrderQuantity"]) val minimumOrderQuantity: Int = 1,
+    val specifications: List<ShopProductSpecificationDto> = emptyList(),
+    val options: List<ShopProductOptionDto> = emptyList(),
+    val variants: List<ShopPublicVariantDto> = emptyList(),
+    val priceRange: ShopPriceRangeDto? = null,
+    val aggregateAvailable: Int? = null,
+    @SerializedName("has_variants") val hasVariants: Boolean = false,
+    @SerializedName("price_max_minor") val priceMaxMinor: Int? = null,
+    @SerializedName("aggregate_available_quantity") val aggregateAvailableQuantity: Int? = null,
+    val verifiedBenefits: List<ShopVerifiedBenefitDto> = emptyList(),
 )
 
 data class ShopHomeState(
@@ -89,11 +170,36 @@ data class ShopHomeState(
     val maintenance: Boolean = false,
     val banners: List<ShopBannerDto> = emptyList(),
     val categories: List<ShopCategoryDto> = emptyList(),
+    val sellingUnits: List<ShopSellingUnitDto> = emptyList(),
     val products: List<ShopProductDto> = emptyList(),
     val stores: List<ShopStoreDto> = emptyList(),
     val cartCount: Int = 0,
     val shopIdentityReady: Boolean = false,
     val message: String? = null,
+    val productDetails: Map<String, ShopProductDto> = emptyMap(),
+    val buyerCategoryAttributes: Map<String, List<ShopCategoryAttributeDto>> = emptyMap(),
+    val buyerFilterLoadingCategoryId: String? = null,
+    val discoveryProducts: List<ShopProductDto>? = null,
+    val discoveryLoading: Boolean = false,
+)
+
+data class ShopProductCatalogRequest(val p_product_id: String)
+data class ShopCategoryAttributeRequest(val p_category_id: String)
+
+data class ShopCategoryAttributeDto(
+    val id: String = "",
+    val code: String = "",
+    val name: String = "",
+    val displayName: String = "",
+    val dataType: String = "text",
+    val inputType: String = "text",
+    val required: Boolean = false,
+    val variantCapable: Boolean = false,
+    val filterable: Boolean = false,
+    val allowsMultiple: Boolean = false,
+    val unit: String? = null,
+    val suggestions: List<String> = emptyList(),
+    val sortOrder: Int = 0,
 )
 
 data class ShopAssertionRequestBody(val client: String = "android")
@@ -121,6 +227,8 @@ data class ShopProfileDto(
 
 data class ShopSessionExchangeRequest(val assertion: String)
 data class ShopRefreshRequest(val refreshToken: String)
+data class ShopRevokeRequest(val refreshToken: String, val action: String = "revoke")
+data class ShopRevokeAllRequest(val assertion: String, val action: String = "revoke-all")
 data class ShopProductActionRequest(val productId: String)
 data class ShopCartItemRequest(val productId: String, val variantId: String? = null, val quantity: Int = 1)
 data class ShopCartItemUpdateRequest(val itemId: String, val quantity: Int)
@@ -129,10 +237,13 @@ data class ShopAddressIdRequest(val id: String)
 data class ShopOrderIdRequest(val orderId: String)
 data class ShopBuyAgainRequest(val orderId: String, val requestId: String)
 data class ShopCancelOrderRequest(val orderId: String, val reasonCode: String = "customer_request", val reasonText: String = "")
-data class ShopNotificationIdRequest(val notificationId: String)
+enum class MarketplaceNotificationContext(val wireValue: String) { BUYER("buyer"), SELLER("seller") }
+data class ShopNotificationScopeRequest(val context: String, val storeId: String? = null)
+data class ShopNotificationIdRequest(val notificationId: String, val context: String, val storeId: String? = null)
 data class ShopOpenConversationRequest(
     val storeId: String? = null,
     val productId: String? = null,
+    val variantId: String? = null,
     val orderGroupId: String? = null,
 )
 data class ShopSendMessageRequest(
@@ -147,9 +258,11 @@ data class ShopConversationActionRequest(
 )
 data class ShopSellerOrderActionRequest(
     val orderGroupId: String,
+    val storeId: String? = null,
     val reason: String = "",
     val reasonCode: String? = null,
     val requestId: String? = null,
+    val expectedVersion: Int? = null,
     val carrier: String? = null,
     val trackingNumber: String? = null,
 )
@@ -168,6 +281,7 @@ data class ShopBuyerCreateIssueRequest(
 data class ShopSellerDeliveryCodeRequest(
     val orderGroupId: String,
     val deliveryCode: String,
+    val storeId: String? = null,
 )
 
 data class ShopSellerProductInventoryDto(
@@ -188,6 +302,35 @@ data class ShopSellerProductVariantDto(
     @SerializedName("compare_at_price_minor") val compareAtPriceMinor: Int? = null,
     val status: String = "active",
     val inventory: ShopSellerProductInventoryDto? = null,
+    @SerializedName("imageIds") val imageIds: List<String> = emptyList(),
+)
+
+data class ShopSellerProductSpecificationValueDto(
+    val attributeCode: String = "",
+    val displayName: String = "",
+    val valueText: String? = null,
+    val valueNumber: Double? = null,
+    val valueBoolean: Boolean? = null,
+    val unit: String? = null,
+)
+
+data class ShopSellerProductOptionValueDto(
+    val id: String = "",
+    val code: String = "",
+    val value: String = "",
+    val displayValue: String = "",
+    val colorHex: String? = null,
+    val position: Int = 0,
+    val status: String = "active",
+)
+
+data class ShopSellerProductOptionDto(
+    val id: String = "",
+    val attributeCode: String = "",
+    val name: String = "",
+    val position: Int = 0,
+    val status: String = "active",
+    val values: List<ShopSellerProductOptionValueDto> = emptyList(),
 )
 
 data class ShopSellerProductDto(
@@ -198,6 +341,9 @@ data class ShopSellerProductDto(
     val title: String = "",
     val slug: String = "",
     @SerializedName("category_slug") val categorySlug: String? = null,
+    @SerializedName("selling_unit_code") val sellingUnitCode: String = "PIECE",
+    @SerializedName("minimum_order_quantity") val minimumOrderQuantity: Int = 1,
+    @SerializedName("product_type_description") val productTypeDescription: String? = null,
     @SerializedName("short_description") val shortDescription: String? = null,
     val description: String? = null,
     val status: String = "draft",
@@ -219,12 +365,55 @@ data class ShopSellerProductDto(
     val images: List<ShopProductImageDto> = emptyList(),
     val variants: List<ShopSellerProductVariantDto> = emptyList(),
     val inventory: List<ShopSellerProductInventoryDto> = emptyList(),
+    val specificationValues: List<ShopSellerProductSpecificationValueDto> = emptyList(),
+    val productOptions: List<ShopSellerProductOptionDto> = emptyList(),
+)
+
+data class ShopSellerSpecificationInput(
+    val attributeCode: String,
+    val valueText: String? = null,
+    val valueNumber: Double? = null,
+    val valueBoolean: Boolean? = null,
+    val unit: String? = null,
+)
+
+data class ShopSellerOptionValueInput(
+    val code: String,
+    val value: String,
+    val displayValue: String,
+    val colorHex: String? = null,
+    val position: Int = 0,
+)
+
+data class ShopSellerProductOptionInput(
+    val attributeCode: String,
+    val name: String,
+    val position: Int,
+    val values: List<ShopSellerOptionValueInput>,
+)
+
+data class ShopSellerVariantInput(
+    val id: String? = null,
+    val title: String,
+    val sku: String? = null,
+    val barcode: String? = null,
+    val options: Map<String, String>,
+    val priceMinor: Int,
+    val compareAtPriceMinor: Int? = null,
+    val status: String = "active",
+    val quantityAvailable: Int,
+    val lowStockThreshold: Int = 3,
+    val manageInventory: Boolean = true,
+    val imageIds: List<String> = emptyList(),
 )
 
 data class ShopSellerProductDraftPayload(
     val title: String,
     val brand: String? = null,
     val categoryId: String? = null,
+    val sellingUnitCode: String = "PIECE",
+    val minimumOrderQuantity: Int = 1,
+    val productTypeDescription: String? = null,
     val shortDescription: String,
     val description: String,
     val priceMinor: Int,
@@ -234,16 +423,20 @@ data class ShopSellerProductDraftPayload(
     val cashOnDeliveryEnabled: Boolean = true,
     val sellerSku: String? = null,
     val images: List<Map<String, Any>>? = null,
-    val variants: List<Map<String, Any>>? = null,
     val specifications: Map<String, Any> = emptyMap(),
     val shippingDetails: Map<String, Any> = emptyMap(),
     val returnPolicy: Map<String, Any> = emptyMap(),
+    val specificationValues: List<ShopSellerSpecificationInput>? = null,
+    val productOptions: List<ShopSellerProductOptionInput>? = null,
+    @SerializedName("variants") val variantCatalog: List<ShopSellerVariantInput>? = null,
 )
 
-data class ShopSellerProductCreateRequest(val requestId: String)
-data class ShopSellerProductUpdateRequest(val productId: String, val product: ShopSellerProductDraftPayload, val requestId: String)
-data class ShopSellerProductSubmitRequest(val productId: String, val requestId: String)
-data class ShopSellerProductMediaDeleteRequest(val productId: String, val imageId: String)
+data class ShopSellerProductCreateRequest(val storeId: String, val requestId: String)
+data class ShopSellerProductUpdateRequest(val storeId: String, val productId: String, val product: ShopSellerProductDraftPayload, val requestId: String)
+data class ShopSellerProductArchivePayload(val archiveProduct: Boolean = true)
+data class ShopSellerProductArchiveRequest(val storeId: String, val productId: String, val product: ShopSellerProductArchivePayload, val requestId: String)
+data class ShopSellerProductSubmitRequest(val storeId: String, val productId: String, val requestId: String)
+data class ShopSellerProductMediaDeleteRequest(val storeId: String, val productId: String, val imageId: String)
 data class ShopSellerProductMediaReorderRequest(val productId: String, val imageIds: List<String>, val primaryImageId: String)
 
 data class ShopAddressRequest(
@@ -332,6 +525,8 @@ data class ShopNotificationDto(
     val title: String = "",
     val body: String? = null,
     val data: Map<String, Any>? = null,
+    @SerializedName("recipient_context") val recipientContext: String? = null,
+    @SerializedName("store_id") val storeId: String? = null,
     @SerializedName("read_at") val readAt: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
 )
@@ -343,6 +538,7 @@ data class ShopOrderStatusHistoryDto(
     @SerializedName("public_message") val publicMessage: String? = null,
     @SerializedName("previous_status") val previousStatus: String? = null,
     @SerializedName("next_status") val nextStatus: String? = null,
+    val reason: String? = null,
     @SerializedName("actor_role") val actorRole: String? = null,
     @SerializedName("occurred_at") val occurredAt: String? = null,
     @SerializedName("created_at") val createdAt: String? = null,
@@ -350,11 +546,27 @@ data class ShopOrderStatusHistoryDto(
 
 data class ShopOrderItemDto(
     val id: String = "",
+    @SerializedName("product_id") val productId: String? = null,
     @SerializedName("title_snapshot") val titleSnapshot: String = "",
     val quantity: Int = 0,
     @SerializedName("unit_price_minor") val unitPriceMinor: Int = 0,
     @SerializedName("line_total_minor") val lineTotalMinor: Int = 0,
     @SerializedName("image_snapshot") val imageSnapshot: String? = null,
+    @SerializedName("variant_snapshot") val variantSnapshot: ShopOrderVariantSnapshotDto? = null,
+    @SerializedName("unit_snapshot") val unitSnapshot: ShopUnitSnapshotDto? = null,
+)
+
+data class ShopUnitSnapshotDto(
+    val code: String = "PIECE",
+    val name: String = "Piece",
+    val symbol: String = "pc",
+    val minimumOrderQuantity: Int = 1,
+)
+
+data class ShopOrderVariantSnapshotDto(
+    val id: String? = null,
+    val title: String? = null,
+    val options: Map<String, String> = emptyMap(),
 )
 
 data class ShopSellerCustomerDto(
@@ -393,6 +605,20 @@ data class ShopOrderGroupDto(
     @SerializedName("store_name_snapshot") val storeNameSnapshot: String? = null,
     @SerializedName("payment_status") val paymentStatus: String? = null,
     @SerializedName("fulfillment_status") val fulfillmentStatus: String? = null,
+    @SerializedName("seller_response_required_at") val sellerResponseRequiredAt: String? = null,
+    @SerializedName("seller_responded_at") val sellerRespondedAt: String? = null,
+    @SerializedName("seller_response_expired_at") val sellerResponseExpiredAt: String? = null,
+    @SerializedName("seller_response_status") val sellerResponseStatus: String = "pending",
+    @SerializedName("seller_response_sla_hours") val sellerResponseSlaHours: Int = 24,
+    @SerializedName("seller_response_version") val sellerResponseVersion: Int = 1,
+    @SerializedName("seller_response_expiration_source") val sellerResponseExpirationSource: String? = null,
+    @SerializedName("seller_response_refund_status") val sellerResponseRefundStatus: String = "not_required",
+    @SerializedName("seller_response_refund_request_id") val sellerResponseRefundRequestId: String? = null,
+    @SerializedName("rejected_reason") val rejectedReason: String? = null,
+    @SerializedName("rejected_reason_code") val rejectedReasonCode: String? = null,
+    @SerializedName("buyer_visible_rejection_reason") val buyerVisibleRejectionReason: String? = null,
+    @SerializedName("server_now") val serverNow: String? = null,
+    @Transient val serverReceivedAtMillis: Long? = null,
     @SerializedName("shipment_carrier") val shipmentCarrier: String? = null,
     @SerializedName("shipment_tracking_number") val shipmentTrackingNumber: String? = null,
     @SerializedName("shop_order_items") val items: List<ShopOrderItemDto>? = null,
@@ -776,6 +1002,7 @@ data class ShopSellerCustomerNoteRequest(val storeId: String, val orderGroupId: 
 data class ShopEnvelope<T>(
     val ok: Boolean = false,
     val error: String? = null,
+    val serverTime: String? = null,
     val profile: ShopProfileDto? = null,
     val session: ShopSessionDto? = null,
     val cart: T? = null,
@@ -808,9 +1035,11 @@ data class ShopEnvelope<T>(
     val buyAgain: ShopBuyAgainResultDto? = null,
     val receipt: ShopReceiptDto? = null,
     val sellerOrderGroups: List<ShopOrderGroupDto>? = null,
+    val sellerOrderStoreId: String? = null,
     val sellerRequests: ShopSellerRequestsDto? = null,
     val sellerOrderGroup: ShopOrderGroupDto? = null,
     val sellerProducts: List<ShopSellerProductDto>? = null,
+    val sellerProductStoreId: String? = null,
     val sellerProduct: ShopSellerProductDto? = null,
     val sellerProductImage: ShopProductImageDto? = null,
     val deliveryCode: ShopDeliveryCodeDto? = null,
@@ -821,7 +1050,11 @@ data class ShopEnvelope<T>(
     val sellerApplications: List<ShopAdminSellerApplicationDto>? = null,
     val sellerApplicationDetail: ShopAdminSellerApplicationDto? = null,
     val products: List<ShopAdminProductDto>? = null,
+    val total: Int? = null,
     val productDetail: ShopAdminProductDetailDto? = null,
+    val reviewQueue: ShopPublicContentQueueDto? = null,
+    val reviewPreview: ShopPublicContentPreviewDto? = null,
+    val reviewedRevision: Long? = null,
     val adminOrders: List<ShopAdminOrderDto>? = null,
     val orderDetail: ShopAdminOrderDetailDto? = null,
     val auditLog: List<ShopAdminAuditLogDto>? = null,
@@ -852,6 +1085,28 @@ data class ShopConversationParticipantStateDto(
     @SerializedName("typing_expires_at") val typingExpiresAt: String? = null,
 )
 
+data class ShopProductContextOptionDto(
+    val name: String = "",
+    val value: String = "",
+)
+
+data class ShopProductContextDto(
+    @SerializedName("product_id") val productId: String = "",
+    val title: String? = null,
+    @SerializedName("image_url") val imageUrl: String? = null,
+    @SerializedName("price_minor") val priceMinor: Int? = null,
+    val currency: String? = null,
+    @SerializedName("store_id") val storeId: String? = null,
+    @SerializedName("store_name") val storeName: String? = null,
+    @SerializedName("variant_id") val variantId: String? = null,
+    @SerializedName("variant_title") val variantTitle: String? = null,
+    @SerializedName("selected_options") val selectedOptions: List<ShopProductContextOptionDto> = emptyList(),
+    @SerializedName("selling_unit_code") val sellingUnitCode: String? = null,
+    @SerializedName("product_status") val productStatus: String = "unavailable",
+    val availability: String = "unavailable",
+    @SerializedName("can_open") val canOpen: Boolean = false,
+)
+
 data class ShopConversationDto(
     val id: String = "",
     @SerializedName("store_id") val storeId: String = "",
@@ -868,6 +1123,7 @@ data class ShopConversationDto(
     @SerializedName("participant_state") val participantState: ShopConversationParticipantStateDto? = null,
     @SerializedName("unread_count") val unreadCount: Int = 0,
     @SerializedName("peer_typing") val peerTyping: Boolean = false,
+    @SerializedName("product_context") val productContext: ShopProductContextDto? = null,
 )
 
 data class ShopMessageDto(
@@ -891,6 +1147,8 @@ data class ShopCartItemDto(
     val quantity: Int = 0,
     @SerializedName("unit_price_minor") val unitPriceMinor: Int = 0,
     @SerializedName("shop_products") val product: ShopProductDto? = null,
+    @SerializedName("shop_product_variants") val variant: ShopPublicVariantDto? = null,
+    @SerializedName("unit_snapshot") val unitSnapshot: ShopUnitSnapshotDto? = null,
 )
 
 data class ShopCartTotalsDto(
@@ -943,6 +1201,7 @@ data class ShopOrderDto(
     val currency: String = "ETB",
     @SerializedName("total_minor") val totalMinor: Int = 0,
     @SerializedName("created_at") val createdAt: String? = null,
+    @SerializedName("server_now") val serverNow: String? = null,
     @SerializedName("shop_order_groups") val groups: List<ShopOrderGroupDto>? = null,
     @SerializedName("shop_order_status_history") val history: List<ShopOrderStatusHistoryDto>? = null,
     val issues: List<ShopOrderIssueDto> = emptyList(),
@@ -1104,6 +1363,7 @@ data class ShopSellerRequestResponseRequest(
     val message: String,
     val idempotencyKey: String,
     val expectedVersion: Int,
+    val storeId: String? = null,
 )
 
 data class ShopAdminReviewModerationRequest(
@@ -1140,10 +1400,91 @@ data class ShopAdminProductDto(
     val priceMinor: Int = 0,
     @SerializedName("store_name")
     val storeName: String? = null,
+    @SerializedName("image_url")
+    val imageUrl: String? = null,
+    @SerializedName("stock_status")
+    val stockStatus: String? = null,
+    val currency: String? = null,
+    @SerializedName("created_at")
+    val createdAt: String? = null,
     @SerializedName("seller_name")
     val sellerName: String? = null,
     @SerializedName("submitted_at")
     val submittedAt: String? = null,
+)
+
+data class ShopAdminProductQuery(
+    val search: String = "",
+    val status: String = "all",
+    val limit: Int = 30,
+    val offset: Int = 0,
+    val category: String = "",
+    val storeId: String = "",
+    val stock: String = "all",
+    val sort: String = "newest",
+) {
+    fun normalized(): ShopAdminProductQuery = copy(
+        search = search.trim().take(120),
+        status = status.takeIf { it in setOf("all", "pending", "approved", "rejected", "changes_requested", "archived") } ?: "all",
+        limit = limit.coerceIn(1, 100),
+        offset = offset.coerceAtLeast(0),
+        category = category.trim().take(120),
+        storeId = storeId.trim().take(36),
+        stock = stock.takeIf { it in setOf("all", "in_stock", "low_stock", "out_of_stock") } ?: "all",
+        sort = sort.takeIf { it in setOf("newest", "oldest", "updated") } ?: "newest",
+    )
+}
+
+data class ShopAdminProductPage(
+    val products: List<ShopAdminProductDto> = emptyList(),
+    val total: Int? = null,
+    val limit: Int = 30,
+    val offset: Int = 0,
+) {
+    val hasNext: Boolean get() = total?.let { offset + products.size < it } ?: (products.size == limit)
+}
+
+object ShopAdminAllProductsFlags {
+    // Enable only after the scoped products function bundle is deployed and authorization-tested.
+    const val advancedQueryEnabled = false
+}
+
+object ShopPublicContentReviewFlags {
+    // Enabled in QA builds once staged review RPCs and authorized Admin transport are deployed and tested.
+    val enabled: Boolean get() = BuildConfig.QA_BUILD
+    const val pageSize = 20
+}
+
+data class ShopPublicContentItemDto(
+    val entityKind: String = "",
+    val entityId: String = "",
+    val revision: Long = 0,
+    val targetId: String = "",
+    val reviewStatus: String = "",
+    val expectedRevision: com.google.gson.JsonElement? = null,
+)
+
+data class ShopPublicContentQueueDto(
+    val total: Int = 0,
+    val items: List<ShopPublicContentItemDto> = emptyList(),
+)
+
+data class ShopPublicContentPreviewDto(
+    val entityKind: String = "",
+    val entityId: String = "",
+    val revision: Long = 0,
+    val targetId: String = "",
+    val content: Map<String, Any?> = emptyMap(),
+    val reviewStatus: String = "",
+    val expectedRevision: com.google.gson.JsonElement? = null,
+    val permittedActions: List<String> = emptyList(),
+)
+
+data class ShopPublicContentDecisionRequest(
+    val kind: String,
+    val id: String,
+    val expectedRevision: Long,
+    val decision: String,
 )
 
 data class ShopAdminProductReviewDto(
@@ -1169,6 +1510,9 @@ data class ShopAdminProductDetailDto(
     val store: ShopProductStoreDto? = null,
     val images: List<ShopProductImageDto> = emptyList(),
     val inventory: List<ShopSellerProductInventoryDto> = emptyList(),
+    val specificationValues: List<ShopSellerProductSpecificationValueDto> = emptyList(),
+    val productOptions: List<ShopSellerProductOptionDto> = emptyList(),
+    val variants: List<ShopSellerProductVariantDto> = emptyList(),
     val reviews: List<ShopAdminProductReviewDto> = emptyList(),
 )
 
@@ -1304,6 +1648,7 @@ data class ShopAdminReviewProductRequest(
     val publicReason: String = "",
     val privateNotes: String = "",
     val requestId: String,
+    val expectedSubmittedAt: String? = null,
 )
 
 data class ShopAdminOrderNoteRequest(
@@ -1331,10 +1676,15 @@ data class ShopProtectedState(
     val loading: Boolean = false,
     val error: String? = null,
     val cart: ShopCartDto? = null,
+    val cartAvailableQuantities: Map<String, Int> = emptyMap(),
+    val favoritesLoaded: Boolean = false,
     val favorites: List<ShopFavoriteDto> = emptyList(),
     val recentlyViewed: List<ShopRecentlyViewedDto> = emptyList(),
     val addresses: List<ShopAddressDto> = emptyList(),
+    val ordersLoaded: Boolean = false,
     val orders: List<ShopOrderDto> = emptyList(),
+    val buyerReviewsLoaded: Boolean = false,
+    val buyerReviews: ShopOrderReviewsDto? = null,
     val checkout: ShopCheckoutDto? = null,
     val checkoutOrder: ShopOrderDto? = null,
     val selectedOrder: ShopOrderDto? = null,
@@ -1348,14 +1698,26 @@ data class ShopProtectedState(
     val lastBuyAgainResult: ShopBuyAgainResultDto? = null,
     val notifications: List<ShopNotificationDto> = emptyList(),
     val notificationUnreadCount: Int = 0,
+    val sellerNotifications: List<ShopNotificationDto> = emptyList(),
+    val sellerNotificationUnreadCount: Int = 0,
+    val sellerNotificationStoreId: String? = null,
     val sellerConversations: List<ShopConversationDto> = emptyList(),
     val selectedConversation: ShopConversationDto? = null,
     val conversationMessages: List<ShopMessageDto> = emptyList(),
     val sellerMessageUnreadCount: Int = 0,
     val sellerOrderGroups: List<ShopOrderGroupDto> = emptyList(),
+    val sellerOrderStoreId: String? = null,
+    val sellerOrdersLoaded: Boolean = false,
     val sellerRequests: ShopSellerRequestsDto? = null,
+    val sellerRequestsStoreId: String? = null,
     val sellerProducts: List<ShopSellerProductDto> = emptyList(),
+    val sellerProductsStoreId: String? = null,
+    val sellerProductsLoaded: Boolean = false,
     val selectedSellerProduct: ShopSellerProductDto? = null,
+    val sellerMediaUpload: ShopSellerMediaUploadState? = null,
+    val sellerCategoryAttributes: Map<String, List<ShopCategoryAttributeDto>> = emptyMap(),
+    val sellerCategoryLoadingIds: Set<String> = emptySet(),
+    val sellerCategoryErrors: Map<String, String> = emptyMap(),
     val deliveryCode: ShopDeliveryCodeDto? = null,
     val sellerStatus: String = "not_started",
     val sellerApplication: ShopSellerApplicationDto? = null,
@@ -1363,10 +1725,23 @@ data class ShopProtectedState(
     val adminLoading: Boolean = false,
     val adminError: String? = null,
     val adminSession: ShopAdminSessionDto? = null,
+    val adminSelectedTab: String = "Sellers",
+    val allAdminProductsQuery: ShopAdminProductQuery = ShopAdminProductQuery(),
     val adminDashboard: ShopAdminDashboardDto? = null,
     val adminSellerApplications: List<ShopAdminSellerApplicationDto> = emptyList(),
     val adminProducts: List<ShopAdminProductDto> = emptyList(),
+    val allAdminProducts: List<ShopAdminProductDto> = emptyList(),
+    val allAdminProductsLoading: Boolean = false,
+    val allAdminProductsError: String? = null,
+    val allAdminProductsOffset: Int = 0,
+    val allAdminProductsHasNext: Boolean = false,
     val selectedAdminProduct: ShopAdminProductDetailDto? = null,
+    val publicContentQueue: ShopPublicContentQueueDto? = null,
+    val publicContentOffset: Int = 0,
+    val publicContentLoading: Boolean = false,
+    val publicContentReviewing: Boolean = false,
+    val publicContentError: String? = null,
+    val publicContentPreview: ShopPublicContentPreviewDto? = null,
     val adminOrders: List<ShopAdminOrderDto> = emptyList(),
     val selectedAdminOrder: ShopAdminOrderDetailDto? = null,
     val adminAuditLog: List<ShopAdminAuditLogDto> = emptyList(),
@@ -1377,6 +1752,15 @@ data class ShopProtectedState(
     val adminExchangeRequests: List<ShopExchangeRequestDto> = emptyList(),
     val adminReviews: List<ShopAdminReviewModerationDto> = emptyList(),
     val busyIds: Set<String> = emptySet(),
+)
+
+data class ShopSellerMediaUploadState(
+    val productId: String,
+    val total: Int,
+    val completed: Int = 0,
+    val failed: Int = 0,
+    val uploading: Boolean = true,
+    val message: String? = null,
 )
 
 sealed class ShopIdentityState {
