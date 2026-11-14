@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "999833677349",
+    "project_id": "adischat-qa",
+    "storage_bucket": "adischat-qa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:999833677349:android:fc9e54b7a75ec5594759cc",
+        "android_client_info": {
+          "package_name": "com.adischat.app.qa"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgaHe4oiu6BTm1qTohlOfRTiE3PJxyJww"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
