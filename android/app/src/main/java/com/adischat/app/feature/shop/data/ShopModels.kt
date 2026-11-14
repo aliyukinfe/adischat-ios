@@ -512,6 +512,18 @@ data class ShopConfirmCheckoutRequest(
     val paymentMethodCode: String,
     val idempotencyKey: String,
 )
+data class ShopApplyCouponRequest(
+    val checkoutSessionId: String,
+    val couponCode: String,
+)
+data class ShopApplyVoucherRequest(
+    val checkoutSessionId: String,
+    val voucherCode: String,
+)
+data class ShopRemoveDiscountRequest(
+    val checkoutSessionId: String,
+    val discountType: String,
+)
 
 data class ShopPaymentMethodDto(
     val code: String = "",
@@ -841,6 +853,12 @@ data class ShopCheckoutDto(
     val grandTotalMinor: Int = 0,
     val expiresAt: String? = null,
     val paymentMethods: List<ShopPaymentMethodDto> = emptyList(),
+    val couponCode: String? = null,
+    val couponDiscountMinor: Int = 0,
+    val voucherCode: String? = null,
+    val voucherAppliedMinor: Int = 0,
+    val remainingPayableMinor: Int = 0,
+    val isFullyCoveredByVoucher: Boolean = false,
 )
 
 data class ShopSellerStoreDto(

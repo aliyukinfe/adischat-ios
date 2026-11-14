@@ -9,13 +9,135 @@ import retrofit2.http.Part
 import retrofit2.http.Query
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
+import retrofit2.http.Streaming
 
 interface ShopFunctionApi {
+    @GET("functions/v1/adishop-seller-business")
+    suspend fun sellerBenefitBrands(
+        @Header("Authorization") authorization: String,
+        @Query("storeId") storeId: String,
+        @Query("action") action: String = "benefit-brands",
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-seller-business")
+    suspend fun sellerBenefitClaims(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "benefit-list",
+        @Query("storeId") storeId: String,
+        @Query("productId") productId: String? = null,
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-seller-business?action=benefit-create")
+    suspend fun sellerCreateBenefit(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopBenefitCreateRequest,
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-seller-business?action=benefit-submit")
+    suspend fun sellerSubmitBenefit(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopBenefitSubmitRequest,
+    ): ShopBenefitResponse
+
+    @Multipart
+    @POST("functions/v1/adishop-seller-business?action=benefit-evidence")
+    suspend fun sellerUploadBenefitEvidence(
+        @Header("Authorization") authorization: String,
+        @Part file: MultipartBody.Part,
+        @Part("storeId") storeId: RequestBody,
+        @Part("caseId") caseId: RequestBody,
+        @Part("evidenceType") evidenceType: RequestBody,
+        @Part("documentExpiresAt") documentExpiresAt: RequestBody,
+        @Part("requestKey") requestKey: RequestBody,
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-admin-products")
+    suspend fun adminBenefitQueue(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "benefit-queue",
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-admin-products")
+    suspend fun adminBenefitBrands(
+        @Header("Authorization") authorization: String,
+        @Query("action") action: String = "benefit-brands",
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-admin-products?action=benefit-brand-manage")
+    suspend fun adminManageBenefitBrand(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopBenefitBrandRequest,
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-admin-products?action=benefit-brand-manage")
+    suspend fun adminManageBenefitMerge(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopBenefitMergeRequest,
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-admin-product-detail")
+    suspend fun adminProductBenefits(
+        @Header("Authorization") authorization: String,
+        @Query("productId") productId: String,
+        @Query("action") action: String = "benefit-list",
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-admin-store-detail")
+    suspend fun adminStoreBenefits(
+        @Header("Authorization") authorization: String,
+        @Query("storeId") storeId: String,
+        @Query("action") action: String = "benefit-list",
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-admin-product-detail")
+    suspend fun adminBenefitEvidence(
+        @Header("Authorization") authorization: String,
+        @Query("caseId") caseId: String,
+        @Query("action") action: String = "benefit-evidence",
+    ): ShopBenefitResponse
+
+    @Streaming
+    @GET("functions/v1/adishop-admin-product-detail")
+    suspend fun adminBenefitPreview(
+        @Header("Authorization") authorization: String,
+        @Query("evidenceId") evidenceId: String,
+        @Query("action") action: String = "benefit-preview",
+    ): ResponseBody
+
+    @GET("functions/v1/adishop-admin-product-detail")
+    suspend fun adminBenefitHistory(
+        @Header("Authorization") authorization: String,
+        @Query("caseId") caseId: String,
+        @Query("action") action: String = "benefit-history",
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-admin-review-product?action=benefit-decision")
+    suspend fun adminBenefitDecision(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopBenefitDecisionRequest,
+    ): ShopBenefitResponse
+
+    @GET("functions/v1/adishop-product-reviews")
+    suspend fun productVerifiedBenefits(
+        @Query("productId") productId: String,
+        @Query("action") action: String = "verified-benefits",
+    ): ShopBenefitResponse
+
+    @POST("functions/v1/adishop-product-reviews?action=verified-benefits-batch")
+    suspend fun catalogVerifiedBenefits(@Body body: ShopBenefitCatalogRequest): ShopBenefitResponse
+
     @POST("functions/v1/adishop-exchange-adischat-session")
     suspend fun exchange(@Body body: ShopSessionExchangeRequest): ShopEnvelope<Unit>
 
+    @POST("functions/v1/adishop-exchange-adischat-session")
+    suspend fun revokeAll(@Body body: ShopRevokeAllRequest): ShopEnvelope<Unit>
+
     @POST("functions/v1/adishop-refresh-shop-session")
     suspend fun refresh(@Body body: ShopRefreshRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-refresh-shop-session")
+    suspend fun revoke(@Body body: ShopRevokeRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-get-current-profile")
     suspend fun currentProfile(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
@@ -120,19 +242,28 @@ interface ShopFunctionApi {
     suspend fun buyerCreateOrderIssue(@Header("Authorization") authorization: String, @Body body: ShopBuyerCreateIssueRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-list-notifications")
-    suspend fun notifications(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+    suspend fun notifications(@Header("Authorization") authorization: String, @Query("context") context: String, @Query("storeId") storeId: String?): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-notification-unread-count")
-    suspend fun notificationUnreadCount(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+    suspend fun notificationUnreadCount(@Header("Authorization") authorization: String, @Query("context") context: String, @Query("storeId") storeId: String?): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-mark-notification-read")
     suspend fun markNotificationRead(@Header("Authorization") authorization: String, @Body body: ShopNotificationIdRequest): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-mark-all-notifications-read")
-    suspend fun markAllNotificationsRead(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+    suspend fun markAllNotificationsRead(@Header("Authorization") authorization: String, @Body body: ShopNotificationScopeRequest): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-create-checkout")
     suspend fun createCheckout(@Header("Authorization") authorization: String, @Body body: ShopCreateCheckoutRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-apply-coupon")
+    suspend fun applyCoupon(@Header("Authorization") authorization: String, @Body body: ShopApplyCouponRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-apply-voucher")
+    suspend fun applyVoucher(@Header("Authorization") authorization: String, @Body body: ShopApplyVoucherRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-remove-discount")
+    suspend fun removeDiscount(@Header("Authorization") authorization: String, @Body body: ShopRemoveDiscountRequest): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-confirm-checkout")
     suspend fun confirmCheckout(@Header("Authorization") authorization: String, @Body body: ShopConfirmCheckoutRequest): ShopEnvelope<Unit>
@@ -165,7 +296,7 @@ interface ShopFunctionApi {
     suspend fun removeSellerApplicationDocument(@Header("Authorization") authorization: String, @Body body: ShopSellerApplicationDocumentRemoveRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-list-seller-order-groups")
-    suspend fun sellerOrderGroups(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+    suspend fun sellerOrderGroups(@Header("Authorization") authorization: String, @Query("storeId") storeId: String): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-seller-accept-order-group")
     suspend fun sellerAcceptOrderGroup(@Header("Authorization") authorization: String, @Body body: ShopSellerOrderActionRequest): ShopEnvelope<Unit>
@@ -186,7 +317,7 @@ interface ShopFunctionApi {
     suspend fun sellerVerifyDeliveryCode(@Header("Authorization") authorization: String, @Body body: ShopSellerDeliveryCodeRequest): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-seller-requests")
-    suspend fun sellerRequests(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+    suspend fun sellerRequests(@Header("Authorization") authorization: String, @Query("storeId") storeId: String): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-seller-respond-refund-request")
     suspend fun sellerRespondRefundRequest(@Header("Authorization") authorization: String, @Body body: ShopSellerRequestResponseRequest): ShopEnvelope<Unit>
@@ -197,17 +328,21 @@ interface ShopFunctionApi {
     @GET("functions/v1/adishop-seller-products")
     suspend fun sellerProducts(
         @Header("Authorization") authorization: String,
+        @Query("storeId") storeId: String,
         @Query("status") status: String = "all",
     ): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-seller-product-detail")
-    suspend fun sellerProductDetail(@Header("Authorization") authorization: String, @Query("productId") productId: String): ShopEnvelope<Unit>
+    suspend fun sellerProductDetail(@Header("Authorization") authorization: String, @Query("storeId") storeId: String, @Query("productId") productId: String): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-seller-create-product")
     suspend fun sellerCreateProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductCreateRequest): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-seller-update-product")
     suspend fun sellerUpdateProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductUpdateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-seller-update-product")
+    suspend fun sellerArchiveProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductArchiveRequest): ShopEnvelope<Unit>
 
     @POST("functions/v1/adishop-seller-submit-product")
     suspend fun sellerSubmitProduct(@Header("Authorization") authorization: String, @Body body: ShopSellerProductSubmitRequest): ShopEnvelope<Unit>
@@ -337,6 +472,13 @@ interface ShopFunctionApi {
         @Header("Authorization") authorization: String,
         @Query("status") status: String = "pending",
         @Query("search") search: String = "",
+        @Query("limit") limit: Int = ShopPublicContentReviewFlags.pageSize,
+        @Query("offset") offset: Int = 0,
+        @Query("view") view: String? = null,
+        @Query("category") category: String? = null,
+        @Query("storeId") storeId: String? = null,
+        @Query("stock") stock: String? = null,
+        @Query("sort") sort: String? = null,
     ): ShopEnvelope<Unit>
 
     @GET("functions/v1/adishop-admin-product-detail")
@@ -347,6 +489,49 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-admin-review-product")
     suspend fun adminReviewProduct(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewProductRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-review-product?action=public-content-queue")
+    suspend fun adminPublicContentQueue(
+        @Header("Authorization") authorization: String,
+        @Query("kind") kind: String? = null,
+        @Query("limit") limit: Int = 30,
+        @Query("offset") offset: Int = 0,
+    ): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-review-product?action=public-content-preview")
+    suspend fun adminPublicContentPreview(
+        @Header("Authorization") authorization: String,
+        @Query("kind") kind: String,
+        @Query("id") id: String,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-review-product?action=public-content-review")
+    suspend fun adminPublicContentDecision(
+        @Header("Authorization") authorization: String,
+        @Body body: ShopPublicContentDecisionRequest,
+    ): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-qa-moderation")
+    suspend fun qaModerationDecision(
+        @Header("Authorization") authorization: String,
+        @Header("Idempotency-Key") idempotencyKey: String,
+        @Body body: ShopQaModerationRequest,
+    ): ShopQaModerationResponse
+
+    @GET("functions/v1/adishop-qa-moderation?action=queue")
+    suspend fun qaModerationQueue(
+        @Header("Authorization") authorization: String,
+        @Query("kind") kind: String?,
+        @Query("limit") limit: Int,
+        @Query("offset") offset: Int,
+    ): ShopQaModerationQueueResponse
+
+    @GET("functions/v1/adishop-qa-moderation?action=preview")
+    suspend fun qaModerationPreview(
+        @Header("Authorization") authorization: String,
+        @Query("kind") kind: String,
+        @Query("id") id: String,
+    ): ShopQaModerationPreviewResponse
 
     @GET("functions/v1/adishop-admin-orders")
     suspend fun adminOrders(@Header("Authorization") authorization: String, @Query("search") search: String = ""): ShopEnvelope<Unit>

@@ -1,9 +1,127 @@
+import groovy.json.JsonSlurper
+
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
     id 'org.jetbrains.kotlin.plugin.compose'
     id 'com.google.gms.google-services'
 }
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file("local.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def qaProperties = new Properties()
+def qaPropertiesFile = rootProject.file("qa.local.properties")
+if (qaPropertiesFile.exists()) {
+    qaProperties.load(new FileInputStream(qaPropertiesFile))
+}
+def qaValue = { name -> (qaProperties[name] ?: "").toString().trim() }
+def qaBool = { name -> qaValue(name).equalsIgnoreCase("true") }
+def qaBuildRequested = gradle.startParameter.taskNames.any { task ->
+    task.toLowerCase().matches(".*(?:assemble|bundle|install|compile|generate|process|prebuild|validate)qa.*")
+}
+def restaurantsStagingBuildRequested = gradle.startParameter.taskNames.any { task ->
+    task.toLowerCase().matches(".*(?:assemble|bundle|install|compile|generate|process|prebuild|validate)restaurantsstaging.*")
+}
+def validateQaFirebaseJson = { String relativePath ->
+    def qaJsonFile = file(relativePath)
+    if (!qaJsonFile.isFile()) throw new GradleException("QA Firebase config is missing from app/$relativePath")
+    def qaJson = new JsonSlurper().parse(qaJsonFile)
+    if (qaJson.project_info?.project_id != "adischat-qa" ||
+        !qaJson.client?.any { it.client_info?.android_client_info?.package_name == "com.adischat.app.qa" }) {
+        throw new GradleException("QA Firebase project/package mismatch in app/$relativePath")
+    }
+}
+def requireAllowedQaHosts = {
+    def allowedHosts = qaValue("QA_ALLOWED_HOSTS").split(",").collect { it.trim() }.findAll { it }.toSet()
+    if (allowedHosts.isEmpty()) throw new GradleException("QA_ALLOWED_HOSTS must list exact isolated hosts")
+    return allowedHosts
+}
+def validateIsolatedQaUrl = { String name, Set<String> allowedHosts, String requiredHost = null ->
+    def value = qaValue(name)
+    def uri = value ? new URI(value) : null
+    if (!uri || uri.scheme != "https" || !uri.host || !allowedHosts.contains(uri.host) ||
+        uri.userInfo || uri.query || uri.fragment ||
+        uri.host.endsWith(".invalid") || uri.host.endsWith(".example") ||
+        uri.host in ["mcewjfnkrtiiolzibsuh.supabase.co", "opkqyvttbyezjbqwkvho.supabase.co",
+                     "adischat-api.adischat.workers.dev", "adischat-wallet-api.adischat.workers.dev"] ||
+        uri.host.contains("adischat-f4a77") ||
+        (requiredHost != null && uri.host != requiredHost)) {
+        throw new GradleException("$name must be an isolated HTTPS QA endpoint")
+    }
+}
+def validateRestaurantsQaEndpoints = { Set<String> allowedHosts ->
+    def restaurantsSupabaseUrl = qaValue("QA_RESTAURANTS_SUPABASE_URL")
+    def restaurantsAnonKey = qaValue("QA_RESTAURANTS_SUPABASE_ANON_KEY") ?: qaValue("QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY")
+    def restaurantsWorkerUrl = qaValue("QA_RESTAURANTS_WORKER_BASE_URL") ?: qaValue("QA_RESTAURANTS_IDENTITY_BRIDGE_URL")
+    def restaurantsSupabaseUri = restaurantsSupabaseUrl ? new URI(restaurantsSupabaseUrl) : null
+    def restaurantsWorkerUri = restaurantsWorkerUrl ? new URI(restaurantsWorkerUrl) : null
+    if (!restaurantsSupabaseUri || restaurantsSupabaseUri.scheme != "https" ||
+        restaurantsSupabaseUri.host != "gnhemfikofnzpemgnqdv.supabase.co" ||
+        restaurantsSupabaseUri.userInfo || restaurantsSupabaseUri.query || restaurantsSupabaseUri.fragment ||
+        (restaurantsSupabaseUri.path && restaurantsSupabaseUri.path != "/") ||
+        !allowedHosts.contains(restaurantsSupabaseUri.host)) {
+        throw new GradleException("QA_RESTAURANTS_SUPABASE_URL must be the exact staging host gnhemfikofnzpemgnqdv.supabase.co and listed in QA_ALLOWED_HOSTS")
+    }
+    if (!restaurantsWorkerUri || restaurantsWorkerUri.scheme != "https" ||
+        restaurantsWorkerUri.host != "adischat-api-staging.adischat.workers.dev" ||
+        restaurantsWorkerUri.userInfo || restaurantsWorkerUri.query || restaurantsWorkerUri.fragment ||
+        (restaurantsWorkerUri.path && restaurantsWorkerUri.path != "/") ||
+        !allowedHosts.contains(restaurantsWorkerUri.host)) {
+        throw new GradleException("QA_RESTAURANTS_WORKER_BASE_URL must be the exact staging host adischat-api-staging.adischat.workers.dev and listed in QA_ALLOWED_HOSTS")
+    }
+    if (!restaurantsAnonKey || restaurantsAnonKey.toLowerCase().contains("paste") ||
+        restaurantsAnonKey.toLowerCase().contains("service_role")) {
+        throw new GradleException("QA_RESTAURANTS_SUPABASE_ANON_KEY must be a non-empty staging anon/publishable key")
+    }
+    if (!qaBool("QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED")) {
+        throw new GradleException("QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED must be explicitly set to true in qa.local.properties for QA builds")
+    }
+    if (!qaBool("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED")) {
+        throw new GradleException("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED must be explicitly set to true in qa.local.properties for QA builds")
+    }
+}
+def validateQaIsolation = {
+    validateQaFirebaseJson("src/qa/google-services.json")
+    def allowedHosts = requireAllowedQaHosts()
+    ["QA_ADISCHAT_API_URL", "QA_WALLET_API_URL", "QA_SHOP_SUPABASE_URL",
+     "QA_IDENTITY_BRIDGE_URL", "QA_MEDIA_BASE_URL"].each { name ->
+        validateIsolatedQaUrl(name, allowedHosts, null)
+    }
+    def qaShopRef = qaValue("QA_SHOP_PROJECT_REF")
+    if (!qaShopRef.matches("[a-z]{20}") ||
+        qaShopRef in ["mcewjfnkrtiiolzibsuh", "opkqyvttbyezjbqwkvho"] ||
+        new URI(qaValue("QA_SHOP_SUPABASE_URL")).host != "${qaShopRef}.supabase.co") {
+        throw new GradleException("QA Shop URL must match a separate QA Supabase project ref")
+    }
+    if (!qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY") ||
+        qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY").toLowerCase().contains("paste") ||
+        qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY") == (keystoreProperties["ADISHOP_SUPABASE_PUBLISHABLE_KEY"] ?: "") ||
+        qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY") == (keystoreProperties["ADISHOP_SUPABASE_ANON_KEY"] ?: "") ||
+        qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY") == (System.getenv("ADISHOP_SUPABASE_PUBLISHABLE_KEY") ?: "") ||
+        qaValue("QA_SHOP_ASSERTION_ISSUER") == "" || qaValue("QA_SHOP_ASSERTION_AUDIENCE") == "") {
+        throw new GradleException("QA Shop key and identity configuration must be separate and complete")
+    }
+    validateRestaurantsQaEndpoints(allowedHosts)
+}
+def validateRestaurantsStagingIsolation = {
+    if (!qaPropertiesFile.isFile()) {
+        throw new GradleException("android/qa.local.properties is required for restaurantsStaging builds")
+    }
+    validateQaFirebaseJson("src/restaurantsStaging/google-services.json")
+    def allowedHosts = requireAllowedQaHosts()
+    ["QA_ADISCHAT_API_URL", "QA_MEDIA_BASE_URL"].each { name ->
+        validateIsolatedQaUrl(name, allowedHosts, "adischat-api-staging.adischat.workers.dev")
+    }
+    validateRestaurantsQaEndpoints(allowedHosts)
+}
+tasks.register("validateQaIsolation") { doLast { validateQaIsolation() } }
+tasks.matching { it.name == "preQaBuild" }.configureEach { dependsOn("validateQaIsolation") }
+tasks.register("validateRestaurantsStagingIsolation") { doLast { validateRestaurantsStagingIsolation() } }
+tasks.matching { it.name == "preRestaurantsStagingBuild" }.configureEach { dependsOn("validateRestaurantsStagingIsolation") }
 
 android {
     namespace = "com.adischat.app"
@@ -13,14 +131,124 @@ android {
         applicationId "com.adischat.app"
         minSdk = 24
         targetSdk = 36
-        versionCode 10
-        versionName "1.0.9"
+        versionCode 121
+        versionName "1.0.121"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        def shopSupabaseUrl = keystoreProperties['ADISHOP_SUPABASE_URL'] ?: System.getenv('ADISHOP_SUPABASE_URL') ?: "https://mcewjfnkrtiiolzibsuh.supabase.co"
+        def shopSupabasePublishableKey = keystoreProperties['ADISHOP_SUPABASE_PUBLISHABLE_KEY'] ?: System.getenv('ADISHOP_SUPABASE_PUBLISHABLE_KEY') ?: keystoreProperties['ADISHOP_SUPABASE_ANON_KEY'] ?: System.getenv('ADISHOP_SUPABASE_ANON_KEY') ?: ""
+        def releaseRequested = gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }
+        if (releaseRequested && shopSupabasePublishableKey.isBlank()) {
+            throw new GradleException("AdisShop release builds require ADISHOP_SUPABASE_PUBLISHABLE_KEY in android/local.properties or the environment.")
+        }
+        buildConfigField "String", "ADISHOP_SUPABASE_URL", "\"${shopSupabaseUrl}\""
+        buildConfigField "String", "ADISHOP_SUPABASE_PUBLISHABLE_KEY", "\"${shopSupabasePublishableKey}\""
+        buildConfigField "String", "ADISCHAT_API_URL", '"https://adischat-api.adischat.workers.dev/"'
+        buildConfigField "String", "ADISCHAT_WALLET_API_URL", '"https://adischat-wallet-api.adischat.workers.dev/"'
+        buildConfigField "String", "ADISCHAT_MEDIA_BASE_URL", '"https://adischat-api.adischat.workers.dev/media/"'
+        buildConfigField "String", "ADISHOP_IDENTITY_BRIDGE_URL", '""'
+        buildConfigField "String", "ADISHOP_ASSERTION_ISSUER", '""'
+        buildConfigField "String", "ADISHOP_ASSERTION_AUDIENCE", '""'
+        buildConfigField "String", "ADISCHAT_FIREBASE_PROJECT_ID", '"adischat-f4a77"'
+        buildConfigField "boolean", "QA_BUILD", "true"
+        buildConfigField "boolean", "OFFLINE_QA_PREVIEW", "false"
+        buildConfigField "boolean", "QA_PUSH_ENABLED", "true"
+        buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "true"
+        buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "true"
+        buildConfigField "String", "RESTAURANTS_SUPABASE_URL", '""'
+        buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", '""'
+        buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", '""'
+        buildConfigField "boolean", "RESTAURANTS_IDENTITY_BRIDGE_ENABLED", "false"
+        buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "false"
+    }
+
+    signingConfigs {
+        release {
+            def storeFilePath = keystoreProperties['ADISCHAT_UPLOAD_STORE_FILE']
+            if (storeFilePath) {
+                storeFile file(storeFilePath)
+                keyAlias keystoreProperties['ADISCHAT_UPLOAD_KEY_ALIAS']
+                storePassword keystoreProperties['ADISCHAT_UPLOAD_STORE_PASSWORD']
+                keyPassword keystoreProperties['ADISCHAT_UPLOAD_KEY_PASSWORD']
+            }
+        }
     }
 
     buildTypes {
+        qa {
+            initWith debug
+            applicationIdSuffix ".qa"
+            matchingFallbacks = ["debug"]
+            buildConfigField "String", "ADISHOP_SUPABASE_URL", "\"${qaValue('QA_SHOP_SUPABASE_URL')}\""
+            buildConfigField "String", "ADISHOP_SUPABASE_PUBLISHABLE_KEY", "\"${qaValue('QA_SHOP_SUPABASE_PUBLISHABLE_KEY')}\""
+            buildConfigField "String", "ADISCHAT_API_URL", "\"${qaValue('QA_ADISCHAT_API_URL')}\""
+            buildConfigField "String", "ADISCHAT_WALLET_API_URL", "\"${qaValue('QA_WALLET_API_URL')}\""
+            buildConfigField "String", "ADISCHAT_MEDIA_BASE_URL", "\"${qaValue('QA_MEDIA_BASE_URL')}\""
+            buildConfigField "String", "ADISHOP_IDENTITY_BRIDGE_URL", "\"${qaValue('QA_IDENTITY_BRIDGE_URL')}\""
+            buildConfigField "String", "ADISHOP_ASSERTION_ISSUER", "\"${qaValue('QA_SHOP_ASSERTION_ISSUER')}\""
+            buildConfigField "String", "ADISHOP_ASSERTION_AUDIENCE", "\"${qaValue('QA_SHOP_ASSERTION_AUDIENCE')}\""
+            buildConfigField "String", "ADISCHAT_FIREBASE_PROJECT_ID", '"adischat-qa"'
+            buildConfigField "boolean", "QA_BUILD", "true"
+            buildConfigField "boolean", "OFFLINE_QA_PREVIEW", "false"
+            buildConfigField "boolean", "QA_PUSH_ENABLED", "false"
+            buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "false"
+            buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "false"
+            buildConfigField "String", "RESTAURANTS_SUPABASE_URL", "\"${qaValue('QA_RESTAURANTS_SUPABASE_URL')}\""
+            buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", "\"${qaValue('QA_RESTAURANTS_SUPABASE_ANON_KEY') ?: qaValue('QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY')}\""
+            buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", "\"${qaValue('QA_RESTAURANTS_WORKER_BASE_URL') ?: qaValue('QA_RESTAURANTS_IDENTITY_BRIDGE_URL')}\""
+            buildConfigField "boolean", "RESTAURANTS_IDENTITY_BRIDGE_ENABLED", "${qaBool('QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED')}"
+            buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "${qaBool('QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED')}"
+        }
+        restaurantsStaging {
+            initWith debug
+            applicationIdSuffix ".qa"
+            matchingFallbacks = ["debug"]
+            buildConfigField "String", "ADISHOP_SUPABASE_URL", '""'
+            buildConfigField "String", "ADISHOP_SUPABASE_PUBLISHABLE_KEY", '""'
+            buildConfigField "String", "ADISCHAT_API_URL", "\"${qaValue('QA_ADISCHAT_API_URL')}\""
+            buildConfigField "String", "ADISCHAT_WALLET_API_URL", '"https://qa-wallet-disabled.invalid/"'
+            buildConfigField "String", "ADISCHAT_MEDIA_BASE_URL", "\"${qaValue('QA_MEDIA_BASE_URL')}\""
+            buildConfigField "String", "ADISHOP_IDENTITY_BRIDGE_URL", '""'
+            buildConfigField "String", "ADISHOP_ASSERTION_ISSUER", '""'
+            buildConfigField "String", "ADISHOP_ASSERTION_AUDIENCE", '""'
+            buildConfigField "String", "ADISCHAT_FIREBASE_PROJECT_ID", '"adischat-qa"'
+            buildConfigField "boolean", "QA_BUILD", "true"
+            buildConfigField "boolean", "OFFLINE_QA_PREVIEW", "false"
+            buildConfigField "boolean", "QA_PUSH_ENABLED", "false"
+            buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "false"
+            buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "false"
+            buildConfigField "String", "RESTAURANTS_SUPABASE_URL", "\"${qaValue('QA_RESTAURANTS_SUPABASE_URL')}\""
+            buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", "\"${qaValue('QA_RESTAURANTS_SUPABASE_ANON_KEY') ?: qaValue('QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY')}\""
+            buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", "\"${qaValue('QA_RESTAURANTS_WORKER_BASE_URL') ?: qaValue('QA_RESTAURANTS_IDENTITY_BRIDGE_URL')}\""
+            buildConfigField "boolean", "RESTAURANTS_IDENTITY_BRIDGE_ENABLED", "${qaBool('QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED')}"
+            buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "${qaBool('QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED')}"
+        }
+        offlinePreview {
+            initWith debug
+            applicationIdSuffix ".offlinepreview"
+            matchingFallbacks = ["debug"]
+            buildConfigField "String", "ADISHOP_SUPABASE_URL", '""'
+            buildConfigField "String", "ADISHOP_SUPABASE_PUBLISHABLE_KEY", '""'
+            buildConfigField "String", "ADISCHAT_API_URL", '"https://offline-preview.invalid/"'
+            buildConfigField "String", "ADISCHAT_WALLET_API_URL", '"https://offline-preview.invalid/"'
+            buildConfigField "String", "ADISCHAT_MEDIA_BASE_URL", '"https://offline-preview.invalid/media/"'
+            buildConfigField "String", "ADISHOP_IDENTITY_BRIDGE_URL", '""'
+            buildConfigField "String", "ADISHOP_ASSERTION_ISSUER", '""'
+            buildConfigField "String", "ADISHOP_ASSERTION_AUDIENCE", '""'
+            buildConfigField "String", "ADISCHAT_FIREBASE_PROJECT_ID", '"adischat-offline-preview"'
+            buildConfigField "boolean", "QA_BUILD", "false"
+            buildConfigField "boolean", "OFFLINE_QA_PREVIEW", "true"
+            buildConfigField "boolean", "QA_PUSH_ENABLED", "false"
+            buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "false"
+            buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "false"
+            buildConfigField "String", "RESTAURANTS_SUPABASE_URL", '""'
+            buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", '""'
+            buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", '""'
+            buildConfigField "boolean", "RESTAURANTS_IDENTITY_BRIDGE_ENABLED", "false"
+            buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "false"
+        }
         release {
-            minifyEnabled false
+            signingConfig signingConfigs.release
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -36,8 +264,12 @@ android {
 
     buildFeatures {
         compose true
+        buildConfig true
     }
 }
+
+if (qaBuildRequested) validateQaIsolation()
+if (restaurantsStagingBuildRequested) validateRestaurantsStagingIsolation()
 
 dependencies {
     // Core
@@ -47,6 +279,7 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.8.7'
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation 'androidx.core:core-splashscreen:1.0.1'
+    implementation 'androidx.exifinterface:exifinterface:1.3.7'
 
     // Compose BOM
     implementation platform('androidx.compose:compose-bom:2024.12.01')
@@ -67,6 +300,7 @@ dependencies {
 
     // DataStore
     implementation 'androidx.datastore:datastore-preferences:1.1.1'
+    implementation 'androidx.security:security-crypto:1.1.0-alpha06'
 
     // Firebase
     implementation platform('com.google.firebase:firebase-bom:33.7.0')
@@ -76,7 +310,7 @@ dependencies {
     implementation 'com.google.firebase:firebase-storage'
     implementation 'com.google.android.gms:play-services-auth:21.2.0'
 
-    // Coil ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â image loading (profile photos)
+    // Coil ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â image loading (profile photos)
     implementation 'io.coil-kt:coil-compose:2.7.0'
 
     // CameraX
@@ -86,6 +320,7 @@ dependencies {
 
     // ML Kit Barcode Scanning
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
+    implementation 'com.google.mlkit:image-labeling:17.0.9'
     implementation 'com.google.zxing:core:3.5.3'
 
     // Accompanist Permissions
@@ -106,9 +341,12 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.12.0'
     implementation 'com.squareup.okhttp3:logging-interceptor:4.12.0'
 
-    // Media3 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â video playback in chat
+    // Media3 ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â video playback in chat
     implementation 'androidx.media3:media3-exoplayer:1.4.1'
     implementation 'androidx.media3:media3-ui:1.4.1'
+
+    // WebRTC (prebuilt libwebrtc) for real P2P voice/video calls
+    implementation 'io.getstream:stream-webrtc-android:1.3.8'
 
     // Tests
     testImplementation 'junit:junit:4.13.2'

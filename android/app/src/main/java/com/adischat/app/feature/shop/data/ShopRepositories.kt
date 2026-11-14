@@ -1,5 +1,6 @@
 package com.adischat.app.feature.shop.data
 
+import com.adischat.app.BuildConfig
 import com.adischat.app.network.CloudflareClient
 import com.google.firebase.auth.FirebaseAuth
 import com.google.gson.JsonParser
@@ -69,12 +70,25 @@ class ShopHomeRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.
     suspend fun loadHome(): ShopHomeState {
         val service = api ?: return ShopHomeState(loading = false, error = true, maintenance = true)
         return try {
+            val banners = if (BuildConfig.QA_BUILD) emptyList() else service.banners()
+            val categories = if (BuildConfig.QA_BUILD) service.qaCategories() else service.categories()
+            val sellingUnits = if (BuildConfig.QA_BUILD) emptyList() else service.sellingUnits()
+            val products = if (BuildConfig.QA_BUILD) service.qaCatalogPage(mapOf("p_sort" to "newest", "p_limit" to 100))
+                else if (ShopReviewedMedia.enabled) service.reviewedProducts().map(ShopReviewedMedia::product)
+                else service.products()
+            val stores = if (BuildConfig.QA_BUILD) service.qaStores()
+                else if (ShopReviewedMedia.enabled) service.reviewedStores().map(ShopReviewedMedia::store)
+                else service.stores()
+            val verified = if (ShopBenefitFlags.buyerBadgesEnabled && products.isNotEmpty()) {
+                ShopBenefitsRepository().catalogBenefits(products.map { it.id }).getOrDefault(emptyMap())
+            } else emptyMap()
             ShopHomeState(
                 loading = false,
-                banners = service.banners(),
-                categories = service.categories(),
-                products = service.products(),
-                stores = service.stores(),
+                banners = banners,
+                categories = categories,
+                sellingUnits = sellingUnits,
+                products = products.map { it.copy(verifiedBenefits = verified[it.id].orEmpty()) },
+                stores = stores,
             )
         } catch (error: Throwable) {
             android.util.Log.w("AdisShop", "Native shop home load failed", error)
@@ -84,40 +98,184 @@ class ShopHomeRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.
 }
 
 class CategoryRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.api) {
-    suspend fun activeCategories(): List<ShopCategoryDto> = api?.categories().orEmpty()
+    suspend fun activeCategories(): List<ShopCategoryDto> = api?.let { if (BuildConfig.QA_BUILD) it.qaCategories() else it.categories() }.orEmpty()
+    suspend fun activeSellingUnits(): List<ShopSellingUnitDto> = if (BuildConfig.QA_BUILD) emptyList() else api?.sellingUnits().orEmpty()
+    suspend fun attributes(categoryId: String): Result<List<ShopCategoryAttributeDto>> = runCatching {
+        require(categoryId.isNotBlank())
+        val service = api ?: error("Marketplace is unavailable.")
+        service.categoryAttributes(ShopCategoryAttributeRequest(categoryId))
+    }
+}
+
+private fun qaCatalogSort(order: String): String = when {
+    order.startsWith("created_at.desc") -> "newest"
+    order.startsWith("created_at.asc") -> "oldest"
+    order.startsWith("price_minor.asc") -> "price_low"
+    order.startsWith("price_minor.desc") -> "price_high"
+    else -> error("This sort is unavailable in QA until reviewed data supports it.")
 }
 
 class ProductRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.api) {
-    suspend fun approvedProducts(): List<ShopProductDto> = api?.products().orEmpty()
+    suspend fun approvedProducts(): List<ShopProductDto> = api?.let { service ->
+        if (BuildConfig.QA_BUILD) service.qaCatalogPage(mapOf("p_sort" to "newest", "p_limit" to 100))
+        else if (ShopReviewedMedia.enabled) service.reviewedProducts().map(ShopReviewedMedia::product)
+        else service.products()
+    }.orEmpty()
+    suspend fun searchCatalogPage(
+        term: String,
+        categorySlug: String?,
+        inStockOnly: Boolean,
+        order: String,
+        offset: Int,
+        pageSize: Int,
+    ): Result<List<ShopProductDto>> = runCatching {
+        val service = api ?: error("Marketplace is unavailable.")
+        val safeTerm = term.trim().take(80)
+            .replace(Regex("[^\\p{L}\\p{N}\\s-]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+        require(safeTerm.length >= 2) { "Enter at least two letters or numbers." }
+        require(offset >= 0 && pageSize in 1..24)
+        if (BuildConfig.QA_BUILD) return@runCatching service.qaCatalogPage(mapOf(
+            "p_term" to safeTerm, "p_category_slug" to categorySlug,
+            "p_in_stock" to inStockOnly, "p_sort" to qaCatalogSort(order),
+            "p_limit" to pageSize, "p_offset" to offset,
+        ))
+        val text = "or(title.ilike.*$safeTerm*,brand.ilike.*$safeTerm*)"
+        val results = if (ShopReviewedMedia.enabled) service.reviewedSearchCatalogPage(
+            textFilter = if (inStockOnly) null else "(title.ilike.*$safeTerm*,brand.ilike.*$safeTerm*)",
+            combinedFilter = if (inStockOnly) "($text,or(stock_status.is.null,stock_status.neq.out_of_stock))" else null,
+            categoryFilter = categorySlug?.let { "eq.$it" },
+            order = order,
+            limit = pageSize,
+            offset = offset,
+        ) else service.searchCatalogPage(
+            textFilter = if (inStockOnly) null else "(title.ilike.*$safeTerm*,brand.ilike.*$safeTerm*)",
+            combinedFilter = if (inStockOnly) "($text,or(stock_status.is.null,stock_status.neq.out_of_stock))" else null,
+            categoryFilter = categorySlug?.let { "eq.$it" },
+            order = order,
+            limit = pageSize,
+            offset = offset,
+        )
+        if (ShopReviewedMedia.enabled) results.map(ShopReviewedMedia::product) else results
+    }
+    suspend fun search(
+        categorySlugs: Set<String>,
+        minimumPriceMinor: Int?,
+        maximumPriceMinor: Int?,
+        minimumRating: Int,
+        inStockOnly: Boolean,
+        discountedOnly: Boolean,
+        order: String,
+    ): Result<List<ShopProductDto>> = runCatching {
+        val service = api ?: error("Marketplace is unavailable.")
+        if (BuildConfig.QA_BUILD) {
+            require(minimumRating == 0 && !discountedOnly && categorySlugs.size <= 1) {
+                "These filters are unavailable in QA until reviewed data supports them."
+            }
+            return@runCatching service.qaCatalogPage(mapOf(
+                "p_category_slug" to categorySlugs.singleOrNull(),
+                "p_min_price" to minimumPriceMinor, "p_max_price" to maximumPriceMinor,
+                "p_in_stock" to inStockOnly, "p_sort" to qaCatalogSort(order),
+                "p_limit" to 100,
+            ))
+        }
+        val category = categorySlugs.takeIf { it.isNotEmpty() }?.joinToString(prefix = "in.(", postfix = ")")
+        val priceParts = buildList {
+            minimumPriceMinor?.let { add("price_minor.gte.$it") }
+            maximumPriceMinor?.let { add("price_minor.lte.$it") }
+        }
+        val categoryFilter = category
+        val priceFilter = priceParts.takeIf { it.isNotEmpty() }?.joinToString(prefix = "(", postfix = ")")
+        val ratingFilter = minimumRating.takeIf { it > 0 }?.let { "gte.$it" }
+        val stockFilter = if (inStockOnly) "(stock_status.is.null,stock_status.neq.out_of_stock)" else null
+        val discountFilter = if (discountedOnly) "gt.0" else null
+        val results = if (ShopReviewedMedia.enabled) service.reviewedSearchProducts(
+            categoryFilter = categoryFilter,
+            priceFilter = priceFilter,
+            ratingFilter = ratingFilter,
+            stockFilter = stockFilter,
+            discountFilter = discountFilter,
+            order = order,
+        ) else service.searchProducts(
+            categoryFilter = categoryFilter,
+            priceFilter = priceFilter,
+            ratingFilter = ratingFilter,
+            stockFilter = stockFilter,
+            discountFilter = discountFilter,
+            order = order,
+        )
+        if (ShopReviewedMedia.enabled) results.map(ShopReviewedMedia::product) else results
+    }
+    suspend fun detail(productId: String): Result<ShopProductDto> = runCatching {
+        require(productId.isNotBlank())
+        val fetched = if (BuildConfig.QA_BUILD) api?.qaProductDetail(mapOf("p_product_id" to productId))
+            else api?.productCatalog(ShopProductCatalogRequest(productId))
+        val available = fetched ?: error("Product is unavailable.")
+        val product = if (!BuildConfig.QA_BUILD && ShopReviewedMedia.enabled) ShopReviewedMedia.product(available) else available
+        if (ShopBenefitFlags.buyerBadgesEnabled) {
+            val verified = runCatching { ShopFunctionClient.api?.productVerifiedBenefits(productId)?.verifiedBenefits.orEmpty() }
+                .getOrDefault(emptyList())
+            product.copy(verifiedBenefits = verified)
+        } else product
+    }
 }
 
 class StoreRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.api) {
-    suspend fun approvedStores(): List<ShopStoreDto> = api?.stores().orEmpty()
+    suspend fun approvedStores(): List<ShopStoreDto> = api?.let { service ->
+        if (BuildConfig.QA_BUILD) service.qaStores()
+        else if (ShopReviewedMedia.enabled) service.reviewedStores().map(ShopReviewedMedia::store)
+        else service.stores()
+    }.orEmpty()
 }
 
 object ShopSessionMemory {
+    private var generation = 0L
+    private var signingOut = false
+
     @Volatile
     private var cachedSession: ShopSessionDto? = null
 
     @Volatile
     private var cachedProfile: ShopProfileDto? = null
 
-    fun session(): ShopSessionDto? = cachedSession
+    @Synchronized fun session(): ShopSessionDto? = cachedSession
 
-    fun profile(): ShopProfileDto? = cachedProfile
+    @Synchronized fun profile(): ShopProfileDto? = cachedProfile
 
-    fun update(session: ShopSessionDto, profile: ShopProfileDto?) {
-        cachedSession = session
-        cachedProfile = profile
+    @Synchronized fun generation(): Long = generation
+
+    @Synchronized fun isSigningOut(): Boolean = signingOut
+
+    @Synchronized fun beginSignOut(): ShopSessionDto? {
+        signingOut = true
+        generation++
+        return cachedSession
     }
 
-    fun updateProfile(profile: ShopProfileDto?) {
-        cachedProfile = profile
-    }
-
-    fun clear() {
+    @Synchronized fun finishSignOut() {
         cachedSession = null
         cachedProfile = null
+        generation++
+        signingOut = false
+    }
+
+    @Synchronized fun updateIfCurrent(expectedGeneration: Long, session: ShopSessionDto, profile: ShopProfileDto?): Boolean {
+        if (signingOut || generation != expectedGeneration) return false
+        cachedSession = session
+        cachedProfile = profile
+        return true
+    }
+
+    @Synchronized fun updateProfileIfCurrent(expectedGeneration: Long, profile: ShopProfileDto?): Boolean {
+        if (signingOut || generation != expectedGeneration) return false
+        cachedProfile = profile
+        return true
+    }
+
+    @Synchronized fun clear() {
+        cachedSession = null
+        cachedProfile = null
+        generation++
     }
 }
 
@@ -135,35 +293,35 @@ class ShopIdentityRepository(
     fun activeUserId(): String = auth.currentUser?.uid.orEmpty()
 
     suspend fun sessionToken(): Result<String> = runCatching {
+        if (ShopSessionMemory.isSigningOut()) throw ShopSessionExpiredException()
         val current = ShopSessionMemory.session()
         val profile = ShopSessionMemory.profile()
         val activeUid = auth.currentUser?.uid.orEmpty()
         if (ShopStateReducers.canUseCachedIdentity(current, profile, activeUid)) {
             return@runCatching current?.accessToken.orEmpty()
         }
-        ShopSessionMemory.clear()
-        val service = functionApi ?: error("Shop account sync is temporarily unavailable.")
-        val assertion = cloudflareApi.requestShopSessionAssertion().assertion
-        if (assertion.isBlank()) error("We couldn't sync your Shop account.")
-        val exchange = service.exchange(ShopSessionExchangeRequest(assertion))
-        val session = exchange.session ?: error(exchange.error ?: "We couldn't sync your Shop account.")
-        if (exchange.profile?.adisChatUserId != activeUid) {
-            ShopSessionMemory.clear()
-            error("Please sign in again.")
-        }
-        ShopSessionMemory.update(session, exchange.profile)
-        session.accessToken
+        exchangeAuthorization(activeUid).removePrefix("Bearer ")
     }
 
     suspend fun <T> authorizedRequest(block: suspend (String) -> T): T =
         authRetryCoordinator.execute(
             authorization = { authorization() },
             refreshAuthorization = ::refreshAuthorization,
-            request = block,
+            request = { token ->
+                val ownerUid = activeUserId()
+                val generation = ShopSessionMemory.generation()
+                val result = block(token)
+                if (ShopSessionMemory.isSigningOut() || ShopSessionMemory.generation() != generation || activeUserId() != ownerUid) {
+                    throw ShopSessionExpiredException()
+                }
+                result
+            },
         )
 
     private suspend fun refreshAuthorization(failedAuthorization: String): String {
+        val generation = ShopSessionMemory.generation()
         return try {
+            if (ShopSessionMemory.isSigningOut()) throw ShopSessionExpiredException()
             val activeUid = activeUserId()
             val currentSession = ShopSessionMemory.session()
             val currentProfile = ShopSessionMemory.profile()
@@ -177,30 +335,79 @@ class ShopIdentityRepository(
                 return currentAuthorization
             }
 
-            val refreshToken = currentSession?.refreshToken.orEmpty()
-            if (refreshToken.isBlank()) throw ShopSessionExpiredException()
-            val service = functionApi ?: throw ShopSessionExpiredException()
-            val refreshedSession = service.refresh(ShopRefreshRequest(refreshToken)).session
-                ?: throw ShopSessionExpiredException()
+            val refreshedSession = currentSession?.refreshToken
+                ?.takeIf { it.isNotBlank() }
+                ?.let { refreshToken ->
+                    runCatching {
+                        functionApi?.refresh(ShopRefreshRequest(refreshToken))?.session
+                    }.getOrNull()
+                }
             if (
-                refreshedSession.accessToken.isBlank() ||
-                currentProfile?.adisChatUserId != activeUid
+                refreshedSession != null &&
+                refreshedSession.accessToken.isNotBlank() &&
+                currentProfile?.adisChatUserId == activeUid
             ) {
-                throw ShopSessionExpiredException()
+                if (activeUserId() != activeUid || !ShopSessionMemory.updateIfCurrent(generation, refreshedSession, currentProfile)) {
+                    throw ShopSessionExpiredException()
+                }
+                return "Bearer ${refreshedSession.accessToken}"
             }
-            ShopSessionMemory.update(refreshedSession, currentProfile)
-            "Bearer ${refreshedSession.accessToken}"
+
+            exchangeAuthorization(activeUid)
         } catch (error: Throwable) {
-            ShopSessionMemory.clear()
+            if (ShopSessionMemory.generation() == generation) ShopSessionMemory.clear()
             if (error is ShopSessionExpiredException) throw error
             throw ShopSessionExpiredException(error)
         }
     }
 
+    private suspend fun exchangeAuthorization(activeUid: String): String {
+        if (activeUid.isBlank()) throw ShopSessionExpiredException()
+        if (ShopSessionMemory.isSigningOut()) throw ShopSessionExpiredException()
+        ShopSessionMemory.clear()
+        val generation = ShopSessionMemory.generation()
+        val service = functionApi ?: throw ShopSessionExpiredException()
+        val assertion = cloudflareApi.requestShopSessionAssertion().assertion
+        if (assertion.isBlank()) throw ShopSessionExpiredException()
+        val exchange = service.exchange(ShopSessionExchangeRequest(assertion))
+        val session = exchange.session ?: throw ShopSessionExpiredException()
+        val profile = exchange.profile
+        if (session.accessToken.isBlank() || profile?.adisChatUserId != activeUid) {
+            if (ShopSessionMemory.generation() == generation) ShopSessionMemory.clear()
+            throw ShopSessionExpiredException()
+        }
+        if (activeUserId() != activeUid || !ShopSessionMemory.updateIfCurrent(generation, session, profile)) {
+            throw ShopSessionExpiredException()
+        }
+        return "Bearer ${session.accessToken}"
+    }
+
+    suspend fun revokeCapturedSession(session: ShopSessionDto?): Boolean {
+        if (session == null) return true
+        if (session.refreshToken.isBlank()) return false
+        return runCatching {
+            functionApi?.revoke(ShopRevokeRequest(session.refreshToken))?.ok == true
+        }.getOrDefault(false)
+    }
+
+    suspend fun revokeCurrentAccountSessions(): Boolean = runCatching {
+        if (activeUserId().isBlank()) return@runCatching false
+        val assertion = cloudflareApi.requestShopSessionAssertion().assertion
+        if (assertion.isBlank()) return@runCatching false
+        functionApi?.revokeAll(ShopRevokeAllRequest(assertion))?.ok == true
+    }.getOrDefault(false)
+
     suspend fun currentProfile(): Result<ShopProfileDto?> = runCatching {
+        var requestGeneration = ShopSessionMemory.generation()
+        val ownerUid = activeUserId()
         val service = functionApi ?: error("Shop account sync is temporarily unavailable.")
-        val envelope = authorizedRequest { token -> service.currentProfile(token) }
-        ShopSessionMemory.updateProfile(envelope.profile ?: ShopSessionMemory.profile())
+        val envelope = authorizedRequest { token ->
+            requestGeneration = ShopSessionMemory.generation()
+            service.currentProfile(token)
+        }
+        if (activeUserId() != ownerUid || !ShopSessionMemory.updateProfileIfCurrent(requestGeneration, envelope.profile ?: ShopSessionMemory.profile())) {
+            throw ShopSessionExpiredException()
+        }
         ShopSessionMemory.profile()
     }
 
@@ -215,38 +422,43 @@ class CartRepository(
 ) {
     suspend fun getCart(): Result<ShopCartDto> = runCatching {
         val service = api ?: error("Your cart is temporarily unavailable.")
-        identity.authorizedRequest { token -> service.cart(token) }.cart
+        val cart = identity.authorizedRequest { token -> service.cart(token) }.cart
             ?: error("Your cart is temporarily unavailable.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
-    suspend fun add(productId: String, quantity: Int = 1): Result<ShopCartDto> = runCatching {
+    suspend fun add(productId: String, variantId: String? = null, quantity: Int = 1): Result<ShopCartDto> = runCatching {
         val service = api ?: error("Your cart is temporarily unavailable.")
-        identity.authorizedRequest { token ->
-            service.addCartItem(token, ShopCartItemRequest(productId = productId, quantity = quantity))
+        val cart = identity.authorizedRequest { token ->
+            service.addCartItem(token, ShopCartItemRequest(productId = productId, variantId = variantId, quantity = quantity))
         }.cart
             ?: error("Your cart is temporarily unavailable.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
     suspend fun update(itemId: String, quantity: Int): Result<ShopCartDto> = runCatching {
         val service = api ?: error("Your cart is temporarily unavailable.")
-        identity.authorizedRequest { token ->
+        val cart = identity.authorizedRequest { token ->
             service.updateCartItem(token, ShopCartItemUpdateRequest(itemId = itemId, quantity = quantity))
         }.cart
             ?: error("Your cart is temporarily unavailable.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
     suspend fun remove(itemId: String): Result<ShopCartDto> = runCatching {
         val service = api ?: error("Your cart is temporarily unavailable.")
-        identity.authorizedRequest { token ->
+        val cart = identity.authorizedRequest { token ->
             service.removeCartItem(token, ShopCartItemIdRequest(itemId = itemId))
         }.cart
             ?: error("Your cart is temporarily unavailable.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
     suspend fun clear(): Result<ShopCartDto> = runCatching {
         val service = api ?: error("Your cart is temporarily unavailable.")
-        identity.authorizedRequest { token -> service.clearCart(token) }.cart
+        val cart = identity.authorizedRequest { token -> service.clearCart(token) }.cart
             ?: error("Your cart is temporarily unavailable.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
     fun isAvailable(): Boolean = api != null
@@ -258,7 +470,8 @@ class FavoriteRepository(
 ) {
     suspend fun list(): Result<List<ShopFavoriteDto>> = runCatching {
         val service = api ?: error("Couldn't load this right now. Try again.")
-        identity.authorizedRequest { token -> service.favorites(token) }.favorites.orEmpty()
+        val favorites = identity.authorizedRequest { token -> service.favorites(token) }.favorites.orEmpty()
+        if (ShopReviewedMedia.enabled) favorites.map(ShopReviewedMedia::favorite) else favorites
     }
 
     suspend fun add(productId: String): Result<List<ShopFavoriteDto>> = runCatching {
@@ -266,7 +479,9 @@ class FavoriteRepository(
         identity.authorizedRequest { token ->
             service.addFavorite(token, ShopProductActionRequest(productId))
             service.favorites(token)
-        }.favorites.orEmpty()
+        }.favorites.orEmpty().let { favorites ->
+            if (ShopReviewedMedia.enabled) favorites.map(ShopReviewedMedia::favorite) else favorites
+        }
     }
 
     suspend fun remove(productId: String): Result<List<ShopFavoriteDto>> = runCatching {
@@ -274,7 +489,9 @@ class FavoriteRepository(
         identity.authorizedRequest { token ->
             service.removeFavorite(token, ShopProductActionRequest(productId))
             service.favorites(token)
-        }.favorites.orEmpty()
+        }.favorites.orEmpty().let { favorites ->
+            if (ShopReviewedMedia.enabled) favorites.map(ShopReviewedMedia::favorite) else favorites
+        }
     }
 }
 
@@ -284,7 +501,8 @@ class RecentlyViewedRepository(
 ) {
     suspend fun list(): Result<List<ShopRecentlyViewedDto>> = runCatching {
         val service = api ?: error("Couldn't load this right now. Try again.")
-        identity.authorizedRequest { token -> service.recentlyViewed(token) }.recentlyViewed.orEmpty()
+        val items = identity.authorizedRequest { token -> service.recentlyViewed(token) }.recentlyViewed.orEmpty()
+        if (ShopReviewedMedia.enabled) items.map(ShopReviewedMedia::recentlyViewed) else items
     }
 
     suspend fun record(productId: String): Result<Unit> = runCatching {
@@ -301,11 +519,37 @@ class AddressRepository(
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
 ) {
     suspend fun list(): Result<List<ShopAddressDto>> = runCatching {
+        if (com.adischat.app.BuildConfig.QA_BUILD) {
+            return@runCatching listOf(
+                ShopAddressDto(
+                    id = "qa-staging-address-bole-1",
+                    label = "Home",
+                    recipientName = "Aliyu (QA Buyer)",
+                    phone = "+251911223344",
+                    addressLine1 = "Bole Medhanialem, QA Suite 404",
+                    city = "Addis Ababa",
+                    isDefault = true
+                )
+            )
+        }
         val service = api ?: error("Couldn't load this right now. Try again.")
         identity.authorizedRequest { token -> service.addresses(token) }.addresses.orEmpty()
     }
 
     suspend fun save(request: ShopAddressRequest): Result<List<ShopAddressDto>> = runCatching {
+        if (com.adischat.app.BuildConfig.QA_BUILD) {
+            return@runCatching listOf(
+                ShopAddressDto(
+                    id = request.id ?: "qa-staging-address-bole-1",
+                    label = request.label.ifBlank { "Home" },
+                    recipientName = request.recipientName,
+                    phone = request.phone,
+                    addressLine1 = request.addressLine1,
+                    city = request.city,
+                    isDefault = true
+                )
+            )
+        }
         val service = api ?: error("Couldn't save the address. Try again.")
         identity.authorizedRequest { token ->
             if (request.id.isNullOrBlank()) service.createAddress(token, request)
@@ -336,21 +580,50 @@ class OrderRepository(
 ) {
     suspend fun list(): Result<List<ShopOrderDto>> = runCatching {
         val service = api ?: error("Couldn't load this right now. Try again.")
-        identity.authorizedRequest { token -> service.orders(token) }.orders.orEmpty()
+        val envelope = identity.authorizedRequest { token -> service.orders(token) }
+        val receivedAtMillis = System.currentTimeMillis()
+        envelope.orders.orEmpty().map { received ->
+            val order = if (ShopReviewedMedia.enabled) ShopReviewedMedia.order(received) else received
+            order.copy(
+                serverNow = envelope.serverTime,
+                groups = order.groups?.map {
+                    it.copy(serverNow = envelope.serverTime, serverReceivedAtMillis = receivedAtMillis)
+                },
+            )
+        }
     }
 
     suspend fun detail(orderId: String): Result<ShopOrderDto> = runCatching {
         val service = api ?: error("Couldn't load this order. Try again.")
-        identity.authorizedRequest { token -> service.order(token, orderId) }.order
+        val envelope = identity.authorizedRequest { token -> service.order(token, orderId) }
+        val receivedAtMillis = System.currentTimeMillis()
+        envelope.order?.let { received ->
+            val order = if (ShopReviewedMedia.enabled) ShopReviewedMedia.order(received) else received
+            order.copy(
+                serverNow = envelope.serverTime,
+                groups = order.groups?.map {
+                    it.copy(serverNow = envelope.serverTime, serverReceivedAtMillis = receivedAtMillis)
+                },
+            )
+        } ?: error("Couldn't load this order.")
+    }
+
+    suspend fun detailForGroup(orderGroupId: String): Result<ShopOrderDto> = runCatching {
+        require(orderGroupId.isNotBlank()) { "Order is unavailable." }
+        val orderId = list().getOrThrow()
+            .firstOrNull { order -> order.groups.orEmpty().any { it.id == orderGroupId } }
+            ?.id
             ?: error("Couldn't load this order.")
+        detail(orderId).getOrThrow()
     }
 
     suspend fun cancel(orderId: String, reason: String): Result<ShopOrderDto> = runCatching {
         val service = api ?: error("This order cannot be cancelled right now.")
-        identity.authorizedRequest { token ->
+        val order = identity.authorizedRequest { token ->
             service.cancelOrder(token, ShopCancelOrderRequest(orderId = orderId, reasonText = reason))
         }.order
             ?: error("This order cannot be cancelled right now.")
+        if (ShopReviewedMedia.enabled) ShopReviewedMedia.order(order) else order
     }
 
     suspend fun revealDeliveryCode(orderId: String): Result<ShopDeliveryCodeDto> = runCatching {
@@ -491,27 +764,91 @@ class ShopNotificationRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
 ) {
-    suspend fun list(): Result<List<ShopNotificationDto>> = runCatching {
+    suspend fun list(context: MarketplaceNotificationContext, storeId: String? = null): Result<List<ShopNotificationDto>> = runCatching {
         val service = api ?: error("Couldn't load notifications.")
-        identity.authorizedRequest { token -> service.notifications(token) }.notifications.orEmpty()
+        identity.authorizedRequest { token -> service.notifications(token, context.wireValue, storeId) }.notifications.orEmpty()
     }
 
-    suspend fun unreadCount(): Result<Int> = runCatching {
+    suspend fun unreadCount(context: MarketplaceNotificationContext, storeId: String? = null): Result<Int> = runCatching {
         val service = api ?: error("Couldn't load notifications.")
-        identity.authorizedRequest { token -> service.notificationUnreadCount(token) }.unreadCount ?: 0
+        identity.authorizedRequest { token -> service.notificationUnreadCount(token, context.wireValue, storeId) }.unreadCount ?: 0
     }
 
-    suspend fun markAllRead(): Result<Int> = runCatching {
+    suspend fun markAllRead(context: MarketplaceNotificationContext, storeId: String? = null): Result<Int> = runCatching {
         val service = api ?: error("Couldn't update notifications.")
-        identity.authorizedRequest { token -> service.markAllNotificationsRead(token) }.unreadCount ?: 0
+        identity.authorizedRequest { token -> service.markAllNotificationsRead(token, ShopNotificationScopeRequest(context.wireValue, storeId)) }.unreadCount ?: 0
+    }
+
+    suspend fun markRead(notificationId: String, context: MarketplaceNotificationContext, storeId: String? = null): Result<Int> = runCatching {
+        require(notificationId.isNotBlank()) { "Notification is unavailable." }
+        val service = api ?: error("Couldn't update notifications.")
+        identity.authorizedRequest { token ->
+            service.markNotificationRead(token, ShopNotificationIdRequest(notificationId, context.wireValue, storeId))
+        }.unreadCount ?: 0
     }
 }
 
 class CheckoutRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
+    private val supabaseApi: ShopSupabaseApi? = ShopSupabaseClient.api,
 ) {
+    private suspend fun resolveSessionJti(): String {
+        val token = identity.sessionToken().getOrNull()?.trim().orEmpty()
+        return if (token.isNotBlank()) token else "qa-contract-test-buyer-session"
+    }
+
+    private fun parseQaCheckout(data: Map<String, Any?>): ShopCheckoutDto {
+        val checkoutId = data["checkoutId"]?.toString().orEmpty()
+        val subtotal = (data["subtotalMinor"] as? Number)?.toInt() ?: 0
+        val couponDiscount = (data["couponDiscountMinor"] as? Number)?.toInt() ?: 0
+        val voucherApplied = (data["voucherAppliedMinor"] as? Number)?.toInt() ?: 0
+        val remaining = (data["remainingPayableMinor"] as? Number)?.toInt() ?: 0
+        val shipping = (data["shippingMinor"] as? Number)?.toInt() ?: 0
+        val tax = (data["taxMinor"] as? Number)?.toInt() ?: 0
+        val grandTotal = (data["grandTotalMinor"] as? Number)?.toInt() ?: 0
+        val isCovered = (data["isFullyCoveredByVoucher"] as? Boolean) ?: (remaining == 0 && voucherApplied > 0)
+        val couponCode = data["couponCode"]?.toString()
+        val voucherCode = data["voucherCode"]?.toString()
+
+        val methods = if (isCovered) {
+            listOf(ShopPaymentMethodDto(code = "voucher_prepaid", label = "Store Credit Voucher", provider = "voucher"))
+        } else {
+            listOf(
+                ShopPaymentMethodDto(code = "cash_on_delivery", label = "Cash on Delivery", provider = "manual"),
+                ShopPaymentMethodDto(code = "cbe_birr_manual", label = "CBE Birr (Manual Transfer)", provider = "manual"),
+            )
+        }
+
+        return ShopCheckoutDto(
+            id = checkoutId,
+            state = "reserved",
+            currency = "ETB",
+            subtotalMinor = subtotal,
+            discountMinor = couponDiscount + voucherApplied,
+            shippingMinor = shipping,
+            taxMinor = tax,
+            grandTotalMinor = if (remaining > 0) remaining else grandTotal,
+            paymentMethods = methods,
+            couponCode = couponCode,
+            couponDiscountMinor = couponDiscount,
+            voucherCode = voucherCode,
+            voucherAppliedMinor = voucherApplied,
+            remainingPayableMinor = remaining,
+            isFullyCoveredByVoucher = isCovered,
+        )
+    }
+
     suspend fun create(idempotencyKey: String): Result<ShopCheckoutDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCreateCheckout(mapOf(
+                "p_session_jti" to jti,
+                "p_source" to "CART",
+                "p_idempotency_key" to idempotencyKey
+            ))
+            return@runCatching parseQaCheckout(res)
+        }
         try {
             val service = api ?: error("Checkout could not start. Please refresh your cart and try again.")
             identity.authorizedRequest { token ->
@@ -524,6 +861,18 @@ class CheckoutRepository(
     }
 
     suspend fun createBuyNow(productId: String, variantId: String? = null, quantity: Int = 1, idempotencyKey: String): Result<ShopCheckoutDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCreateCheckout(mapOf(
+                "p_session_jti" to jti,
+                "p_source" to "BUY_NOW",
+                "p_idempotency_key" to idempotencyKey,
+                "p_product_id" to productId,
+                "p_variant_id" to variantId,
+                "p_quantity" to quantity.coerceIn(1, 99)
+            ))
+            return@runCatching parseQaCheckout(res)
+        }
         try {
             val service = api ?: error("Checkout could not start. Please refresh your cart and try again.")
             identity.authorizedRequest { token ->
@@ -543,7 +892,76 @@ class CheckoutRepository(
         }
     }
 
+    suspend fun applyCoupon(checkoutSessionId: String, couponCode: String): Result<ShopCheckoutDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaApplyCoupon(mapOf(
+                "p_session_jti" to jti,
+                "p_checkout_session_id" to checkoutSessionId,
+                "p_coupon_code" to couponCode.trim().uppercase()
+            ))
+            return@runCatching parseQaCheckout(res)
+        }
+        val service = api ?: error("Discounts are temporarily unavailable.")
+        identity.authorizedRequest { token ->
+            service.applyCoupon(token, ShopApplyCouponRequest(checkoutSessionId, couponCode.trim().uppercase()))
+        }.checkout ?: error("Failed to apply coupon.")
+    }
+
+    suspend fun applyVoucher(checkoutSessionId: String, voucherCode: String): Result<ShopCheckoutDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaApplyVoucher(mapOf(
+                "p_session_jti" to jti,
+                "p_checkout_session_id" to checkoutSessionId,
+                "p_voucher_code" to voucherCode.trim().uppercase()
+            ))
+            return@runCatching parseQaCheckout(res)
+        }
+        val service = api ?: error("Vouchers are temporarily unavailable.")
+        identity.authorizedRequest { token ->
+            service.applyVoucher(token, ShopApplyVoucherRequest(checkoutSessionId, voucherCode.trim().uppercase()))
+        }.checkout ?: error("Failed to apply voucher.")
+    }
+
+    suspend fun removeDiscount(checkoutSessionId: String, discountType: String): Result<ShopCheckoutDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaRemoveDiscount(mapOf(
+                "p_session_jti" to jti,
+                "p_checkout_session_id" to checkoutSessionId,
+                "p_discount_type" to discountType.trim().lowercase()
+            ))
+            return@runCatching parseQaCheckout(res)
+        }
+        val service = api ?: error("Discounts are temporarily unavailable.")
+        identity.authorizedRequest { token ->
+            service.removeDiscount(token, ShopRemoveDiscountRequest(checkoutSessionId, discountType.trim().lowercase()))
+        }.checkout ?: error("Failed to remove discount.")
+    }
+
     suspend fun confirm(checkoutSessionId: String, addressId: String, paymentMethodCode: String, idempotencyKey: String): Result<ShopOrderDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaConfirmCheckout(mapOf(
+                "p_session_jti" to jti,
+                "p_checkout_session_id" to checkoutSessionId,
+                "p_address_id" to addressId,
+                "p_payment_method_code" to paymentMethodCode,
+                "p_idempotency_key" to idempotencyKey
+            ))
+            val orderId = res["orderId"]?.toString().orEmpty()
+            val orderNumber = res["orderNumber"]?.toString() ?: orderId.takeLast(8)
+            val paymentStatus = res["paymentStatus"]?.toString() ?: "paid"
+            val status = res["status"]?.toString() ?: "created"
+            return@runCatching ShopOrderDto(
+                id = orderId,
+                orderNumber = orderNumber,
+                status = status,
+                paymentStatus = paymentStatus,
+                totalMinor = (res["grandTotalMinor"] as? Number)?.toInt() ?: 0
+            )
+        }
         try {
             val service = api ?: error("Checkout could not start. Please refresh your cart and try again.")
             identity.authorizedRequest { token ->
@@ -650,57 +1068,99 @@ class SellerRepository(
         (envelope.application?.status ?: envelope.status ?: "draft") to envelope.application
     }
 
-    suspend fun orderGroups(): Result<List<ShopOrderGroupDto>> = runCatching {
+    suspend fun orderGroups(storeId: String): Result<List<ShopOrderGroupDto>> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Couldn't load seller orders.")
-        withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
+        val envelope = withSellerAuthRetry { token -> service.sellerOrderGroups(token, storeId) }
+        check(envelope.sellerOrderStoreId == storeId) { "Seller order store scope is unavailable." }
+        val receivedAtMillis = System.currentTimeMillis()
+        envelope.sellerOrderGroups.orEmpty().map {
+            check(it.storeId == storeId) { "Seller order store scope is unavailable." }
+            it.copy(serverNow = envelope.serverTime, serverReceivedAtMillis = receivedAtMillis)
+        }
     }
 
-    suspend fun requests(): Result<ShopSellerRequestsDto> = runCatching {
+    suspend fun requests(storeId: String): Result<ShopSellerRequestsDto> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Couldn't load returns and requests.")
-        withSellerAuthRetry { token -> service.sellerRequests(token) }.sellerRequests ?: ShopSellerRequestsDto()
+        val envelope = withSellerAuthRetry { token -> service.sellerRequests(token, storeId) }
+        check(envelope.sellerOrderStoreId == storeId) { "Seller request store scope is unavailable." }
+        envelope.sellerRequests ?: ShopSellerRequestsDto()
     }
 
-    suspend fun respondToRequest(kind: String, requestId: String, message: String, expectedVersion: Int): Result<ShopSellerRequestsDto> = runCatching {
+    suspend fun respondToRequest(storeId: String, kind: String, requestId: String, message: String, expectedVersion: Int): Result<ShopSellerRequestsDto> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Request response is temporarily unavailable.")
         val body = ShopSellerRequestResponseRequest(
             requestId = requestId,
             message = message,
             idempotencyKey = sellerRequestIdempotencyKey(kind, requestId, expectedVersion),
             expectedVersion = expectedVersion,
+            storeId = storeId,
         )
-        withSellerAuthRetry { token ->
+        val envelope = withSellerAuthRetry { token ->
             if (kind == "exchange") service.sellerRespondExchangeRequest(token, body) else service.sellerRespondRefundRequest(token, body)
-        }.sellerRequests ?: ShopSellerRequestsDto()
+        }
+        check(envelope.sellerOrderStoreId == storeId) { "Seller request store scope is unavailable." }
+        envelope.sellerRequests ?: ShopSellerRequestsDto()
     }
 
-    suspend fun products(status: String = "all"): Result<List<ShopSellerProductDto>> = runCatching {
+    suspend fun products(storeId: String, status: String = "all"): Result<List<ShopSellerProductDto>> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Couldn't load seller products.")
-        withSellerAuthRetry { token -> service.sellerProducts(token, status) }.sellerProducts.orEmpty()
+        val envelope = withSellerAuthRetry { token -> service.sellerProducts(token, storeId, status) }
+        val products = envelope.sellerProducts.orEmpty()
+        check(ShopStateReducers.sellerProductResponseMatchesStore(storeId, envelope.sellerProductStoreId, products)) {
+            "Seller product store scope is unavailable."
+        }
+        products
     }
 
-    suspend fun createProduct(requestId: String): Result<ShopSellerProductDto> = runCatching {
+    suspend fun createProduct(storeId: String, requestId: String): Result<ShopSellerProductDto> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Product creation is temporarily unavailable.")
-        withSellerAuthRetry { token -> service.sellerCreateProduct(token, ShopSellerProductCreateRequest(requestId)) }.sellerProduct
+        val product = withSellerAuthRetry { token -> service.sellerCreateProduct(token, ShopSellerProductCreateRequest(storeId, requestId)) }.sellerProduct
             ?: error("Product creation is temporarily unavailable.")
+        check(product.storeId == storeId) { "Seller product store scope mismatch." }
+        product
     }
 
-    suspend fun saveProduct(productId: String, payload: ShopSellerProductDraftPayload, requestId: String): Result<ShopSellerProductDto> = runCatching {
+    suspend fun saveProduct(storeId: String, productId: String, payload: ShopSellerProductDraftPayload, requestId: String): Result<ShopSellerProductDto> = runCatching {
         val service = api ?: error("Product save is temporarily unavailable.")
         try {
-            withSellerAuthRetry { token -> service.sellerUpdateProduct(token, ShopSellerProductUpdateRequest(productId, payload, requestId)) }.sellerProduct
+            val product = withSellerAuthRetry { token -> service.sellerUpdateProduct(token, ShopSellerProductUpdateRequest(storeId, productId, payload, requestId)) }.sellerProduct
                 ?: error("Product save is temporarily unavailable.")
+            check(product.storeId == storeId) { "Seller product store scope mismatch." }
+            product
         } catch (error: Throwable) {
             throw IllegalStateException(error.shopSellerActionMessage("Product save is temporarily unavailable."))
         }
     }
 
-    suspend fun submitProduct(productId: String, requestId: String): Result<ShopSellerProductDto> = runCatching {
+    suspend fun submitProduct(storeId: String, productId: String, requestId: String): Result<ShopSellerProductDto> = runCatching {
         val service = api ?: error("Product submission is temporarily unavailable.")
         try {
-            withSellerAuthRetry { token -> service.sellerSubmitProduct(token, ShopSellerProductSubmitRequest(productId, requestId)) }.sellerProduct
+            val product = withSellerAuthRetry { token -> service.sellerSubmitProduct(token, ShopSellerProductSubmitRequest(storeId, productId, requestId)) }.sellerProduct
                 ?: error("Product submission is temporarily unavailable.")
+            check(product.storeId == storeId) { "Seller product store scope mismatch." }
+            product
         } catch (error: Throwable) {
             throw IllegalStateException(error.shopSellerActionMessage("Product is missing required details."))
+        }
+    }
+
+    suspend fun archiveProduct(storeId: String, productId: String, requestId: String): Result<Unit> = runCatching {
+        val service = api ?: error("Product removal is temporarily unavailable.")
+        try {
+            withSellerAuthRetry { token ->
+                service.sellerArchiveProduct(
+                    token,
+                    ShopSellerProductArchiveRequest(storeId, productId, ShopSellerProductArchivePayload(), requestId),
+                )
+            }
+            Unit
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.shopSellerActionMessage("Product removal is temporarily unavailable."))
         }
     }
 
@@ -740,10 +1200,10 @@ class SellerRepository(
         }
     }
 
-    suspend fun deleteProductMedia(productId: String, imageId: String): Result<ShopSellerProductDto> = runCatching {
+    suspend fun deleteProductMedia(storeId: String, productId: String, imageId: String): Result<ShopSellerProductDto> = runCatching {
         val service = api ?: error("Image removal is temporarily unavailable.")
         try {
-            withSellerAuthRetry { token -> service.sellerDeleteProductMedia(token, ShopSellerProductMediaDeleteRequest(productId, imageId)) }.sellerProduct
+            withSellerAuthRetry { token -> service.sellerDeleteProductMedia(token, ShopSellerProductMediaDeleteRequest(storeId, productId, imageId)) }.sellerProduct
                 ?: error("Image removal is temporarily unavailable.")
         } catch (error: Throwable) {
             throw IllegalStateException(error.shopSellerActionMessage("Image removal is temporarily unavailable."))
@@ -760,13 +1220,16 @@ class SellerRepository(
         }
     }
 
-    suspend fun transition(orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null): Result<List<ShopOrderGroupDto>> = runCatching {
+    suspend fun transition(storeId: String, orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null, expectedVersion: Int? = null): Result<List<ShopOrderGroupDto>> = runCatching {
+        require(storeId.isNotBlank())
         val service = api ?: error("Seller action is temporarily unavailable.")
         val body = ShopSellerOrderActionRequest(
             orderGroupId = orderGroupId,
+            storeId = storeId,
             reason = reason,
             reasonCode = reasonCode,
-            requestId = if (action == "reject") "android-reject-${java.util.UUID.randomUUID()}" else null,
+            requestId = if (action in setOf("accept", "reject")) "android-$action-${java.util.UUID.randomUUID()}" else null,
+            expectedVersion = expectedVersion,
             carrier = carrier,
             trackingNumber = trackingNumber,
         )
@@ -780,18 +1243,21 @@ class SellerRepository(
                     "handed_to_carrier" -> service.sellerHandToCarrier(token, body)
                     "delivered" -> service.sellerVerifyDeliveryCode(
                         token,
-                        ShopSellerDeliveryCodeRequest(orderGroupId = orderGroupId, deliveryCode = trackingNumber.orEmpty()),
+                        ShopSellerDeliveryCodeRequest(orderGroupId = orderGroupId, deliveryCode = trackingNumber.orEmpty(), storeId = storeId),
                     )
                     else -> error("Seller action is not supported.")
                 }
             }
         } catch (error: Throwable) {
-            if (error is HttpException && error.code() == 409 && action != "delivered") {
-                return@runCatching withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
-            }
             throw IllegalStateException(error.shopSellerActionMessage("Seller action is not allowed for this order state."))
         }
-        withSellerAuthRetry { token -> service.sellerOrderGroups(token) }.sellerOrderGroups.orEmpty()
+        val envelope = withSellerAuthRetry { token -> service.sellerOrderGroups(token, storeId) }
+        check(envelope.sellerOrderStoreId == storeId) { "Seller order store scope is unavailable." }
+        val receivedAtMillis = System.currentTimeMillis()
+        envelope.sellerOrderGroups.orEmpty().map {
+            check(it.storeId == storeId) { "Seller order store scope is unavailable." }
+            it.copy(serverNow = envelope.serverTime, serverReceivedAtMillis = receivedAtMillis)
+        }
     }
 
     suspend fun business(storeId: String? = null, start: String? = null, end: String? = null): Result<ShopSellerBusinessDto> = runCatching {
@@ -867,11 +1333,12 @@ class ShopMessageRepository(
     suspend fun open(
         storeId: String? = null,
         productId: String? = null,
+        variantId: String? = null,
         orderGroupId: String? = null,
     ): Result<ShopConversationDto> = runCatching {
         val service = api ?: error("Conversation could not be started.")
         authorized { token ->
-            service.openConversation(token, ShopOpenConversationRequest(storeId, productId, orderGroupId))
+            service.openConversation(token, ShopOpenConversationRequest(storeId, productId, variantId, orderGroupId))
         }.conversation ?: error("Conversation could not be started.")
     }
 
@@ -943,6 +1410,18 @@ class ShopAdminRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
 ) {
+    private fun Throwable.qaModerationMessage(fallback: String): String {
+        if (this is HttpException) {
+            val code = runCatching {
+                JsonParser.parseString(response()?.errorBody()?.string().orEmpty()).asJsonObject
+                    .get("error")?.asString
+            }.getOrNull()
+            return if (code == "not-found") "Content is no longer available. Refresh the queue."
+                else ShopQaModerationContract.errorMessage(this.code(), code)
+        }
+        return fallback
+    }
+
     private fun Throwable.adminMessage(fallback: String): String {
         if (this is HttpException) {
             val body = response()?.errorBody()?.string().orEmpty()
@@ -1004,12 +1483,37 @@ class ShopAdminRepository(
         }
     }
 
-    suspend fun products(status: String = "pending", search: String = ""): Result<List<ShopAdminProductDto>> = runCatching {
+    suspend fun products(status: String = "pending", search: String = "", limit: Int = 30, offset: Int = 0): Result<List<ShopAdminProductDto>> = runCatching {
         val service = api ?: error("Couldn't load products for review.")
         try {
-            withAdminAuth { token -> service.adminProducts(token, status, search) }.products.orEmpty()
+            withAdminAuth { token -> service.adminProducts(token, status, search, limit, offset) }.products.orEmpty()
         } catch (error: Throwable) {
             throw IllegalStateException(error.adminMessage("Couldn't load products for review."))
+        }
+    }
+
+    suspend fun allProducts(query: ShopAdminProductQuery): Result<ShopAdminProductPage> = runCatching {
+        val service = api ?: error("Couldn't load products.")
+        val safe = query.normalized()
+        val advanced = ShopAdminAllProductsFlags.advancedQueryEnabled
+        try {
+            val response = withAdminAuth { token ->
+                service.adminProducts(
+                    authorization = token,
+                    status = safe.status,
+                    search = safe.search,
+                    limit = safe.limit,
+                    offset = safe.offset,
+                    view = if (advanced) "all-v2" else null,
+                    category = if (advanced) safe.category.takeIf { it.isNotBlank() } else null,
+                    storeId = if (advanced) safe.storeId.takeIf { it.isNotBlank() } else null,
+                    stock = if (advanced) safe.stock else null,
+                    sort = if (advanced) safe.sort else null,
+                )
+            }
+            ShopAdminProductPage(response.products.orEmpty(), response.total, safe.limit, safe.offset)
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load products."))
         }
     }
 
@@ -1029,6 +1533,40 @@ class ShopAdminRepository(
             withAdminAuth { token -> service.adminReviewProduct(token, request) }.productDetail
         } catch (error: Throwable) {
             throw IllegalStateException(error.adminMessage("Product review could not be saved."))
+        }
+    }
+
+    suspend fun publicContentQueue(offset: Int, kind: String?): Result<ShopPublicContentQueueDto> = runCatching {
+        check(ShopPublicContentReviewFlags.enabled) { "Public content review is unavailable." }
+        val service = api ?: error("Public content review is unavailable.")
+        try {
+            val response = withAdminAuth { token -> service.qaModerationQueue(token, kind,
+                ShopPublicContentReviewFlags.pageSize, offset) }
+            response.reviewQueue?.takeIf { response.ok } ?: error("Public content queue is unavailable.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.qaModerationMessage("Couldn't load content for review."))
+        }
+    }
+
+    suspend fun publicContentPreview(item: ShopPublicContentItemDto): Result<ShopPublicContentPreviewDto> = runCatching {
+        check(ShopPublicContentReviewFlags.enabled) { "Public content review is unavailable." }
+        val service = api ?: error("Public content review is unavailable.")
+        try {
+            val response = withAdminAuth { token -> service.qaModerationPreview(token, item.entityKind, item.entityId) }
+            response.reviewPreview?.takeIf { response.ok } ?: error("Content is no longer available for review.")
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.qaModerationMessage("Couldn't load the current content."))
+        }
+    }
+
+    suspend fun reviewPublicContent(request: ShopQaModerationRequest, idempotencyKey: String): Result<ShopQaReviewResult> = runCatching {
+        check(ShopPublicContentReviewFlags.enabled) { "Public content review is unavailable." }
+        val service = api ?: error("Public content review is unavailable.")
+        try {
+            ShopQaModerationContract.requireSuccess(withAdminAuth { token ->
+                service.qaModerationDecision(token, idempotencyKey, request) })
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.qaModerationMessage("Content review could not be saved."))
         }
     }
 

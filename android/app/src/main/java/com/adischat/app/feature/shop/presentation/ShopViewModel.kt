@@ -1,5 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
+import android.content.Context
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.adischat.app.feature.shop.data.ShopHomeState
@@ -15,9 +17,16 @@ import com.adischat.app.feature.shop.data.SellerRepository
 import com.adischat.app.feature.shop.data.ShopAddressRequest
 import com.adischat.app.feature.shop.data.ShopIdentityRepository
 import com.adischat.app.feature.shop.data.ShopNotificationRepository
+import com.adischat.app.feature.shop.data.MarketplaceNotificationContext
+import com.adischat.app.feature.shop.data.ShopOrderReviewsDto
 import com.adischat.app.feature.shop.data.ShopMessageRepository
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopAdminRepository
+import com.adischat.app.feature.shop.data.ShopAdminProductQuery
+import com.adischat.app.feature.shop.data.ShopQaModerationContract
+import com.adischat.app.feature.shop.data.ShopQaModerationRetryKeys
+import com.adischat.app.feature.shop.data.ShopPublicContentItemDto
+import com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags
 import com.adischat.app.feature.shop.data.ShopAdminReviewProductRequest
 import com.adischat.app.feature.shop.data.ShopAdminReviewSellerRequest
 import com.adischat.app.feature.shop.data.ShopSellerApplicationRequest
@@ -27,11 +36,19 @@ import com.adischat.app.feature.shop.data.ShopSellerInventoryChange
 import com.adischat.app.feature.shop.data.ShopSellerInventoryUpdateRequest
 import com.adischat.app.feature.shop.data.ShopSellerReviewReplyRequest
 import com.adischat.app.feature.shop.data.ShopStateReducers
+import com.adischat.app.feature.shop.data.ProductRepository
+import com.adischat.app.feature.shop.data.CategoryRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
+import java.time.Instant
 
 class ShopViewModel(
     private val repository: ShopHomeRepository = ShopHomeRepository(),
@@ -46,17 +63,44 @@ class ShopViewModel(
     private val sellerRepository: SellerRepository = SellerRepository(identityRepository),
     private val messageRepository: ShopMessageRepository = ShopMessageRepository(identityRepository),
     private val adminRepository: ShopAdminRepository = ShopAdminRepository(identityRepository),
+    private val productRepository: ProductRepository = ProductRepository(),
+    private val categoryRepository: CategoryRepository = CategoryRepository(),
 ) : ViewModel() {
     private val _state = MutableStateFlow(ShopHomeState())
     val state: StateFlow<ShopHomeState> = _state.asStateFlow()
 
+    private val _buyerSearchState = MutableStateFlow(BuyerSearchState())
+    internal val buyerSearchState: StateFlow<BuyerSearchState> = _buyerSearchState.asStateFlow()
+
     private val _protectedState = MutableStateFlow(ShopProtectedState())
     val protectedState: StateFlow<ShopProtectedState> = _protectedState.asStateFlow()
+
+    internal val visualSearchSession = MarketplaceVisualSearchSession(viewModelScope)
 
     private val buyNowIdempotencyKeys = mutableMapOf<String, String>()
     private val confirmIdempotencyKeys = mutableMapOf<String, String>()
     private val conversationRefreshesInFlight = mutableSetOf<String>()
     private var protectedRequestGeneration = 0L
+    private var sellerProductRequestGeneration = 0L
+    private var sellerBusinessRequestGeneration = 0L
+    private var sellerOrderRequestGeneration = 0L
+    private var sellerRequestGeneration = 0L
+    private var adminRequestGeneration = 0L
+    private var publicContentRequestGeneration = 0L
+    private var publicContentPreviewGeneration = 0L
+    private val publicContentRetryKeys = ShopQaModerationRetryKeys()
+    private var publicContentQueueKind: String? = null
+    private var adminProductListGeneration = 0L
+    private var discoveryRequestGeneration = 0L
+    private var buyerSearchGeneration = 0L
+    private var buyerSearchJob: Job? = null
+    private var homeRefreshJob: Job? = null
+    private var productDetailJob: Job? = null
+    private var productDetailSelection = 0L
+    private var sellerProductCreationInFlight = false
+    private var sellerMediaUploadJob: Job? = null
+    private var sellerMediaUploadContext: Context? = null
+    private val failedSellerMediaUris = mutableMapOf<String, List<Uri>>()
 
     init {
         refresh()
@@ -64,8 +108,9 @@ class ShopViewModel(
     }
 
     fun refresh() {
+        if (homeRefreshJob?.isActive == true) return
         _state.value = _state.value.copy(loading = true, error = false)
-        viewModelScope.launch {
+        homeRefreshJob = viewModelScope.launch {
             _state.value = repository.loadHome()
         }
     }
@@ -87,11 +132,198 @@ class ShopViewModel(
         }
     }
 
-    fun addToCart(product: ShopProductDto) {
+    fun loadProductDetail(product: ShopProductDto) {
+        productDetailJob?.cancel()
+        val selection = ++productDetailSelection
+        if (product.id.isBlank()) return
+        _state.value = _state.value.copy(productDetails = _state.value.productDetails - product.id)
+        productDetailJob = viewModelScope.launch {
+            val result = productRepository.detail(product.id)
+            if (!isCurrentDetailResponse(selection, productDetailSelection) || !isActive) return@launch
+            result.onSuccess { detail ->
+                if (detail.id != product.id) {
+                    _state.value = _state.value.copy(message = "Product details could not be refreshed.")
+                    return@onSuccess
+                }
+                val catalog = _state.value.products.firstOrNull { it.id == product.id } ?: product
+                val display = productDetailWithCatalogFallback(detail, catalog)
+                _state.value = _state.value.copy(productDetails = _state.value.productDetails + (product.id to display))
+            }.onFailure { _state.value = _state.value.copy(message = "Product details could not be refreshed.") }
+        }
+    }
+
+    fun loadSellerCategoryAttributes(categoryId: String) {
+        if (categoryId.isBlank() || _protectedState.value.sellerCategoryAttributes.containsKey(categoryId) ||
+            categoryId in _protectedState.value.sellerCategoryLoadingIds) return
+        val ownerUid = _protectedState.value.ownerUid
+        _protectedState.value = _protectedState.value.copy(
+            sellerCategoryLoadingIds = _protectedState.value.sellerCategoryLoadingIds + categoryId,
+            sellerCategoryErrors = _protectedState.value.sellerCategoryErrors - categoryId,
+        )
+        viewModelScope.launch {
+            val result = withTimeoutOrNull(15_000) {
+                runCatching {
+                    val lineage = sellerCategoryLineage(categoryId, _state.value.categories)
+                    require(lineage.isNotEmpty()) { "The selected category is unavailable." }
+                    mergeSellerCategoryAttributes(lineage.map { id -> categoryRepository.attributes(id).getOrThrow() })
+                }
+            }
+            if (_protectedState.value.ownerUid != ownerUid) return@launch
+            val current = _protectedState.value
+            _protectedState.value = if (result == null) {
+                current.copy(
+                    sellerCategoryLoadingIds = current.sellerCategoryLoadingIds - categoryId,
+                    sellerCategoryErrors = current.sellerCategoryErrors + (categoryId to "Category fields timed out. Check your connection and retry."),
+                )
+            } else result.fold(
+                onSuccess = { attributes ->
+                    current.copy(
+                        sellerCategoryAttributes = current.sellerCategoryAttributes + (categoryId to attributes),
+                        sellerCategoryLoadingIds = current.sellerCategoryLoadingIds - categoryId,
+                        sellerCategoryErrors = current.sellerCategoryErrors - categoryId,
+                    )
+                },
+                onFailure = {
+                    current.copy(
+                        sellerCategoryLoadingIds = current.sellerCategoryLoadingIds - categoryId,
+                        sellerCategoryErrors = current.sellerCategoryErrors + (categoryId to "Category fields are temporarily unavailable. Retry to continue."),
+                    )
+                },
+            )
+        }
+    }
+
+    fun loadBuyerCategoryFilters(categoryId: String) {
+        if (categoryId.isBlank()) return
+        val current = _state.value
+        val categorySlug = current.categories.firstOrNull { it.id == categoryId }?.slug
+        val categoryProducts = current.products.filter { it.categoryId == categoryId || it.categorySlug == categorySlug }
+        if (current.buyerCategoryAttributes.containsKey(categoryId) &&
+            categoryProducts.all { current.productDetails.containsKey(it.id) }
+        ) return
+        _state.value = current.copy(buyerFilterLoadingCategoryId = categoryId)
+        viewModelScope.launch {
+            categoryRepository.attributes(categoryId)
+                .onSuccess { attributes ->
+                    val details = categoryProducts.mapNotNull { product ->
+                        productRepository.detail(product.id).getOrNull()?.let { product.id to it }
+                    }.toMap()
+                    _state.value = _state.value.copy(
+                        productDetails = _state.value.productDetails + details,
+                        buyerCategoryAttributes = _state.value.buyerCategoryAttributes +
+                            (categoryId to attributes.filter { it.filterable }),
+                        buyerFilterLoadingCategoryId = null,
+                    )
+                }
+                .onFailure {
+                    _state.value = _state.value.copy(
+                        buyerFilterLoadingCategoryId = null,
+                        message = "Category filters are temporarily unavailable.",
+                    )
+                }
+        }
+    }
+
+    fun searchProducts(
+        categorySlugs: Set<String>,
+        minimumPriceMinor: Int?,
+        maximumPriceMinor: Int?,
+        minimumRating: Int,
+        inStockOnly: Boolean,
+        discountedOnly: Boolean,
+        order: String,
+    ) {
+        val generation = ++discoveryRequestGeneration
+        _state.value = _state.value.copy(discoveryLoading = true)
+        viewModelScope.launch {
+            productRepository.search(categorySlugs, minimumPriceMinor, maximumPriceMinor, minimumRating, inStockOnly, discountedOnly, order)
+                .onSuccess { products ->
+                    if (generation == discoveryRequestGeneration) {
+                        _state.value = _state.value.copy(discoveryProducts = products, discoveryLoading = false)
+                    }
+                }
+                .onFailure {
+                    if (generation == discoveryRequestGeneration) {
+                        _state.value = _state.value.copy(discoveryLoading = false, message = "Products could not be filtered right now.")
+                    }
+                }
+        }
+    }
+
+    internal fun searchBuyerCatalog(key: BuyerSearchKey) {
+        val current = _buyerSearchState.value
+        if (current.key == key && (current.loaded || current.loading)) return
+        buyerSearchJob?.cancel()
+        val generation = ++buyerSearchGeneration
+        _buyerSearchState.value = BuyerSearchState(key = key, loading = true)
+        fetchBuyerSearchPage(key, generation)
+    }
+
+    fun clearBuyerSearch() {
+        if (_buyerSearchState.value.key == null) return
+        buyerSearchJob?.cancel()
+        buyerSearchGeneration++
+        _buyerSearchState.value = BuyerSearchState()
+    }
+
+    fun loadNextBuyerSearchPage() {
+        val current = _buyerSearchState.value
+        if (!canLoadNextBuyerSearchPage(current)) return
+        val key = current.key ?: return
+        _buyerSearchState.value = current.copy(loading = true)
+        fetchBuyerSearchPage(key, buyerSearchGeneration)
+    }
+
+    fun retryBuyerSearch() {
+        val current = _buyerSearchState.value
+        if (!canRetryBuyerSearch(current)) return
+        val key = current.key ?: return
+        if (!current.loaded) {
+            buyerSearchJob?.cancel()
+            val generation = ++buyerSearchGeneration
+            _buyerSearchState.value = BuyerSearchState(key = key, loading = true)
+            fetchBuyerSearchPage(key, generation)
+        } else {
+            _buyerSearchState.value = current.copy(error = null, loading = true)
+            fetchBuyerSearchPage(key, buyerSearchGeneration)
+        }
+    }
+
+    private fun fetchBuyerSearchPage(key: BuyerSearchKey, generation: Long) {
+        val offset = _buyerSearchState.value.nextOffset
+        buyerSearchJob = viewModelScope.launch {
+            val result = productRepository.searchCatalogPage(
+                term = key.term,
+                categorySlug = key.categorySlug,
+                inStockOnly = key.inStockOnly,
+                order = key.sort.apiOrder,
+                offset = offset,
+                pageSize = BUYER_SEARCH_PAGE_SIZE,
+            )
+            if (!isCurrentBuyerSearchResponse(key, _buyerSearchState.value.key, generation, buyerSearchGeneration) || !isActive) return@launch
+            result.onSuccess { page ->
+                _buyerSearchState.value = appendBuyerSearchPage(_buyerSearchState.value, page)
+            }.onFailure {
+                _buyerSearchState.value = _buyerSearchState.value.copy(
+                    loading = false,
+                    error = "Products could not be loaded. Check your connection and retry.",
+                )
+            }
+        }
+    }
+
+    fun clearProductSearch() {
+        discoveryRequestGeneration++
+        _state.value = _state.value.copy(discoveryProducts = null, discoveryLoading = false)
+    }
+
+    fun addToCart(product: ShopProductDto) = addToCart(product, null, 1)
+
+    fun addToCart(product: ShopProductDto, variantId: String?, quantity: Int) {
         if (product.id.isBlank()) return
         viewModelScope.launch {
             setBusy(product.id, true)
-            cartRepository.add(product.id)
+            cartRepository.add(product.id, variantId, quantity)
                 .onSuccess { cart ->
                     _state.value = _state.value.copy(
                         cartCount = ShopStateReducers.cartItemCount(cart),
@@ -110,38 +342,83 @@ class ShopViewModel(
     }
 
     fun loadCart() {
+        ensureActiveAccountState()
+        val requestedOwner = _protectedState.value.ownerUid
         loadProtected { cartRepository.getCart().onSuccess { cart ->
-            _protectedState.value = _protectedState.value.copy(cart = cart, error = null)
+            if (_protectedState.value.ownerUid != requestedOwner || identityRepository.activeUserId() != requestedOwner) return@onSuccess
+            _protectedState.value = _protectedState.value.copy(cart = cart, cartAvailableQuantities = emptyMap(), error = null)
             _state.value = _state.value.copy(cartCount = ShopStateReducers.cartItemCount(cart), shopIdentityReady = true)
+            cart.items.forEach { item ->
+                viewModelScope.launch {
+                    val detail = productRepository.detail(item.productId).getOrNull()
+                    val available = cartQuantityLimit(item, detail)
+                    if (available != null && _protectedState.value.ownerUid == requestedOwner && identityRepository.activeUserId() == requestedOwner &&
+                        _protectedState.value.cart?.items?.any { it.id == item.id && it.productId == item.productId && it.variantId == item.variantId } == true) {
+                        _protectedState.value = _protectedState.value.copy(
+                            cartAvailableQuantities = _protectedState.value.cartAvailableQuantities + (item.id to available),
+                        )
+                    }
+                }
+            }
         } }
     }
 
     fun updateCartItem(itemId: String, quantity: Int) {
-        if (itemId.isBlank()) return
+        if (!canStartCartMutation(_protectedState.value.busyIds, itemId)) return
+        val item = _protectedState.value.cart?.items?.firstOrNull { it.id == itemId }
+        if (item != null) {
+            val available = _protectedState.value.cartAvailableQuantities[itemId]
+            if (quantity > item.quantity && available != null && quantity > available) {
+                _protectedState.value = _protectedState.value.copy(error = "Only $available ${if (available == 1) "item" else "items"} available")
+                return
+            }
+            val message = cartQuantityLimitMessage(item, quantity, _state.value.productDetails[item.productId])
+            if (message != null) {
+                _protectedState.value = _protectedState.value.copy(error = message)
+                return
+            }
+        }
+        setBusy(CART_MUTATION_BUSY_ID, true)
+        setBusy(itemId, true)
         viewModelScope.launch {
-            setBusy(itemId, true)
-            val result = if (quantity <= 0) cartRepository.remove(itemId) else cartRepository.update(itemId, quantity)
-            result.onSuccess { cart ->
-                _protectedState.value = _protectedState.value.copy(cart = cart, error = null)
-                _state.value = _state.value.copy(cartCount = ShopStateReducers.cartItemCount(cart))
-            }.onFailure { showProtectedError(it, "Couldn't update your cart. Try again.") }
-            setBusy(itemId, false)
+            try {
+                val result = if (quantity <= 0) cartRepository.remove(itemId) else cartRepository.update(itemId, quantity)
+                result.onSuccess { cart ->
+                    _protectedState.value = _protectedState.value.copy(cart = cart, error = null)
+                    _state.value = _state.value.copy(cartCount = ShopStateReducers.cartItemCount(cart))
+                }.onFailure {
+                    val message = cartQuantityFailureMessage(it)
+                    _protectedState.value = _protectedState.value.copy(error = message, loading = false)
+                    _state.value = _state.value.copy(message = message)
+                }
+            } finally {
+                setBusy(itemId, false)
+                setBusy(CART_MUTATION_BUSY_ID, false)
+            }
         }
     }
 
     fun clearCart() {
+        if (!canStartCartMutation(_protectedState.value.busyIds)) return
+        setBusy(CART_MUTATION_BUSY_ID, true)
+        setBusy(CART_CLEAR_BUSY_ID, true)
         viewModelScope.launch {
-            val result = cartRepository.clear()
-            result.onSuccess { cart ->
-                _protectedState.value = _protectedState.value.copy(cart = cart, error = null)
-                _state.value = _state.value.copy(cartCount = 0)
-            }.onFailure { showProtectedError(it, "Couldn't clear your cart. Try again.") }
+            try {
+                val result = cartRepository.clear()
+                result.onSuccess { cart ->
+                    _protectedState.value = _protectedState.value.copy(cart = cart, error = null)
+                    _state.value = _state.value.copy(cartCount = 0)
+                }.onFailure { showProtectedError(it, "Couldn't clear your cart. Try again.") }
+            } finally {
+                setBusy(CART_CLEAR_BUSY_ID, false)
+                setBusy(CART_MUTATION_BUSY_ID, false)
+            }
         }
     }
 
     fun loadFavorites() {
         loadProtected { favoriteRepository.list().onSuccess { favorites ->
-            _protectedState.value = _protectedState.value.copy(favorites = favorites, error = null)
+            _protectedState.value = _protectedState.value.copy(favoritesLoaded = true, favorites = favorites, error = null)
         } }
     }
 
@@ -176,13 +453,24 @@ class ShopViewModel(
         } }
     }
 
-    fun saveAddress(request: ShopAddressRequest) {
+    fun saveAddress(request: ShopAddressRequest, onComplete: ((String?) -> Unit)? = null) {
         viewModelScope.launch {
+            val owner = _protectedState.value.ownerUid
+            val previousIds = _protectedState.value.addresses.map { it.id }.toSet()
             val result = addressRepository.save(request)
             result.onSuccess { addresses ->
+                if (_protectedState.value.ownerUid != owner) {
+                    onComplete?.invoke(null)
+                    return@onSuccess
+                }
                 _protectedState.value = _protectedState.value.copy(addresses = addresses, error = null)
                 _state.value = _state.value.copy(message = "Address saved")
-            }.onFailure { showProtectedError(it, "Couldn't save the address. Try again.") }
+                onComplete?.invoke(request.id?.takeIf { id -> addresses.any { it.id == id } }
+                    ?: addresses.firstOrNull { it.id !in previousIds }?.id)
+            }.onFailure {
+                showProtectedError(it, "Couldn't save the address. Try again.")
+                onComplete?.invoke(null)
+            }
         }
     }
 
@@ -204,25 +492,75 @@ class ShopViewModel(
 
     fun loadOrders() {
         loadProtected { orderRepository.list().onSuccess { orders ->
-            _protectedState.value = _protectedState.value.copy(orders = orders, error = null)
+            _protectedState.value = _protectedState.value.copy(ordersLoaded = true, orders = orders, error = null)
         } }
+    }
+
+    fun loadBuyerReviews() {
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(buyerReviewsLoaded = false)
+            runCatching {
+                val current = _protectedState.value
+                val orders = if (current.ordersLoaded) current.orders else orderRepository.list().getOrThrow()
+                val completedOrders = orders.filter { order ->
+                    order.status in listOf("delivered", "completed") || order.fulfillmentStatus == "delivered"
+                }
+                val payloads = completedOrders.mapNotNull { order -> orderRepository.reviews(order.id).getOrNull() }
+                val productReviews = payloads.flatMap { it.productReviews }.distinctBy { it.id }
+                val storeReviews = payloads.flatMap { it.storeReviews }.distinctBy { it.id }
+                Triple(orders, productReviews, storeReviews)
+            }.onSuccess { (orders, productReviews, storeReviews) ->
+                _protectedState.value = _protectedState.value.copy(
+                    ordersLoaded = true,
+                    orders = orders,
+                    buyerReviewsLoaded = true,
+                    buyerReviews = ShopOrderReviewsDto(productReviews, storeReviews),
+                    error = null,
+                )
+            }.onFailure {
+                _protectedState.value = _protectedState.value.copy(buyerReviewsLoaded = true)
+                showProtectedError(it, "Reviews are temporarily unavailable.")
+            }
+        }
     }
 
     fun loadOrderDetail(orderId: String) {
         if (orderId.isBlank()) return
         loadProtected { orderRepository.detail(orderId).onSuccess { order ->
-            _protectedState.value = _protectedState.value.copy(
-                selectedOrder = order,
-                selectedOrderIssues = order.issues,
-                selectedOrderActions = order.postDeliveryActions,
-                selectedOrderReviews = order.reviews,
-                selectedRefundRequests = order.refundRequests,
-                selectedExchangeRequests = order.exchangeRequests,
-                error = null,
-            )
-            loadIssueOptions(orderId)
-            loadPostDeliveryPayloads(orderId)
+            applySelectedOrder(order)
         } }
+    }
+
+    fun loadOrderDetailForGroup(orderGroupId: String, onResolved: ((String?) -> Unit)? = null) {
+        if (orderGroupId.isBlank()) {
+            onResolved?.invoke(null)
+            return
+        }
+        loadProtected {
+            orderRepository.detailForGroup(orderGroupId)
+                .onSuccess { order ->
+                    applySelectedOrder(order)
+                    onResolved?.invoke(order.id)
+                }
+                .onFailure {
+                    showProtectedError(it, "This order is no longer available.")
+                    onResolved?.invoke(null)
+                }
+        }
+    }
+
+    private fun applySelectedOrder(order: com.adischat.app.feature.shop.data.ShopOrderDto) {
+        _protectedState.value = _protectedState.value.copy(
+            selectedOrder = order,
+            selectedOrderIssues = order.issues,
+            selectedOrderActions = order.postDeliveryActions,
+            selectedOrderReviews = order.reviews,
+            selectedRefundRequests = order.refundRequests,
+            selectedExchangeRequests = order.exchangeRequests,
+            error = null,
+        )
+        loadIssueOptions(order.id)
+        loadPostDeliveryPayloads(order.id)
     }
 
     fun loadPostDeliveryPayloads(orderId: String) {
@@ -384,23 +722,143 @@ class ShopViewModel(
     }
 
     fun loadNotifications() {
+        ensureActiveAccountState()
+        val ownerUid = _protectedState.value.ownerUid
         loadProtected {
-            notificationRepository.list().onSuccess { notifications ->
-                _protectedState.value = _protectedState.value.copy(notifications = notifications, error = null)
+            notificationRepository.list(MarketplaceNotificationContext.BUYER).onSuccess { notifications ->
+                if (_protectedState.value.ownerUid == ownerUid) {
+                    _protectedState.value = _protectedState.value.copy(notifications = notifications, error = null)
+                }
             }
         }
         viewModelScope.launch {
-            notificationRepository.unreadCount().onSuccess { count ->
-                _protectedState.value = _protectedState.value.copy(notificationUnreadCount = count)
+            notificationRepository.unreadCount(MarketplaceNotificationContext.BUYER).onSuccess { count ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid) {
+                    _protectedState.value = _protectedState.value.copy(notificationUnreadCount = count)
+                }
+            }
+        }
+    }
+
+    fun loadNotificationUnreadCount() {
+        ensureActiveAccountState()
+        viewModelScope.launch {
+            val ownerUid = _protectedState.value.ownerUid
+            notificationRepository.unreadCount(MarketplaceNotificationContext.BUYER).onSuccess { count ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid) {
+                    _protectedState.value = _protectedState.value.copy(notificationUnreadCount = count.coerceAtLeast(0))
+                }
             }
         }
     }
 
     fun markAllNotificationsRead() {
+        ensureActiveAccountState()
+        val ownerUid = _protectedState.value.ownerUid
         viewModelScope.launch {
-            notificationRepository.markAllRead()
-                .onSuccess { count -> _protectedState.value = _protectedState.value.copy(notificationUnreadCount = count) }
+            notificationRepository.markAllRead(MarketplaceNotificationContext.BUYER)
+                .onSuccess { count ->
+                    ensureActiveAccountState()
+                    if (_protectedState.value.ownerUid != ownerUid) return@onSuccess
+                    _protectedState.value = ShopStateReducers.allNotificationsMarkedRead(
+                        state = _protectedState.value,
+                        serverUnreadCount = count,
+                        readAt = Instant.now().toString(),
+                    )
+                }
                 .onFailure { showProtectedError(it, "Couldn't update notifications.") }
+        }
+    }
+
+    fun markNotificationRead(notificationId: String) {
+        if (notificationId.isBlank()) return
+        ensureActiveAccountState()
+        val ownerUid = _protectedState.value.ownerUid
+        viewModelScope.launch {
+            notificationRepository.markRead(notificationId, MarketplaceNotificationContext.BUYER)
+                .onSuccess { count ->
+                    ensureActiveAccountState()
+                    if (_protectedState.value.ownerUid != ownerUid) return@onSuccess
+                    _protectedState.value = ShopStateReducers.notificationMarkedRead(
+                        state = _protectedState.value,
+                        notificationId = notificationId,
+                        serverUnreadCount = count,
+                        readAt = Instant.now().toString(),
+                    )
+                }
+                .onFailure { showProtectedError(it, "Couldn't update this notification.") }
+        }
+    }
+
+    fun loadSellerNotifications() {
+        ensureActiveAccountState()
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id?.takeIf { it.isNotBlank() }
+        if (storeId == null && _protectedState.value.sellerApplication == null) {
+            _protectedState.value = _protectedState.value.copy(
+                sellerNotifications = emptyList(), sellerNotificationUnreadCount = 0, sellerNotificationStoreId = null,
+            )
+            return
+        }
+        val ownerUid = _protectedState.value.ownerUid
+        if (_protectedState.value.sellerNotificationStoreId != storeId) {
+            _protectedState.value = _protectedState.value.copy(
+                sellerNotifications = emptyList(), sellerNotificationUnreadCount = 0, sellerNotificationStoreId = storeId,
+            )
+        }
+        viewModelScope.launch {
+            notificationRepository.list(MarketplaceNotificationContext.SELLER, storeId).onSuccess { notifications ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid && _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                    _protectedState.value = _protectedState.value.copy(sellerNotifications = notifications)
+                }
+            }.onFailure { showProtectedError(it, "Couldn't load seller notifications.") }
+            notificationRepository.unreadCount(MarketplaceNotificationContext.SELLER, storeId).onSuccess { count ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid && _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                    _protectedState.value = _protectedState.value.copy(sellerNotificationUnreadCount = count.coerceAtLeast(0))
+                }
+            }
+        }
+    }
+
+    fun markAllSellerNotificationsRead() {
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id
+        if (storeId == null && _protectedState.value.sellerApplication == null) return
+        val ownerUid = _protectedState.value.ownerUid
+        viewModelScope.launch {
+            notificationRepository.markAllRead(MarketplaceNotificationContext.SELLER, storeId).onSuccess { count ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid && _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                    val readAt = Instant.now().toString()
+                    _protectedState.value = _protectedState.value.copy(
+                        sellerNotificationUnreadCount = count,
+                        sellerNotifications = _protectedState.value.sellerNotifications.map { it.copy(readAt = it.readAt ?: readAt) },
+                    )
+                }
+            }.onFailure { showProtectedError(it, "Couldn't update seller notifications.") }
+        }
+    }
+
+    fun markSellerNotificationRead(notificationId: String) {
+        if (notificationId.isBlank()) return
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id
+        if (storeId == null && _protectedState.value.sellerApplication == null) return
+        val ownerUid = _protectedState.value.ownerUid
+        viewModelScope.launch {
+            notificationRepository.markRead(notificationId, MarketplaceNotificationContext.SELLER, storeId).onSuccess { count ->
+                ensureActiveAccountState()
+                if (_protectedState.value.ownerUid == ownerUid && _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                    val readAt = Instant.now().toString()
+                    _protectedState.value = _protectedState.value.copy(
+                        sellerNotificationUnreadCount = count,
+                        sellerNotifications = _protectedState.value.sellerNotifications.map {
+                            if (it.id == notificationId) it.copy(readAt = it.readAt ?: readAt) else it
+                        },
+                    )
+                }
+            }.onFailure { showProtectedError(it, "Couldn't update seller notifications.") }
         }
     }
 
@@ -425,36 +883,40 @@ class ShopViewModel(
         }
     }
 
-    fun buyNow(product: ShopProductDto) {
+    fun buyNow(product: ShopProductDto) = buyNow(product, null, 1)
+
+    fun buyNow(product: ShopProductDto, variantId: String?, quantity: Int) {
         if (product.id.isBlank()) return
         if (_protectedState.value.busyIds.contains(product.id) || _protectedState.value.loading) return
         viewModelScope.launch {
             setBusy(product.id, true)
             _protectedState.value = _protectedState.value.copy(loading = true, error = null, checkout = null)
-            val idempotencyKey = buyNowIdempotencyKeys.getOrPut(product.id) {
-                "android-buy-now-${product.id}-${UUID.randomUUID()}"
+            val selectionKey = "${product.id}:${variantId.orEmpty()}:$quantity"
+            val idempotencyKey = buyNowIdempotencyKeys.getOrPut(selectionKey) {
+                "android-buy-now-$selectionKey-${UUID.randomUUID()}"
             }
             checkoutRepository.createBuyNow(
                 productId = product.id,
-                quantity = 1,
+                variantId = variantId,
+                quantity = quantity,
                 idempotencyKey = idempotencyKey,
             )
                 .onSuccess { checkout ->
                     _protectedState.value = _protectedState.value.copy(checkout = checkout, loading = false, error = null)
                 }
                 .onFailure {
-                    buyNowIdempotencyKeys.remove(product.id)
+                    buyNowIdempotencyKeys.remove(selectionKey)
                     showCheckoutError(it, "Checkout could not start. Please refresh your cart and try again.")
                 }
             setBusy(product.id, false)
         }
     }
 
-    fun chatSeller(product: ShopProductDto) {
+    fun chatSeller(product: ShopProductDto, variantId: String? = null) {
         if (product.id.isBlank()) return
         viewModelScope.launch {
             setBusy("chat-${product.id}", true)
-            messageRepository.open(productId = product.id)
+            messageRepository.open(productId = product.id, variantId = variantId)
                 .onSuccess { conversation ->
                     _protectedState.value = _protectedState.value.copy(
                         selectedConversation = conversation,
@@ -480,13 +942,64 @@ class ShopViewModel(
                 .onSuccess { order ->
                     confirmIdempotencyKeys.remove(checkoutSessionId)
                     _protectedState.value = _protectedState.value.copy(checkoutOrder = order, loading = false, error = null)
-                    _state.value = _state.value.copy(message = "Order created. Payment is pending.")
-                    loadOrders()
-                    loadCart()
+                    val orderMsg = if (order.paymentStatus == "paid") "Order created and verified (paid via voucher)." else "Order created. Payment is pending."
+                    _state.value = _state.value.copy(message = orderMsg)
+                    if (!com.adischat.app.BuildConfig.QA_BUILD) {
+                        loadOrders()
+                        loadCart()
+                    }
                 }
                 .onFailure {
                     confirmIdempotencyKeys.remove(checkoutSessionId)
                     showProtectedError(it, "Order could not be created.")
+                }
+        }
+    }
+
+    fun applyCoupon(couponCode: String) {
+        val checkoutId = _protectedState.value.checkout?.id.orEmpty()
+        if (checkoutId.isBlank() || couponCode.isBlank() || _protectedState.value.loading) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(loading = true, error = null)
+            checkoutRepository.applyCoupon(checkoutId, couponCode)
+                .onSuccess { updated ->
+                    _protectedState.value = _protectedState.value.copy(checkout = updated, loading = false, error = null)
+                    _state.value = _state.value.copy(message = "Coupon applied successfully!")
+                }
+                .onFailure {
+                    _protectedState.value = _protectedState.value.copy(loading = false, error = it.message ?: "Invalid or ineligible coupon")
+                }
+        }
+    }
+
+    fun applyVoucher(voucherCode: String) {
+        val checkoutId = _protectedState.value.checkout?.id.orEmpty()
+        if (checkoutId.isBlank() || voucherCode.isBlank() || _protectedState.value.loading) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(loading = true, error = null)
+            checkoutRepository.applyVoucher(checkoutId, voucherCode)
+                .onSuccess { updated ->
+                    _protectedState.value = _protectedState.value.copy(checkout = updated, loading = false, error = null)
+                    _state.value = _state.value.copy(message = "Voucher applied successfully!")
+                }
+                .onFailure {
+                    _protectedState.value = _protectedState.value.copy(loading = false, error = it.message ?: "Invalid or expired voucher")
+                }
+        }
+    }
+
+    fun removeDiscount(discountType: String) {
+        val checkoutId = _protectedState.value.checkout?.id.orEmpty()
+        if (checkoutId.isBlank() || _protectedState.value.loading) return
+        viewModelScope.launch {
+            _protectedState.value = _protectedState.value.copy(loading = true, error = null)
+            checkoutRepository.removeDiscount(checkoutId, discountType)
+                .onSuccess { updated ->
+                    _protectedState.value = _protectedState.value.copy(checkout = updated, loading = false, error = null)
+                    _state.value = _state.value.copy(message = "Discount removed")
+                }
+                .onFailure {
+                    _protectedState.value = _protectedState.value.copy(loading = false, error = it.message ?: "Failed to remove discount")
                 }
         }
     }
@@ -498,27 +1011,128 @@ class ShopViewModel(
     }
 
     fun loadSellerOrders() {
-        loadProtected { sellerRepository.orderGroups().onSuccess { groups ->
-            _protectedState.value = _protectedState.value.copy(sellerOrderGroups = groups, error = null)
-        } }
+        ensureActiveAccountState()
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id ?: return
+        val ownerUid = _protectedState.value.ownerUid
+        val generation = ++sellerOrderRequestGeneration
+        _protectedState.value = _protectedState.value.copy(
+            sellerOrderGroups = emptyList(), sellerOrderStoreId = storeId, sellerOrdersLoaded = false,
+        )
+        viewModelScope.launch {
+            sellerRepository.orderGroups(storeId)
+                .onSuccess { groups ->
+                    if (generation == sellerOrderRequestGeneration && _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                        _protectedState.value = _protectedState.value.copy(
+                            sellerOrderGroups = groups, sellerOrderStoreId = storeId, sellerOrdersLoaded = true, error = null,
+                        )
+                    }
+                }
+                .onFailure {
+                    if (generation == sellerOrderRequestGeneration && _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                        showProtectedError(it, "Seller orders could not be loaded.")
+                    }
+                }
+        }
     }
 
     fun loadSellerProducts() {
-        loadProtected { sellerRepository.products().onSuccess { products ->
-            _protectedState.value = _protectedState.value.copy(sellerProducts = products, error = null)
-        } }
+        ensureActiveAccountState()
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id
+        if (storeId.isNullOrBlank()) {
+            sellerProductRequestGeneration++
+            _protectedState.value = _protectedState.value.copy(
+                sellerProducts = emptyList(), sellerProductsStoreId = null,
+                sellerProductsLoaded = false, selectedSellerProduct = null,
+            )
+            return
+        }
+        val requestGeneration = ++sellerProductRequestGeneration
+        val ownerUid = _protectedState.value.ownerUid
+        _protectedState.value = _protectedState.value.copy(
+            sellerProducts = emptyList(), sellerProductsStoreId = storeId,
+            sellerProductsLoaded = false, selectedSellerProduct = null,
+        )
+        viewModelScope.launch {
+            sellerRepository.products(storeId)
+                .onSuccess { products ->
+                    if (requestGeneration == sellerProductRequestGeneration &&
+                        _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId
+                    ) {
+                        _protectedState.value = _protectedState.value.copy(
+                            sellerProducts = products, sellerProductsStoreId = storeId,
+                            sellerProductsLoaded = true, error = null,
+                        )
+                    }
+                }
+                .onFailure {
+                    if (requestGeneration == sellerProductRequestGeneration &&
+                        _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId
+                    ) showProtectedError(it, "Products for this store could not be loaded.")
+                }
+        }
     }
 
     fun loadSellerRequests() {
-        loadProtected { sellerRepository.requests().onSuccess { requests ->
-            _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
-        } }
+        ensureActiveAccountState()
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id ?: return
+        val ownerUid = _protectedState.value.ownerUid
+        val generation = ++sellerRequestGeneration
+        _protectedState.value = _protectedState.value.copy(sellerRequests = null, sellerRequestsStoreId = null)
+        viewModelScope.launch {
+            sellerRepository.requests(storeId)
+                .onSuccess { requests ->
+                    if (generation == sellerRequestGeneration && _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                        _protectedState.value = _protectedState.value.copy(sellerRequests = requests, sellerRequestsStoreId = storeId, error = null)
+                    }
+                }
+                .onFailure {
+                    if (generation == sellerRequestGeneration && _protectedState.value.ownerUid == ownerUid &&
+                        _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                        showProtectedError(it, "Seller requests could not be loaded.")
+                    }
+                }
+        }
     }
 
     fun loadSellerBusiness(storeId: String? = null, start: String? = null, end: String? = null) {
+        ensureActiveAccountState()
+        val requestGeneration = ++sellerBusinessRequestGeneration
+        val ownerUid = _protectedState.value.ownerUid
+        if (!storeId.isNullOrBlank() && storeId != _protectedState.value.sellerBusiness?.selectedStore?.id) {
+            sellerMediaUploadJob?.cancel()
+            failedSellerMediaUris.clear()
+            sellerMediaUploadContext = null
+            sellerProductRequestGeneration++
+            sellerOrderRequestGeneration++
+            sellerRequestGeneration++
+            _protectedState.value = _protectedState.value.copy(
+                sellerProducts = emptyList(), sellerProductsStoreId = null,
+                sellerProductsLoaded = false, selectedSellerProduct = null, sellerMediaUpload = null,
+                sellerOrderGroups = emptyList(), sellerOrderStoreId = null, sellerOrdersLoaded = false,
+                sellerRequests = null, sellerRequestsStoreId = null, sellerConversations = emptyList(),
+                selectedConversation = null, conversationMessages = emptyList(),
+                sellerNotifications = emptyList(), sellerNotificationUnreadCount = 0,
+                sellerNotificationStoreId = null,
+            )
+        }
         loadProtected {
             sellerRepository.business(storeId, start, end).onSuccess { business ->
-                _protectedState.value = _protectedState.value.copy(sellerBusiness = business, error = null)
+                if (requestGeneration == sellerBusinessRequestGeneration && _protectedState.value.ownerUid == ownerUid) {
+                    val previousStoreId = _protectedState.value.sellerBusiness?.selectedStore?.id
+                    _protectedState.value = _protectedState.value.copy(sellerBusiness = business, error = null)
+                    if (business.selectedStore?.id != previousStoreId) {
+                        loadSellerProducts()
+                        loadSellerMessages()
+                        loadSellerNotifications()
+                    }
+                    loadSellerOrders()
+                    loadSellerRequests()
+                }
             }
         }
     }
@@ -753,10 +1367,19 @@ class ShopViewModel(
     }
 
     fun createSellerProductDraft() {
+        if (sellerProductCreationInFlight) return
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id
+            ?.takeIf { it == _protectedState.value.sellerProductsStoreId && _protectedState.value.sellerProductsLoaded }
+            ?: return
+        sellerProductCreationInFlight = true
+        val requestGeneration = sellerProductRequestGeneration
         viewModelScope.launch {
-            _protectedState.value = _protectedState.value.copy(loading = true, error = null)
-            sellerRepository.createProduct("android-seller-product-create-${UUID.randomUUID()}")
+            try {
+                _protectedState.value = _protectedState.value.copy(loading = true, error = null)
+                sellerRepository.createProduct(storeId, "android-seller-product-create-${UUID.randomUUID()}")
                 .onSuccess { product ->
+                    if (requestGeneration != sellerProductRequestGeneration ||
+                        _protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(
                         selectedSellerProduct = product,
                         sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
@@ -766,11 +1389,15 @@ class ShopViewModel(
                     _state.value = _state.value.copy(message = "Draft product created")
                 }
                 .onFailure { showProtectedError(it, "Product creation is temporarily unavailable.") }
+            } finally {
+                sellerProductCreationInFlight = false
+            }
         }
     }
 
     fun editSellerProduct(productId: String) {
-        val product = _protectedState.value.sellerProducts.firstOrNull { it.id == productId } ?: return
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id ?: return
+        val product = _protectedState.value.sellerProducts.firstOrNull { it.id == productId && it.storeId == storeId } ?: return
         _protectedState.value = _protectedState.value.copy(selectedSellerProduct = product)
     }
 
@@ -778,12 +1405,20 @@ class ShopViewModel(
         _protectedState.value = _protectedState.value.copy(selectedSellerProduct = null)
     }
 
+    private fun selectedSellerProductStore(productId: String): String? {
+        val state = _protectedState.value
+        val storeId = state.sellerBusiness?.selectedStore?.id ?: return null
+        return storeId.takeIf { state.sellerProductsLoaded && state.sellerProductsStoreId == it &&
+            state.sellerProducts.any { product -> product.id == productId && product.storeId == it } }
+    }
+
     fun saveSellerProduct(productId: String, payload: ShopSellerProductDraftPayload) {
-        if (productId.isBlank()) return
+        val storeId = selectedSellerProductStore(productId) ?: return
         viewModelScope.launch {
             setBusy(productId, true)
-            sellerRepository.saveProduct(productId, payload, "android-seller-product-save-$productId-${UUID.randomUUID()}")
+            sellerRepository.saveProduct(storeId, productId, payload, "android-seller-product-save-$productId-${UUID.randomUUID()}")
                 .onSuccess { product ->
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(
                         selectedSellerProduct = product,
                         sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
@@ -796,12 +1431,39 @@ class ShopViewModel(
         }
     }
 
+    fun saveSellerProductBeforeImagePick(productId: String, payload: ShopSellerProductDraftPayload, onSaved: () -> Unit) {
+        val storeId = selectedSellerProductStore(productId) ?: return
+        if (_protectedState.value.busyIds.contains(productId) || sellerMediaUploadJob?.isActive == true) return
+        val ownerUid = _protectedState.value.ownerUid
+        setBusy(productId, true)
+        viewModelScope.launch {
+            try {
+                sellerRepository.saveProduct(storeId, productId, payload, "android-seller-product-before-picker-$productId-${UUID.randomUUID()}")
+                    .onSuccess { product ->
+                        if (_protectedState.value.ownerUid != ownerUid ||
+                            _protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
+                        val stillEditing = _protectedState.value.selectedSellerProduct?.id == productId
+                        _protectedState.value = _protectedState.value.copy(
+                            selectedSellerProduct = if (stillEditing) product else _protectedState.value.selectedSellerProduct,
+                            sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
+                            error = null,
+                        )
+                        if (stillEditing) onSaved()
+                    }
+                    .onFailure { showProtectedError(it, "Save your draft before adding images.") }
+            } finally {
+                setBusy(productId, false)
+            }
+        }
+    }
+
     fun submitSellerProduct(productId: String) {
-        if (productId.isBlank()) return
+        val storeId = selectedSellerProductStore(productId) ?: return
         viewModelScope.launch {
             setBusy(productId, true)
-            sellerRepository.submitProduct(productId, "android-seller-product-submit-$productId-${UUID.randomUUID()}")
+            sellerRepository.submitProduct(storeId, productId, "android-seller-product-submit-$productId-${UUID.randomUUID()}")
                 .onSuccess { product ->
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(
                         selectedSellerProduct = product,
                         sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
@@ -815,40 +1477,141 @@ class ShopViewModel(
         }
     }
 
-    fun uploadSellerProductMedia(productId: String, bytes: ByteArray, mimeType: String, width: Int, height: Int, altText: String) {
-        if (productId.isBlank() || bytes.isEmpty()) return
+    fun saveAndSubmitSellerProduct(productId: String, payload: ShopSellerProductDraftPayload) {
+        val storeId = selectedSellerProductStore(productId) ?: return
         viewModelScope.launch {
-            setBusy("media-$productId", true)
-            sellerRepository.uploadProductMedia(
-                productId = productId,
-                bytes = bytes,
-                mimeType = mimeType,
-                width = width,
-                height = height,
-                altText = altText,
-                requestId = "android-seller-product-media-$productId-${UUID.randomUUID()}",
-            ).onSuccess {
-                sellerRepository.products()
-                    .onSuccess { products ->
-                        val refreshed = products.firstOrNull { product -> product.id == productId }
+            setBusy(productId, true)
+            val saveResult = sellerRepository.saveProduct(
+                storeId,
+                productId,
+                payload,
+                "android-seller-product-save-before-submit-$productId-${UUID.randomUUID()}",
+            )
+            saveResult.onSuccess { saved ->
+                if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
+                _protectedState.value = _protectedState.value.copy(
+                    selectedSellerProduct = saved,
+                    sellerProducts = listOf(saved) + _protectedState.value.sellerProducts.filterNot { it.id == saved.id },
+                    error = null,
+                )
+                sellerRepository.submitProduct(storeId, productId, "android-seller-product-submit-$productId-${UUID.randomUUID()}")
+                    .onSuccess { submitted ->
+                        if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                         _protectedState.value = _protectedState.value.copy(
-                            sellerProducts = products,
-                            selectedSellerProduct = refreshed ?: _protectedState.value.selectedSellerProduct,
+                            selectedSellerProduct = submitted,
+                            sellerProducts = listOf(submitted) + _protectedState.value.sellerProducts.filterNot { it.id == submitted.id },
                             error = null,
                         )
+                        _state.value = _state.value.copy(message = "Product saved and submitted for review")
+                        loadAdminDashboard()
                     }
-                _state.value = _state.value.copy(message = "Image uploaded")
-            }.onFailure { showProtectedError(it, "Image upload is temporarily unavailable.") }
-            setBusy("media-$productId", false)
+                    .onFailure { showProtectedError(it, "Product was saved, but submission needs attention.") }
+            }.onFailure { showProtectedError(it, "Product could not be saved before submission.") }
+            setBusy(productId, false)
         }
     }
 
+    fun archiveSellerProduct(productId: String) {
+        val storeId = selectedSellerProductStore(productId) ?: return
+        viewModelScope.launch {
+            setBusy(productId, true)
+            sellerRepository.archiveProduct(storeId, productId, "android-seller-product-archive-$productId-${UUID.randomUUID()}")
+                .onSuccess {
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
+                    _protectedState.value = _protectedState.value.copy(
+                        selectedSellerProduct = _protectedState.value.selectedSellerProduct?.takeUnless { it.id == productId },
+                        sellerProducts = _protectedState.value.sellerProducts.filterNot { it.id == productId },
+                        error = null,
+                    )
+                    _state.value = _state.value.copy(message = "Product removed from your store")
+                }
+                .onFailure { showProtectedError(it, "Product removal is temporarily unavailable.") }
+            setBusy(productId, false)
+        }
+    }
+
+    fun uploadSellerProductMediaBatch(productId: String, uris: List<Uri>, context: Context, altText: String) {
+        val storeId = selectedSellerProductStore(productId) ?: return
+        if (sellerMediaUploadJob?.isActive == true) return
+        val uploadedCount = _protectedState.value.selectedSellerProduct?.takeIf { it.id == productId }?.images?.size ?: 0
+        val selectedUris = eligibleSellerMediaSelection(uris, uploadedCount)
+        if (selectedUris.isEmpty()) return
+        val ownerUid = _protectedState.value.ownerUid
+        sellerMediaUploadContext = context.applicationContext
+        failedSellerMediaUris.remove(productId)
+        _protectedState.value = _protectedState.value.copy(
+            sellerMediaUpload = com.adischat.app.feature.shop.data.ShopSellerMediaUploadState(productId, selectedUris.size),
+        )
+        sellerMediaUploadJob = viewModelScope.launch {
+            var completed = 0
+            val failed = mutableListOf<Uri>()
+            try {
+                for (uri in selectedUris) {
+                    if (!isActive || _protectedState.value.ownerUid != ownerUid ||
+                        _protectedState.value.sellerBusiness?.selectedStore?.id != storeId) break
+                    val processed = try {
+                        withContext(Dispatchers.IO) { processSellerProductImage(context.applicationContext, uri) }
+                    } catch (error: Exception) {
+                        null
+                    }
+                    val uploaded = processed?.let { image ->
+                        sellerRepository.uploadProductMedia(
+                            productId = productId,
+                            bytes = image.bytes,
+                            mimeType = image.mimeType,
+                            width = image.width,
+                            height = image.height,
+                            altText = altText,
+                            requestId = "android-seller-product-media-$productId-${UUID.randomUUID()}",
+                        ).isSuccess
+                    } == true
+                    if (uploaded) completed++ else failed += uri
+                    _protectedState.value = _protectedState.value.copy(
+                        sellerMediaUpload = com.adischat.app.feature.shop.data.ShopSellerMediaUploadState(
+                            productId, selectedUris.size, completed, failed.size,
+                        ),
+                    )
+                }
+                if (_protectedState.value.ownerUid == ownerUid &&
+                    _protectedState.value.sellerBusiness?.selectedStore?.id == storeId) {
+                    sellerRepository.products(storeId).onSuccess { products ->
+                        val refreshed = products.firstOrNull { it.id == productId }
+                        val stillEditing = _protectedState.value.selectedSellerProduct?.id == productId
+                        _protectedState.value = _protectedState.value.copy(
+                            sellerProducts = products,
+                            selectedSellerProduct = if (stillEditing) refreshed ?: _protectedState.value.selectedSellerProduct
+                                else _protectedState.value.selectedSellerProduct,
+                            error = null,
+                        )
+                    }
+                    failedSellerMediaUris[productId] = failed
+                    _protectedState.value = _protectedState.value.copy(
+                        sellerMediaUpload = com.adischat.app.feature.shop.data.ShopSellerMediaUploadState(
+                            productId, selectedUris.size, completed, failed.size, uploading = false,
+                        ),
+                    )
+                }
+            } finally {
+                sellerMediaUploadJob = null
+            }
+        }
+    }
+
+    fun retrySellerProductMedia(productId: String) {
+        val uris = failedSellerMediaUris[productId].orEmpty()
+        if (uris.isEmpty()) return
+        val context = sellerMediaUploadContext ?: return
+        uploadSellerProductMediaBatch(productId, uris, context, _protectedState.value.selectedSellerProduct?.title.orEmpty())
+    }
+
     fun deleteSellerProductMedia(productId: String, imageId: String) {
-        if (productId.isBlank() || imageId.isBlank()) return
+        val storeId = selectedSellerProductStore(productId) ?: return
+        if (imageId.isBlank()) return
         viewModelScope.launch {
             setBusy("media-$productId", true)
-            sellerRepository.deleteProductMedia(productId, imageId)
+            sellerRepository.deleteProductMedia(storeId, productId, imageId)
                 .onSuccess { product ->
+                    if (product.storeId != storeId || _protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(
                         selectedSellerProduct = product,
                         sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
@@ -862,11 +1625,13 @@ class ShopViewModel(
     }
 
     fun reorderSellerProductMedia(productId: String, imageIds: List<String>, primaryImageId: String) {
-        if (productId.isBlank() || imageIds.isEmpty() || primaryImageId.isBlank()) return
+        val storeId = selectedSellerProductStore(productId) ?: return
+        if (imageIds.isEmpty() || primaryImageId.isBlank()) return
         viewModelScope.launch {
             setBusy("media-$productId", true)
             sellerRepository.reorderProductMedia(productId, imageIds, primaryImageId)
                 .onSuccess { product ->
+                    if (product.storeId != storeId || _protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(
                         selectedSellerProduct = product,
                         sellerProducts = listOf(product) + _protectedState.value.sellerProducts.filterNot { it.id == product.id },
@@ -879,18 +1644,23 @@ class ShopViewModel(
         }
     }
 
-    fun sellerOrderAction(orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null) {
+    fun sellerOrderAction(orderGroupId: String, action: String, reason: String = "", reasonCode: String? = null, carrier: String? = null, trackingNumber: String? = null, expectedVersion: Int? = null) {
         if (orderGroupId.isBlank()) return
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id ?: return
+        if (!_protectedState.value.sellerOrdersLoaded || _protectedState.value.sellerOrderStoreId != storeId ||
+            _protectedState.value.sellerOrderGroups.none { it.id == orderGroupId && it.storeId == storeId }) return
         viewModelScope.launch {
             setBusy(orderGroupId, true)
-            sellerRepository.transition(orderGroupId, action, reason, reasonCode, carrier, trackingNumber)
+            sellerRepository.transition(storeId, orderGroupId, action, reason, reasonCode, carrier, trackingNumber, expectedVersion)
                 .onSuccess { groups ->
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(sellerOrderGroups = groups, error = null)
                     _state.value = _state.value.copy(message = "Seller order updated")
                     loadOrders()
                     loadSellerOrders()
                 }
                 .onFailure {
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onFailure
                     showProtectedError(it, "Seller action is not allowed for this order state.")
                     loadSellerOrders()
                 }
@@ -980,29 +1750,53 @@ class ShopViewModel(
     }
 
     fun respondSellerRequest(kind: String, requestId: String, message: String, expectedVersion: Int) {
+        val storeId = _protectedState.value.sellerBusiness?.selectedStore?.id ?: return
+        if (_protectedState.value.sellerRequests == null || _protectedState.value.sellerRequestsStoreId != storeId) return
         viewModelScope.launch {
             setBusy(requestId, true)
-            sellerRepository.respondToRequest(kind, requestId, message, expectedVersion)
+            sellerRepository.respondToRequest(storeId, kind, requestId, message, expectedVersion)
                 .onSuccess { requests ->
-                    _protectedState.value = _protectedState.value.copy(sellerRequests = requests, error = null)
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id != storeId) return@onSuccess
+                    _protectedState.value = _protectedState.value.copy(sellerRequests = requests, sellerRequestsStoreId = storeId, error = null)
                     _state.value = _state.value.copy(message = "Response sent")
                 }
-                .onFailure { showProtectedError(it, "Couldn't send the response. Try again.") }
+                .onFailure {
+                    if (_protectedState.value.sellerBusiness?.selectedStore?.id == storeId)
+                        showProtectedError(it, "Couldn't send the response. Try again.")
+                }
             setBusy(requestId, false)
         }
     }
 
     fun loadAdminSession() {
         ensureActiveAccountState()
+        val accountUid = identityRepository.activeUserId()
+        val requestGeneration = ++adminRequestGeneration
+        val selectedTab = _protectedState.value.adminSelectedTab
+        val allProductsQuery = _protectedState.value.allAdminProductsQuery
+        _protectedState.value = ShopStateReducers.clearAdminWorkspace(_protectedState.value).copy(
+            adminSelectedTab = selectedTab,
+            allAdminProductsQuery = allProductsQuery,
+            adminLoading = true,
+            adminError = null,
+        )
         viewModelScope.launch {
-            _protectedState.value = _protectedState.value.copy(adminLoading = true, adminError = null)
             adminRepository.session()
                 .onSuccess { session ->
+                    if (requestGeneration != adminRequestGeneration || accountUid != identityRepository.activeUserId()) return@onSuccess
                     _protectedState.value = _protectedState.value.copy(adminSession = session, adminLoading = false, adminError = null)
                     loadAdminDashboard()
+                    loadAdminQueues()
+                    loadAdminOrders()
+                    loadAdminAuditLog()
+                    loadAdminStores()
                 }
-                .onFailure {
-                    _protectedState.value = _protectedState.value.copy(adminSession = null, adminLoading = false, adminError = null)
+                .onFailure { error ->
+                    if (requestGeneration != adminRequestGeneration || accountUid != identityRepository.activeUserId()) return@onFailure
+                    _protectedState.value = ShopStateReducers.clearAdminWorkspace(_protectedState.value).copy(
+                        adminLoading = false,
+                        adminError = ShopStateReducers.safeErrorMessage(error.message, "Admin access could not be verified."),
+                    )
                 }
         }
     }
@@ -1042,6 +1836,167 @@ class ShopViewModel(
                 adminError = null,
             )
         }
+    }
+
+    fun loadAllAdminProducts(query: ShopAdminProductQuery) {
+        val accountUid = identityRepository.activeUserId()
+        val requestGeneration = ++adminProductListGeneration
+        val safeQuery = query.normalized()
+        _protectedState.value = _protectedState.value.copy(
+            allAdminProductsLoading = true,
+            allAdminProductsError = null,
+            allAdminProducts = emptyList(),
+        )
+        viewModelScope.launch {
+            adminRepository.allProducts(safeQuery)
+                .onSuccess { page ->
+                    if (requestGeneration != adminProductListGeneration || accountUid != identityRepository.activeUserId() || _protectedState.value.adminSession == null) return@onSuccess
+                    _protectedState.value = _protectedState.value.copy(
+                        allAdminProducts = page.products,
+                        allAdminProductsLoading = false,
+                        allAdminProductsError = null,
+                        allAdminProductsOffset = safeQuery.offset,
+                        allAdminProductsHasNext = page.hasNext,
+                    )
+                }
+                .onFailure { error ->
+                    if (requestGeneration != adminProductListGeneration || accountUid != identityRepository.activeUserId() || _protectedState.value.adminSession == null) return@onFailure
+                    _protectedState.value = _protectedState.value.copy(
+                        allAdminProductsLoading = false,
+                        allAdminProductsError = ShopStateReducers.safeErrorMessage(error.message, "Couldn't load products."),
+                        allAdminProductsHasNext = false,
+                    )
+                }
+        }
+    }
+
+    fun selectAdminTab(tab: String) {
+        _protectedState.value = _protectedState.value.copy(adminSelectedTab = tab)
+    }
+
+    fun loadPublicContentQueue(offset: Int = 0, kind: String? = null) {
+        if (!ShopPublicContentReviewFlags.enabled ||
+            "product.moderation.approve" !in _protectedState.value.adminSession?.permissions.orEmpty() ||
+            kind !in listOf(null, "store", "product", "image")) return
+        val generation = adminRequestGeneration
+        val requestGeneration = ++publicContentRequestGeneration
+        publicContentPreviewGeneration++
+        publicContentQueueKind = kind
+        val accountUid = identityRepository.activeUserId()
+        publicContentRetryKeys.clear()
+        _protectedState.value = _protectedState.value.copy(
+            publicContentLoading = true, publicContentError = null,
+            publicContentPreview = null, publicContentQueue = null,
+        )
+        viewModelScope.launch {
+            adminRepository.publicContentQueue(offset.coerceAtLeast(0), kind)
+                .onSuccess { queue ->
+                    if (generation != adminRequestGeneration || requestGeneration != publicContentRequestGeneration || accountUid != identityRepository.activeUserId()) return@onSuccess
+                    _protectedState.value = _protectedState.value.copy(
+                        publicContentQueue = queue, publicContentOffset = offset.coerceAtLeast(0),
+                        publicContentLoading = false, publicContentError = null,
+                    )
+                }
+                .onFailure { error ->
+                    if (generation != adminRequestGeneration || requestGeneration != publicContentRequestGeneration || accountUid != identityRepository.activeUserId()) return@onFailure
+                    _protectedState.value = _protectedState.value.copy(
+                        publicContentLoading = false,
+                        publicContentError = ShopStateReducers.safeErrorMessage(error.message, "Couldn't load content for review."),
+                    )
+                }
+        }
+    }
+
+    fun previewPublicContent(item: ShopPublicContentItemDto) {
+        if (!ShopPublicContentReviewFlags.enabled || _protectedState.value.publicContentReviewing ||
+            _protectedState.value.publicContentQueue?.items?.none {
+                it.entityKind == item.entityKind && it.entityId == item.entityId &&
+                    ShopQaModerationContract.sameRevision(item.entityKind, it.expectedRevision, item.expectedRevision)
+            } != false) return
+        val generation = adminRequestGeneration
+        val previewGeneration = ++publicContentPreviewGeneration
+        val accountUid = identityRepository.activeUserId()
+        _protectedState.value = _protectedState.value.copy(publicContentLoading = true, publicContentError = null)
+        viewModelScope.launch {
+            adminRepository.publicContentPreview(item)
+                .onSuccess { preview ->
+                    if (generation != adminRequestGeneration || previewGeneration != publicContentPreviewGeneration ||
+                        accountUid != identityRepository.activeUserId()) return@onSuccess
+                    if (preview.entityId != item.entityId || preview.entityKind != item.entityKind ||
+                        preview.targetId != item.targetId ||
+                        !ShopQaModerationContract.sameRevision(item.entityKind, preview.expectedRevision, item.expectedRevision)) {
+                        _protectedState.value = _protectedState.value.copy(
+                            publicContentPreview = null, publicContentLoading = false,
+                            publicContentError = "Content changed. Refresh before reviewing.",
+                        )
+                    } else {
+                        publicContentRetryKeys.clear()
+                        _protectedState.value = _protectedState.value.copy(publicContentPreview = preview, publicContentLoading = false)
+                    }
+                }
+                .onFailure { error ->
+                    if (generation != adminRequestGeneration || previewGeneration != publicContentPreviewGeneration ||
+                        accountUid != identityRepository.activeUserId()) return@onFailure
+                    _protectedState.value = _protectedState.value.copy(
+                        publicContentLoading = false,
+                        publicContentError = ShopStateReducers.safeErrorMessage(error.message, "Couldn't load the current content."),
+                    )
+                }
+        }
+    }
+
+    fun closePublicContentPreview() {
+        publicContentPreviewGeneration++
+        publicContentRetryKeys.clear()
+        _protectedState.value = _protectedState.value.copy(publicContentPreview = null)
+    }
+
+    fun decidePublicContent(decision: String) {
+        val action = when (decision) { "approved" -> "approve"; "rejected" -> "reject"; else -> return }
+        if (!ShopPublicContentReviewFlags.enabled ||
+            _protectedState.value.publicContentReviewing) return
+        val preview = _protectedState.value.publicContentPreview ?: return
+        val request = runCatching { ShopQaModerationContract.decision(preview, action) }.getOrElse {
+            _protectedState.value = _protectedState.value.copy(publicContentError = "Review details are incomplete. Refresh before reviewing.")
+            return
+        }
+        val actionIdentity = "${preview.entityKind}:${preview.entityId}:${preview.expectedRevision}:$action"
+        val key = publicContentRetryKeys.keyFor(actionIdentity)
+        val generation = adminRequestGeneration
+        val accountUid = identityRepository.activeUserId()
+        _protectedState.value = _protectedState.value.copy(publicContentReviewing = true, publicContentError = null)
+        viewModelScope.launch {
+            adminRepository.reviewPublicContent(request, key).onSuccess { confirmed ->
+                if (generation != adminRequestGeneration || accountUid != identityRepository.activeUserId()) return@onSuccess
+                if (ShopQaModerationContract.matchesDecision(preview, action, confirmed)) {
+                    publicContentRetryKeys.clear()
+                    _protectedState.value = _protectedState.value.copy(publicContentPreview = null, publicContentReviewing = false)
+                    loadPublicContentQueue(_protectedState.value.publicContentOffset, publicContentQueueKind)
+                } else {
+                    publicContentRetryKeys.clear()
+                    _protectedState.value = _protectedState.value.copy(
+                        publicContentReviewing = false, publicContentPreview = null,
+                        publicContentError = "Content changed. Refresh before reviewing.",
+                    )
+                }
+            }.onFailure { error ->
+                if (generation != adminRequestGeneration || accountUid != identityRepository.activeUserId()) return@onFailure
+                if (error.message?.contains("Content changed. Refresh") == true) {
+                    publicContentRetryKeys.clear()
+                    _protectedState.value = _protectedState.value.copy(publicContentPreview = null,
+                        publicContentReviewing = false, publicContentError = "Content changed. Refresh before reviewing.")
+                    return@onFailure
+                }
+                _protectedState.value = _protectedState.value.copy(
+                    publicContentReviewing = false,
+                    publicContentError = ShopStateReducers.safeErrorMessage(error.message, "Content review could not be saved."),
+                )
+            }
+        }
+    }
+
+    fun setAllAdminProductsQuery(query: ShopAdminProductQuery) {
+        _protectedState.value = _protectedState.value.copy(allAdminProductsQuery = query.normalized())
     }
 
     fun loadAdminProductDetail(productId: String) {
@@ -1175,7 +2130,7 @@ class ShopViewModel(
         }
     }
 
-    fun adminReviewProduct(productId: String, action: String, reason: String = "") {
+    fun adminReviewProduct(productId: String, action: String, reason: String, expectedSubmittedAt: String?) {
         if (productId.isBlank()) return
         viewModelScope.launch {
             setBusy(productId, true)
@@ -1187,6 +2142,7 @@ class ShopViewModel(
                     publicReason = reason,
                     privateNotes = reason,
                     requestId = "android-admin-product-$productId-$action-${UUID.randomUUID()}",
+                    expectedSubmittedAt = expectedSubmittedAt,
                 ),
             ).onSuccess { detail ->
                 if (detail != null) {
@@ -1270,12 +2226,21 @@ class ShopViewModel(
         val current = _protectedState.value
         val accountState = ShopStateReducers.stateForActiveIdentity(current, activeUid)
         if (accountState != current) {
+            sellerMediaUploadJob?.cancel()
+            failedSellerMediaUris.clear()
+            sellerMediaUploadContext = null
+            visualSearchSession.reset()
             _protectedState.value = accountState
             _state.value = _state.value.copy(cartCount = 0, shopIdentityReady = false, message = null)
             buyNowIdempotencyKeys.clear()
             confirmIdempotencyKeys.clear()
             conversationRefreshesInFlight.clear()
             protectedRequestGeneration++
+            sellerProductRequestGeneration++
+            sellerBusinessRequestGeneration++
+            sellerOrderRequestGeneration++
+            sellerRequestGeneration++
+            adminRequestGeneration++
         }
     }
 

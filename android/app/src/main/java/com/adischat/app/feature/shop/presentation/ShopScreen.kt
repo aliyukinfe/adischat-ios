@@ -2,6 +2,8 @@ package com.adischat.app.feature.shop.presentation
 
 import android.content.Intent
 import android.content.Context
+import android.content.ContextWrapper
+import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
@@ -20,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
@@ -28,6 +31,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -36,6 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -47,6 +52,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccountBalanceWallet
@@ -57,10 +63,12 @@ import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Chair
+import androidx.compose.material.icons.filled.ChildCare
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Diamond
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -70,6 +78,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocalGroceryStore
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Message
@@ -87,6 +96,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Spa
+import androidx.compose.material.icons.filled.SportsSoccer
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.TrendingUp
@@ -112,6 +122,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -121,9 +132,13 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -139,11 +154,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -194,6 +211,8 @@ import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
 import com.adischat.app.feature.shop.data.ShopSellerProductDto
 import com.adischat.app.feature.shop.data.ShopStoreDto
 import com.adischat.app.ui.theme.AdisGebeyaColors
+import com.adischat.app.ui.theme.AdisGebeyaHomeV2Colors
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URLDecoder
@@ -288,20 +307,58 @@ private val AdisGebeyaDarkScheme = darkColorScheme(
     onError = AdisGebeyaColors.OnColor,
 )
 
-private data class ShopHomeFilters(
+private val AdisGebeyaTypography = androidx.compose.material3.Typography().let { base ->
+    base.copy(
+        headlineLarge = base.headlineLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+        headlineMedium = base.headlineMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+        titleLarge = base.titleLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.SemiBold),
+        titleMedium = base.titleMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium),
+        bodyLarge = base.bodyLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal),
+        bodyMedium = base.bodyMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Normal),
+        labelLarge = base.labelLarge.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium),
+        labelMedium = base.labelMedium.copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight.Medium),
+    )
+}
+
+internal data class ShopHomeFilters(
     val categorySlug: String? = null,
+    val categoryValues: Map<String, String> = emptyMap(),
     val inStockOnly: Boolean = false,
     val discountedOnly: Boolean = false,
+    val minimumPriceEtb: String = "",
+    val maximumPriceEtb: String = "",
+    val minimumRating: Int = 0,
     val sort: String = "Newest",
 )
 
-private fun ShopHomeFilters.activeLabels(categories: List<ShopCategoryDto>): List<String> = buildList {
+internal fun ShopHomeFilters.activeLabels(categories: List<ShopCategoryDto>): List<String> = buildList {
     categorySlug?.let { slug ->
         categories.firstOrNull { it.slug == slug }?.name?.let(::add)
     }
+    addAll(categoryValues.values)
     if (inStockOnly) add("In stock")
     if (discountedOnly) add("Discounted")
+    minimumPriceEtb.toIntOrNull()?.let { add("From ETB $it") }
+    maximumPriceEtb.toIntOrNull()?.let { add("Up to ETB $it") }
+    if (minimumRating > 0) add("$minimumRating stars & above")
     if (sort != "Newest") add(sort)
+}
+
+internal fun marketplaceCategoryAndDescendantSlugs(
+    categories: List<ShopCategoryDto>,
+    selectedSlug: String?,
+): Set<String> {
+    if (selectedSlug == null) return emptySet()
+    val selected = categories.firstOrNull { it.slug == selectedSlug } ?: return setOf(selectedSlug)
+    val ids = mutableSetOf(selected.id)
+    var changed: Boolean
+    do {
+        changed = false
+        categories.forEach { category ->
+            if (category.parentId?.let(ids::contains) == true && ids.add(category.id)) changed = true
+        }
+    } while (changed)
+    return categories.filter { it.id in ids }.mapTo(linkedSetOf()) { it.slug }
 }
 
 private data class PromotionBannerUiModel(
@@ -396,11 +453,17 @@ sealed class ShopRoute {
     data class AdminOrderDetail(val orderId: String) : ShopRoute()
     data class AdminStoreDetail(val storeId: String) : ShopRoute()
     data object Checkout : ShopRoute()
+    data object Notifications : ShopRoute()
+    data object Search : ShopRoute()
+    data class HomeBrowse(val section: ShopHomeBrowseSection) : ShopRoute()
     data object Conversation : ShopRoute()
     data class MessageConversation(val conversationId: String) : ShopRoute()
-    data class Product(val product: ShopProductDto) : ShopRoute()
+    data class BuyerOrderDetail(val orderId: String, val orderGroupId: String? = null) : ShopRoute()
+    data class OrderTracking(val orderId: String) : ShopRoute()
+    data class Product(val product: ShopProductDto, val visitId: Long = 0L) : ShopRoute()
     data class Category(val category: ShopCategoryDto) : ShopRoute()
     data class Store(val store: ShopStoreDto) : ShopRoute()
+    data class VisualSearch(val entryMode: MarketplaceVisualSearchEntryMode) : ShopRoute()
 }
 
 private enum class ShopRootTab(val label: String, val icon: ImageVector) {
@@ -447,7 +510,21 @@ private fun ShopRoute.accountSubpage(): ShopAccountSubpage? = when (this) {
 fun ShopRootScreen(
     initialRoute: ShopRoute = ShopRoute.Home,
     onBackToHome: () -> Unit,
+    marketplaceLanguage: String = MARKETPLACE_LANGUAGE_ENGLISH,
+    onMarketplaceLanguageChange: (String) -> Unit = {},
+    accountIdentity: AdisChatAccountIdentity = AdisChatAccountIdentity(),
+    onOpenAdisChatProfile: () -> Unit = onBackToHome,
 ) {
+    val shopView = LocalView.current
+    DisposableEffect(shopView) {
+        val activity = generateSequence<Context>(shopView.context) { (it as? ContextWrapper)?.baseContext }
+            .filterIsInstance<Activity>()
+            .firstOrNull()
+        val controller = activity?.window?.let { WindowCompat.getInsetsController(it, shopView) }
+        val originalLightStatusBars = controller?.isAppearanceLightStatusBars
+        controller?.isAppearanceLightStatusBars = true
+        onDispose { if (originalLightStatusBars != null) controller?.isAppearanceLightStatusBars = originalLightStatusBars }
+    }
     val vm: ShopViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val protectedState by vm.protectedState.collectAsStateWithLifecycle()
@@ -455,18 +532,37 @@ fun ShopRootScreen(
     var detailRoute by remember(initialRoute) {
         mutableStateOf<ShopRoute?>(
             when (initialRoute) {
-                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, ShopRoute.Support, ShopRoute.Admin, is ShopRoute.AdminProductDetail, is ShopRoute.AdminOrderDetail, is ShopRoute.AdminStoreDetail, ShopRoute.Checkout, is ShopRoute.MessageConversation -> initialRoute
+                is ShopRoute.Product, is ShopRoute.Category, is ShopRoute.Store, is ShopRoute.VisualSearch, is ShopRoute.HomeBrowse, ShopRoute.Support, ShopRoute.Admin, is ShopRoute.AdminProductDetail, is ShopRoute.AdminOrderDetail, is ShopRoute.AdminStoreDetail, ShopRoute.Checkout, ShopRoute.Notifications, ShopRoute.Search, is ShopRoute.MessageConversation, is ShopRoute.BuyerOrderDetail, is ShopRoute.OrderTracking -> initialRoute
                 else -> null
             }
         )
     }
+    val detailHistory = remember(initialRoute) { mutableStateListOf<ShopRoute>() }
+    var nextProductVisitId by remember(initialRoute) { mutableStateOf(0L) }
     var accountSubpage by remember(initialRoute) { mutableStateOf(initialRoute.accountSubpage()) }
     val snackbar = remember { SnackbarHostState() }
     val accountActions = remember(vm) { shopAccountActions(vm) }
+    val visualSearchSession = vm.visualSearchSession
+
+    LaunchedEffect(Unit) { vm.loadNotificationUnreadCount() }
+
+    fun navigateDetail(next: ShopRoute?) {
+        if (next == null) {
+            val leavingVisualSearch = detailRoute is ShopRoute.VisualSearch
+            detailRoute = if (detailHistory.isNotEmpty()) detailHistory.removeAt(detailHistory.lastIndex) else null
+            if (leavingVisualSearch) visualSearchSession.reset()
+            return
+        }
+        if (next is ShopRoute.Product && detailRoute is ShopRoute.Product &&
+            (detailRoute as ShopRoute.Product).product.id == next.product.id) return
+        val destination = if (next is ShopRoute.Product) next.copy(visitId = ++nextProductVisitId) else next
+        detailRoute?.takeIf { it != destination }?.let(detailHistory::add)
+        detailRoute = destination
+    }
 
     BackHandler {
         when {
-            detailRoute != null -> detailRoute = null
+            detailRoute != null -> navigateDetail(null)
             accountSubpage != null -> accountSubpage = null
             else -> onBackToHome()
         }
@@ -480,14 +576,20 @@ fun ShopRootScreen(
             detailRoute = detailRoute,
             accountSubpage = accountSubpage,
             accountActions = accountActions,
+            accountIdentity = accountIdentity,
             vm = vm,
+            visualSearchSession = visualSearchSession,
+            marketplaceLanguage = marketplaceLanguage,
+            onMarketplaceLanguageChange = onMarketplaceLanguageChange,
             onBackToHome = onBackToHome,
+            onOpenAdisChatProfile = onOpenAdisChatProfile,
             onSelectTab = { tab ->
                 selectedTab = tab
                 detailRoute = null
+                detailHistory.clear()
                 if (tab != ShopRootTab.Account) accountSubpage = null
             },
-            onDetailRoute = { detailRoute = it },
+            onDetailRoute = ::navigateDetail,
             onAccountSubpage = { accountSubpage = it },
             snackbar = snackbar,
         )
@@ -500,9 +602,20 @@ fun ShopRootScreen(
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.Saved -> vm.loadFavorites()
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.RecentlyViewed -> vm.loadRecentlyViewed()
             selectedTab == ShopRootTab.Account && accountSubpage == ShopAccountSubpage.Addresses -> vm.loadAddresses()
-            selectedTab == ShopRootTab.Account && accountSubpage == null -> vm.loadAdminSession()
+            selectedTab == ShopRootTab.Account && accountSubpage == null -> {
+                vm.loadOrders()
+                vm.loadFavorites()
+                vm.loadAdminSession()
+            }
             detailRoute is ShopRoute.Product -> vm.recordProductView((detailRoute as ShopRoute.Product).product)
             detailRoute is ShopRoute.MessageConversation -> vm.loadConversationMessages((detailRoute as ShopRoute.MessageConversation).conversationId)
+            detailRoute == ShopRoute.Notifications -> vm.loadNotifications()
+            detailRoute is ShopRoute.BuyerOrderDetail -> {
+                val route = detailRoute as ShopRoute.BuyerOrderDetail
+                if (route.orderId.isNotBlank()) vm.loadOrderDetail(route.orderId)
+                else route.orderGroupId?.let(vm::loadOrderDetailForGroup)
+            }
+            detailRoute is ShopRoute.OrderTracking -> vm.loadOrderDetail((detailRoute as ShopRoute.OrderTracking).orderId)
             else -> Unit
         }
     }
@@ -524,31 +637,37 @@ fun ShopRootScreen(
 @Composable
 private fun AdisGebeyaPageTheme(content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) AdisGebeyaDarkScheme else AdisGebeyaLightScheme,
-        typography = MaterialTheme.typography,
+        colorScheme = AdisGebeyaLightScheme,
+        typography = AdisGebeyaTypography,
         content = content,
     )
 }
 
 @Composable
-fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
+fun SellerAccountRootScreen(onBackToHome: () -> Unit, openNotificationsInitially: Boolean = false, initialStoreId: String? = null) {
     val vm: ShopViewModel = viewModel()
     val state by vm.state.collectAsStateWithLifecycle()
     val protectedState by vm.protectedState.collectAsStateWithLifecycle()
-    BackHandler { onBackToHome() }
+    LaunchedEffect(initialStoreId) {
+        if (!initialStoreId.isNullOrBlank()) vm.loadSellerBusiness(initialStoreId)
+    }
     AdisGebeyaPageTheme {
+        key(protectedState.ownerUid) {
         SellerCenterScreen(
             protectedState = protectedState,
+            openNotificationsInitially = openNotificationsInitially,
             categories = state.categories,
+            sellingUnits = state.sellingUnits,
             onBack = onBackToHome,
             onLoad = vm::loadSellerStatus,
             onLoadSellerFeatures = {
-                vm.loadSellerOrders()
-                vm.loadSellerProducts()
-                vm.loadSellerRequests()
                 vm.loadSellerMessages()
-                vm.loadSellerBusiness()
+                vm.loadSellerBusiness(initialStoreId)
+                vm.loadSellerNotifications()
             },
+            onLoadNotifications = vm::loadSellerNotifications,
+            onMarkNotificationRead = vm::markSellerNotificationRead,
+            onMarkAllNotificationsRead = vm::markAllSellerNotificationsRead,
             messageActions = remember(vm) {
                 SellerMessageActions(
                     load = vm::loadSellerMessages,
@@ -559,6 +678,7 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
                     upload = vm::sendSellerAttachment,
                     update = vm::updateSellerConversation,
                     typing = vm::updateConversationTyping,
+                    openProduct = vm::editSellerProduct,
                 )
             },
             businessActions = remember(vm) {
@@ -588,11 +708,17 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit) {
             onEditProduct = vm::editSellerProduct,
             onCloseProductEditor = vm::clearSellerProductEditor,
             onSaveProduct = vm::saveSellerProduct,
+            onSaveBeforeImagePick = vm::saveSellerProductBeforeImagePick,
+            onSaveAndSubmitProduct = vm::saveAndSubmitSellerProduct,
+            onLoadCategoryAttributes = vm::loadSellerCategoryAttributes,
             onSubmitProduct = vm::submitSellerProduct,
-            onUploadProductMedia = vm::uploadSellerProductMedia,
+            onArchiveProduct = vm::archiveSellerProduct,
+            onUploadProductMedia = vm::uploadSellerProductMediaBatch,
+            onRetryProductMedia = vm::retrySellerProductMedia,
             onDeleteProductMedia = vm::deleteSellerProductMedia,
             onReorderProductMedia = vm::reorderSellerProductMedia,
         )
+        }
     }
 }
 
@@ -604,16 +730,23 @@ private fun ShopRootScaffold(
     detailRoute: ShopRoute?,
     accountSubpage: ShopAccountSubpage?,
     accountActions: ShopAccountActions,
+    accountIdentity: AdisChatAccountIdentity,
     vm: ShopViewModel,
+    visualSearchSession: MarketplaceVisualSearchSession,
+    marketplaceLanguage: String,
+    onMarketplaceLanguageChange: (String) -> Unit,
     onBackToHome: () -> Unit,
+    onOpenAdisChatProfile: () -> Unit,
     onSelectTab: (ShopRootTab) -> Unit,
     onDetailRoute: (ShopRoute?) -> Unit,
     onAccountSubpage: (ShopAccountSubpage?) -> Unit,
     snackbar: SnackbarHostState,
 ) {
+    val detailStateHolder = rememberSaveableStateHolder()
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         containerColor = ShopBg,
+        contentWindowInsets = if (detailRoute is ShopRoute.Product) WindowInsets(0, 0, 0, 0) else ScaffoldDefaults.contentWindowInsets,
         bottomBar = {
             if (detailRoute == null) {
                 ShopBottomBar(
@@ -626,14 +759,18 @@ private fun ShopRootScaffold(
     ) { contentPadding ->
         Box(Modifier.fillMaxSize().padding(contentPadding)) {
             if (detailRoute != null) {
-                ShopDetailRouteContent(
-                    route = detailRoute,
-                    state = state,
-                    protectedState = protectedState,
-                    vm = vm,
-                    onRoute = onDetailRoute,
-                    onSelectTab = onSelectTab,
-                )
+                detailStateHolder.SaveableStateProvider(detailRoute.stateKey()) {
+                    ShopDetailRouteContent(
+                        route = detailRoute,
+                        state = state,
+                        protectedState = protectedState,
+                        vm = vm,
+                        visualSearchSession = visualSearchSession,
+                        onRoute = onDetailRoute,
+                        onSelectTab = onSelectTab,
+                        onAccountSubpage = onAccountSubpage,
+                    )
+                }
             } else {
                 ShopRootTabContent(
                     selectedTab = selectedTab,
@@ -641,8 +778,12 @@ private fun ShopRootScaffold(
                     protectedState = protectedState,
                     accountSubpage = accountSubpage,
                     accountActions = accountActions,
+                    accountIdentity = accountIdentity,
                     vm = vm,
+                    marketplaceLanguage = marketplaceLanguage,
+                    onMarketplaceLanguageChange = onMarketplaceLanguageChange,
                     onBackToHome = onBackToHome,
+                    onOpenAdisChatProfile = onOpenAdisChatProfile,
                     onSelectTab = onSelectTab,
                     onRoute = onDetailRoute,
                     onAccountSubpage = onAccountSubpage,
@@ -652,58 +793,109 @@ private fun ShopRootScaffold(
     }
 }
 
+internal fun ShopRoute.stateKey(): String = when (this) {
+    is ShopRoute.HomeBrowse -> "home-browse:${section.name}"
+    is ShopRoute.Product -> "product:${product.id}:$visitId"
+    is ShopRoute.Category -> "category:${category.id}"
+    is ShopRoute.Store -> "store:${store.id}"
+    is ShopRoute.MessageConversation -> "conversation:${conversationId}"
+    is ShopRoute.BuyerOrderDetail -> "buyer-order:${orderId}"
+    is ShopRoute.OrderTracking -> "tracking:${orderId}"
+    is ShopRoute.AdminProductDetail -> "admin-product:${productId}"
+    is ShopRoute.AdminOrderDetail -> "admin-order:${orderId}"
+    is ShopRoute.AdminStoreDetail -> "admin-store:${storeId}"
+    is ShopRoute.VisualSearch -> "visual-search:${entryMode.name}"
+    else -> this::class.simpleName.orEmpty()
+}
+
 @Composable
 private fun ShopDetailRouteContent(
     route: ShopRoute,
     state: ShopHomeState,
     protectedState: ShopProtectedState,
     vm: ShopViewModel,
+    visualSearchSession: MarketplaceVisualSearchSession,
     onRoute: (ShopRoute?) -> Unit,
     onSelectTab: (ShopRootTab) -> Unit,
+    onAccountSubpage: (ShopAccountSubpage?) -> Unit,
 ) {
     when (route) {
-        is ShopRoute.Product -> ProductDetailsScreen(
-            product = route.product,
+        is ShopRoute.Product -> {
+            LaunchedEffect(route.product.id, route.visitId) { vm.loadProductDetail(route.product) }
+            val product = productForDetailRoute(route.product, state.productDetails)
+            ProductDetailsScreen(
+            product = product,
+            categories = state.categories,
             catalogProducts = state.products,
             recentlyViewedProducts = protectedState.recentlyViewed.mapNotNull { it.product },
             onBack = { onRoute(null) },
-            onSearch = {
-                onRoute(null)
-                onSelectTab(ShopRootTab.Home)
-            },
-            onAddToCart = { vm.addToCart(route.product) },
+            onSearch = { onRoute(ShopRoute.Search) },
+            onAddToCart = { variantId, quantity -> vm.addToCart(product, variantId, quantity) },
             onCart = {
                 onRoute(null)
                 onSelectTab(ShopRootTab.Cart)
             },
-            onToggleFavorite = { vm.toggleFavorite(route.product) },
-            onBuyNow = {
-                vm.buyNow(route.product)
+            onToggleFavorite = { vm.toggleFavorite(product) },
+            onBuyNow = { variantId, quantity ->
+                vm.buyNow(product, variantId, quantity)
                 onRoute(ShopRoute.Checkout)
             },
-            onChatSeller = {
-                vm.chatSeller(route.product)
+            onChatSeller = { variantId ->
+                vm.chatSeller(product, variantId)
                 onRoute(ShopRoute.Conversation)
             },
-            onVisitStore = { onRoute(ShopRoute.Store(route.product.toStoreDto())) },
+            onVisitStore = { onRoute(ShopRoute.Store(product.toStoreDto())) },
             onProduct = { onRoute(ShopRoute.Product(it)) },
             saved = protectedState.favorites.any { it.productId == route.product.id },
             cartCount = state.cartCount,
         )
+        }
         is ShopRoute.Category -> CategoryProductsScreen(
             category = route.category,
             state = state,
             protectedState = protectedState,
             onBack = { onRoute(null) },
+            onCart = {
+                onRoute(null)
+                onSelectTab(ShopRootTab.Cart)
+            },
             onProduct = { onRoute(ShopRoute.Product(it)) },
             onAddToCart = vm::addToCart,
+            onToggleFavorite = vm::toggleFavorite,
+        )
+        ShopRoute.Search -> MarketplaceSearchScreen(
+            searchState = vm.buyerSearchState.collectAsStateWithLifecycle().value,
+            categories = state.categories,
+            recentlyViewed = protectedState.recentlyViewed.mapNotNull { it.product },
+            savedIds = protectedState.favorites.map { it.productId }.toSet(),
+            loading = state.loading,
+            onBack = { onRoute(null) },
+            onProduct = { onRoute(ShopRoute.Product(it)) },
+            onCategory = { onRoute(ShopRoute.Category(it)) },
+            onToggleFavorite = vm::toggleFavorite,
+            onSearch = vm::searchBuyerCatalog,
+            onClearSearch = vm::clearBuyerSearch,
+            onLoadMore = vm::loadNextBuyerSearchPage,
+            onRetry = vm::retryBuyerSearch,
+        )
+        is ShopRoute.HomeBrowse -> ShopHomeBrowseScreen(
+            section = route.section,
+            state = state,
+            savedIds = protectedState.favorites.map { it.productId }.toSet(),
+            onBack = { onRoute(null) },
+            onRefresh = vm::refresh,
+            onProduct = { onRoute(ShopRoute.Product(it)) },
             onToggleFavorite = vm::toggleFavorite,
         )
         ShopRoute.Checkout -> CheckoutScreen(
             protectedState = protectedState,
             onBack = { onRoute(null) },
             onLoadAddresses = vm::loadAddresses,
+            onSaveAddress = vm::saveAddress,
             onConfirm = vm::confirmCheckout,
+            onApplyCoupon = vm::applyCoupon,
+            onApplyVoucher = vm::applyVoucher,
+            onRemoveDiscount = vm::removeDiscount,
         )
         ShopRoute.Conversation -> BuyerConversationPage(
             state = protectedState,
@@ -716,6 +908,9 @@ private fun ShopDetailRouteContent(
             onUpload = vm::sendSellerAttachment,
             onAction = vm::updateSellerConversation,
             onTyping = vm::updateConversationTyping,
+            onOpenProduct = { productId ->
+                onRoute(ShopRoute.Product(ShopProductDto(id = productId)))
+            },
         )
         is ShopRoute.MessageConversation -> BuyerConversationPage(
             state = protectedState,
@@ -728,11 +923,94 @@ private fun ShopDetailRouteContent(
             onUpload = vm::sendSellerAttachment,
             onAction = vm::updateSellerConversation,
             onTyping = vm::updateConversationTyping,
+            onOpenProduct = { productId ->
+                onRoute(ShopRoute.Product(ShopProductDto(id = productId)))
+            },
         )
+        ShopRoute.Notifications -> ShopNotificationsScreen(
+            notifications = protectedState.notifications,
+            unreadCount = protectedState.notificationUnreadCount,
+            loading = protectedState.loading,
+            onBack = { onRoute(null) },
+            onRefresh = vm::loadNotifications,
+            onMarkRead = vm::markNotificationRead,
+            onMarkAllRead = vm::markAllNotificationsRead,
+            onOpen = { target ->
+                when (target) {
+                    is ShopNotificationTarget.BuyerOrder -> {
+                        onSelectTab(ShopRootTab.Account)
+                        onAccountSubpage(ShopAccountSubpage.Orders)
+                        val orderId = target.orderId.orEmpty()
+                        if (orderId.isNotBlank()) {
+                            vm.loadOrderDetail(orderId)
+                            onRoute(ShopRoute.BuyerOrderDetail(orderId, target.orderGroupId))
+                        } else {
+                            target.orderGroupId?.let { orderGroupId ->
+                                vm.loadOrderDetailForGroup(orderGroupId) { resolvedOrderId ->
+                                    if (!resolvedOrderId.isNullOrBlank()) {
+                                        onRoute(ShopRoute.BuyerOrderDetail(resolvedOrderId, orderGroupId))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    is ShopNotificationTarget.BuyerTracking -> {
+                        onSelectTab(ShopRootTab.Account)
+                        onAccountSubpage(ShopAccountSubpage.Orders)
+                        vm.loadOrderDetail(target.orderId)
+                        onRoute(ShopRoute.OrderTracking(target.orderId))
+                    }
+                    is ShopNotificationTarget.Conversation -> {
+                        vm.loadConversationMessages(target.conversationId)
+                        onRoute(ShopRoute.MessageConversation(target.conversationId))
+                    }
+                    is ShopNotificationTarget.BuyerProtection -> onRoute(ShopRoute.BuyerProtection)
+                    is ShopNotificationTarget.AdminOrder -> onRoute(ShopRoute.AdminOrderDetail(target.orderId))
+                    is ShopNotificationTarget.SellerOrder,
+                    ShopNotificationTarget.SellerRequests,
+                    ShopNotificationTarget.SellerProducts,
+                    ShopNotificationTarget.SellerMore,
+                    ShopNotificationTarget.Center -> Unit
+                }
+            },
+        )
+        is ShopRoute.BuyerOrderDetail -> BuyerOrderDetailRoute(
+            orderId = route.orderId,
+            orderGroupId = route.orderGroupId,
+            protectedState = protectedState,
+            vm = vm,
+            onBack = { onRoute(null) },
+            onTracking = {
+                protectedState.selectedOrder?.id?.takeIf(String::isNotBlank)?.let { onRoute(ShopRoute.OrderTracking(it)) }
+            },
+        )
+        is ShopRoute.OrderTracking -> {
+            val order = protectedState.selectedOrder?.takeIf { it.id == route.orderId }
+            if (order != null) {
+                ShopTrackingScreen(
+                    order = order,
+                    deliveryCode = protectedState.deliveryCode?.takeIf { it.orderId == order.id }?.deliveryCode,
+                    codeBusy = protectedState.busyIds.contains("delivery-code-${order.id}"),
+                    onRevealCode = vm::revealDeliveryCode,
+                    onCancel = vm::requestOrderCancellation,
+                    onRefresh = { vm.loadOrderDetail(order.id) },
+                    onBack = { onRoute(null) },
+                )
+            } else {
+                ProtectedPage("Order Tracking", 0, { onRoute(null) }, { vm.loadOrderDetail(route.orderId) }, protectedState) {
+                    EmptyCard("Loading tracking details...")
+                }
+            }
+        }
+        ShopRoute.BuyerProtection -> BuyerProtectionPage(onBack = { onRoute(null) })
         is ShopRoute.Store -> StoreDetailsScreen(
             store = route.store,
             state = state,
             onBack = { onRoute(null) },
+            onCart = {
+                onRoute(null)
+                onSelectTab(ShopRootTab.Cart)
+            },
             onProduct = { onRoute(ShopRoute.Product(it)) },
             onAddToCart = vm::addToCart,
             onToggleFavorite = vm::toggleFavorite,
@@ -742,6 +1020,19 @@ private fun ShopDetailRouteContent(
             },
             savedIds = protectedState.favorites.map { it.productId }.toSet(),
             busyIds = protectedState.busyIds,
+        )
+        is ShopRoute.VisualSearch -> MarketplaceVisualSearchScreen(
+            entryMode = route.entryMode,
+            session = visualSearchSession,
+            products = state.products,
+            catalogLoading = state.loading,
+            catalogError = state.error,
+            onRefreshCatalog = vm::refresh,
+            categories = state.categories,
+            savedIds = protectedState.favorites.map { it.productId }.toSet(),
+            onBack = { onRoute(null) },
+            onProduct = { onRoute(ShopRoute.Product(it)) },
+            onToggleFavorite = vm::toggleFavorite,
         )
         ShopRoute.Support -> PlaceholderShopPage(
             "AdisGebeya Support",
@@ -764,24 +1055,17 @@ private fun ShopAdminRouteContent(
     vm: ShopViewModel,
     onRoute: (ShopRoute?) -> Unit,
 ) {
+    if (route != ShopRoute.Admin && protectedState.adminSession == null) {
+        LaunchedEffect(route) { vm.loadAdminSession() }
+        AdminAccessGate(protectedState, onBack = { onRoute(ShopRoute.Admin) }, onRefresh = vm::loadAdminSession)
+        return
+    }
     when (route) {
         ShopRoute.Admin -> AdminCenterScreen(
             protectedState = protectedState,
             onBack = { onRoute(null) },
-            onLoad = {
-                vm.loadAdminSession()
-                vm.loadAdminQueues()
-                vm.loadAdminOrders()
-                vm.loadAdminAuditLog()
-                vm.loadAdminStores()
-            },
-            onRefresh = {
-                vm.loadAdminDashboard()
-                vm.loadAdminQueues()
-                vm.loadAdminOrders()
-                vm.loadAdminAuditLog()
-                vm.loadAdminStores()
-            },
+            onLoad = vm::loadAdminSession,
+            onRefresh = vm::loadAdminSession,
             onReviewSeller = vm::adminReviewSeller,
             onReviewProduct = vm::adminReviewProduct,
             onUpdateRefund = vm::updateAdminRefund,
@@ -790,6 +1074,13 @@ private fun ShopAdminRouteContent(
             onOpenProduct = { onRoute(ShopRoute.AdminProductDetail(it)) },
             onOpenOrder = { onRoute(ShopRoute.AdminOrderDetail(it)) },
             onOpenStore = { onRoute(ShopRoute.AdminStoreDetail(it)) },
+            onLoadAllProducts = vm::loadAllAdminProducts,
+            onAllProductsQueryChange = vm::setAllAdminProductsQuery,
+            onSelectTab = vm::selectAdminTab,
+            onLoadPublicContent = vm::loadPublicContentQueue,
+            onPreviewPublicContent = vm::previewPublicContent,
+            onClosePublicContentPreview = vm::closePublicContentPreview,
+            onDecidePublicContent = vm::decidePublicContent,
         )
         is ShopRoute.AdminProductDetail -> AdminProductDetailScreen(
             productId = route.productId,
@@ -835,8 +1126,12 @@ private fun ShopRootTabContent(
     protectedState: ShopProtectedState,
     accountSubpage: ShopAccountSubpage?,
     accountActions: ShopAccountActions,
+    accountIdentity: AdisChatAccountIdentity,
     vm: ShopViewModel,
+    marketplaceLanguage: String,
+    onMarketplaceLanguageChange: (String) -> Unit,
     onBackToHome: () -> Unit,
+    onOpenAdisChatProfile: () -> Unit,
     onSelectTab: (ShopRootTab) -> Unit,
     onRoute: (ShopRoute?) -> Unit,
     onAccountSubpage: (ShopAccountSubpage?) -> Unit,
@@ -847,6 +1142,14 @@ private fun ShopRootTabContent(
             onBack = onBackToHome,
             onRefresh = vm::refresh,
             onCart = { onSelectTab(ShopRootTab.Cart) },
+            onNotifications = { onRoute(ShopRoute.Notifications) },
+            notificationUnreadCount = protectedState.notificationUnreadCount,
+            marketplaceLanguage = marketplaceLanguage,
+            onMarketplaceLanguageChange = onMarketplaceLanguageChange,
+            onImageSearch = { onRoute(ShopRoute.VisualSearch(MarketplaceVisualSearchEntryMode.Image)) },
+            onScanProduct = { onRoute(ShopRoute.VisualSearch(MarketplaceVisualSearchEntryMode.Scan)) },
+            onSearch = { onRoute(ShopRoute.Search) },
+            onBrowse = { onRoute(ShopRoute.HomeBrowse(it)) },
             onProduct = { onRoute(ShopRoute.Product(it)) },
             onStore = { onRoute(ShopRoute.Store(it)) },
             onCategory = { onRoute(ShopRoute.Category(it)) },
@@ -854,6 +1157,9 @@ private fun ShopRootTabContent(
             onToggleFavorite = vm::toggleFavorite,
             savedIds = protectedState.favorites.map { it.productId }.toSet(),
             busyIds = protectedState.busyIds,
+            onLoadCategoryFilters = vm::loadBuyerCategoryFilters,
+            onSearchProducts = vm::searchProducts,
+            onClearProductSearch = vm::clearProductSearch,
         )
         ShopRootTab.Trending -> TrendingScreen(
             state = state,
@@ -871,7 +1177,8 @@ private fun ShopRootTabContent(
             onBackToHome,
             vm::loadCart,
             vm::updateCartItem,
-            vm::clearCart,
+            onProduct = { onRoute(ShopRoute.Product(it)) },
+            onClear = vm::clearCart,
             onCheckout = {
                 vm.createCheckout()
                 onRoute(ShopRoute.Checkout)
@@ -882,10 +1189,13 @@ private fun ShopRootTabContent(
             protectedState = protectedState,
             selectedSubpage = accountSubpage,
             onBack = onBackToHome,
+            accountIdentity = accountIdentity,
+            onOpenAdisChatProfile = onOpenAdisChatProfile,
             onSubpage = onAccountSubpage,
             onSubpageBack = { onAccountSubpage(null) },
             onAdminCenter = { onRoute(ShopRoute.Admin) },
             onProduct = { onRoute(ShopRoute.Product(it)) },
+            onRoute = onRoute,
             actions = accountActions,
         )
     }
@@ -896,6 +1206,7 @@ private data class ShopAccountActions(
     val loadRecentlyViewed: () -> Unit,
     val loadAddresses: () -> Unit,
     val loadOrders: () -> Unit,
+    val loadBuyerReviews: () -> Unit,
     val loadOrderDetail: (String) -> Unit,
     val requestOrderCancellation: (String, String) -> Unit,
     val revealDeliveryCode: (String) -> Unit,
@@ -911,7 +1222,7 @@ private data class ShopAccountActions(
     val markAllNotificationsRead: () -> Unit,
     val loadSellerStatus: () -> Unit,
     val loadSellerOrders: () -> Unit,
-    val sellerOrderAction: (String, String, String, String?, String?, String?) -> Unit,
+    val sellerOrderAction: (String, String, String, String?, String?, String?, Int?) -> Unit,
     val addToCart: (ShopProductDto) -> Unit,
     val toggleFavorite: (ShopProductDto) -> Unit,
     val saveAddress: (ShopAddressRequest) -> Unit,
@@ -930,6 +1241,7 @@ private fun shopAccountActions(vm: ShopViewModel): ShopAccountActions = ShopAcco
     loadRecentlyViewed = vm::loadRecentlyViewed,
     loadAddresses = vm::loadAddresses,
     loadOrders = vm::loadOrders,
+    loadBuyerReviews = vm::loadBuyerReviews,
     loadOrderDetail = vm::loadOrderDetail,
     requestOrderCancellation = vm::requestOrderCancellation,
     revealDeliveryCode = vm::revealDeliveryCode,
@@ -967,7 +1279,7 @@ private fun ShopBottomBar(
 ) {
     NavigationBar(
         containerColor = ShopSurface,
-        tonalElevation = 2.dp,
+        tonalElevation = 0.dp,
         modifier = Modifier
             .navigationBarsPadding()
             .height(76.dp)
@@ -993,9 +1305,9 @@ private fun ShopBottomBar(
                 label = { Text(tab.label, fontSize = 11.sp, fontWeight = if (selectedTab == tab) FontWeight.SemiBold else FontWeight.Medium) },
                 alwaysShowLabel = true,
                 colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = ShopGreen,
-                    selectedTextColor = ShopInk,
-                    indicatorColor = ShopGreenSoft,
+                    selectedIconColor = AdisGebeyaHomeV2Colors.Purple,
+                    selectedTextColor = AdisGebeyaHomeV2Colors.Purple,
+                    indicatorColor = AdisGebeyaHomeV2Colors.PurpleLight,
                     unselectedIconColor = ShopMuted,
                     unselectedTextColor = ShopMuted,
                 ),
@@ -1010,14 +1322,51 @@ private fun CategoryProductsScreen(
     state: ShopHomeState,
     protectedState: ShopProtectedState,
     onBack: () -> Unit,
+    onCart: () -> Unit,
     onProduct: (ShopProductDto) -> Unit,
     onAddToCart: (ShopProductDto) -> Unit,
     onToggleFavorite: (ShopProductDto) -> Unit,
 ) {
-    val products = state.products.filter { it.categorySlug == category.slug || it.categorySlug == category.name.lowercase() }
+    var activeCategory by remember(category.id) { mutableStateOf(category) }
+    var query by remember(activeCategory.id) { mutableStateOf("") }
+    val descendantIds = remember(activeCategory.id, state.categories) {
+        buildSet {
+            val pending = ArrayDeque<String>()
+            pending.add(activeCategory.id)
+            while (pending.isNotEmpty()) {
+                val id = pending.removeFirst()
+                if (add(id)) state.categories.filter { it.parentId == id }.forEach { pending.add(it.id) }
+            }
+        }
+    }
+    val childCategories = remember(activeCategory.id, state.categories) {
+        state.categories.filter { it.parentId == activeCategory.id }.sortedWith(compareBy({ it.displayOrder }, { it.name }))
+    }
+    val products = remember(state.products, activeCategory, descendantIds, query) {
+        state.products.filter {
+            val inCategory = it.categoryId in descendantIds ||
+                (it.categoryId == null && (it.categorySlug == activeCategory.slug || it.categorySlug == activeCategory.name.lowercase()))
+            val matchesSearch = query.isBlank() || it.title.contains(query, ignoreCase = true) || it.brand.orEmpty().contains(query, ignoreCase = true)
+            inCategory && matchesSearch
+        }
+    }
     LazyColumn(Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(), contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 12.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        stickyHeader { ShopHeader(cartCount = state.cartCount, onBack = onBack, onCart = {}) }
-        item { PageTitle(category.name, "${products.size} products available") }
+        stickyHeader {
+            ShopHeader(
+                cartCount = state.cartCount,
+                onBack = {
+                    val parent = activeCategory.parentId?.let { id -> state.categories.firstOrNull { it.id == id } }
+                    if (parent == null) onBack() else activeCategory = parent
+                },
+                onCart = onCart,
+                query = query,
+                onQuery = { query = it },
+            )
+        }
+        item { PageTitle(activeCategory.name, "${products.size} products available") }
+        if (childCategories.isNotEmpty()) {
+            item { CategoryShortcutRow(childCategories) { activeCategory = it } }
+        }
         item {
             if (products.isEmpty()) EmptyCard("No products available in this category yet.")
             else ProductGridSection("Products", products, onProduct, onToggleFavorite, protectedState.favorites.map { it.productId }.toSet(), maxItems = Int.MAX_VALUE)
@@ -1031,10 +1380,13 @@ private fun ShopAccountScreen(
     protectedState: ShopProtectedState,
     selectedSubpage: ShopAccountSubpage?,
     onBack: () -> Unit,
+    accountIdentity: AdisChatAccountIdentity,
+    onOpenAdisChatProfile: () -> Unit,
     onSubpage: (ShopAccountSubpage) -> Unit,
     onSubpageBack: () -> Unit,
     onAdminCenter: () -> Unit,
     onProduct: (ShopProductDto) -> Unit,
+    onRoute: (ShopRoute?) -> Unit,
     actions: ShopAccountActions,
 ) {
     LaunchedEffect(Unit) {
@@ -1045,7 +1397,10 @@ private fun ShopAccountScreen(
             protectedState,
             onSubpageBack,
             actions.loadOrders,
-            actions.loadOrderDetail,
+            onOpen = { orderId ->
+                actions.loadOrderDetail(orderId)
+                onRoute(ShopRoute.BuyerOrderDetail(orderId))
+            },
             actions.requestOrderCancellation,
             actions.revealDeliveryCode,
             actions.submitOrderIssue,
@@ -1060,9 +1415,26 @@ private fun ShopAccountScreen(
         ShopAccountSubpage.Saved -> SavedProductsScreen(protectedState, state.cartCount, onSubpageBack, actions.loadFavorites, onProduct, actions.toggleFavorite, actions.addToCart)
         ShopAccountSubpage.RecentlyViewed -> RecentlyViewedScreen(protectedState, state.cartCount, onSubpageBack, actions.loadRecentlyViewed, onProduct, actions.addToCart)
         ShopAccountSubpage.Addresses -> AddressesScreen(protectedState, onSubpageBack, actions.loadAddresses, actions.saveAddress, actions.deleteAddress, actions.setDefaultAddress)
-        ShopAccountSubpage.Reviews -> PlaceholderShopPage("My Reviews", "No reviews yet. Reviews will appear here after verified AdisGebeya purchases support reviews.", onBack = onSubpageBack)
+        ShopAccountSubpage.Reviews -> BuyerReviewsScreen(
+            orders = protectedState.orders,
+            reviews = protectedState.buyerReviews,
+            loading = !protectedState.buyerReviewsLoaded,
+            onLoad = actions.loadBuyerReviews,
+            onBack = onSubpageBack,
+            onOrder = { orderId ->
+                actions.loadOrderDetail(orderId)
+                onRoute(ShopRoute.BuyerOrderDetail(orderId))
+            },
+        )
         ShopAccountSubpage.BuyerProtection -> BuyerProtectionPage(onBack = onSubpageBack)
-        null -> ShopAccountHome(state, protectedState, onBack, onSubpage, onAdminCenter)
+        null -> ShopAccountHome(
+            state = state,
+            protectedState = protectedState,
+            identity = accountIdentity,
+            onOpenAdisChatProfile = onOpenAdisChatProfile,
+            onSubpage = onSubpage,
+            onAdminCenter = onAdminCenter,
+        )
     }
 }
 
@@ -1070,108 +1442,31 @@ private fun ShopAccountScreen(
 private fun ShopAccountHome(
     state: ShopHomeState,
     protectedState: ShopProtectedState,
-    onBack: () -> Unit,
+    identity: AdisChatAccountIdentity,
+    onOpenAdisChatProfile: () -> Unit,
     onSubpage: (ShopAccountSubpage) -> Unit,
     onAdminCenter: () -> Unit,
 ) {
-    LazyColumn(
-        Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item {
-            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(2.dp)) {
-                Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(58.dp).clip(CircleShape).background(ShopGreenSoft), contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Person, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(32.dp))
-                    }
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Your AdisGebeya Account", color = ShopInk, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-                        Text(if (state.shopIdentityReady) "Connected to your AdisChat identity" else "Connecting to AdisGebeya...", color = ShopMuted, fontSize = 13.sp)
-                    }
-                }
-            }
-        }
-        item { AccountGroup("AdisGebeya", listOf(
-            Triple("My Orders", "Completed AdisGebeya purchases", ShopAccountSubpage.Orders),
-            Triple("Saved Products", "Products you saved", ShopAccountSubpage.Saved),
-            Triple("Recently Viewed", "Products you opened recently", ShopAccountSubpage.RecentlyViewed),
-            Triple("Delivery Addresses", "Manage delivery locations", ShopAccountSubpage.Addresses),
-        ), onSubpage) }
-        item { AccountGroup("Support", listOf(
-            Triple("Reviews", "Your product and store feedback", ShopAccountSubpage.Reviews),
-            Triple("Buyer Protection", "How AdisGebeya protects eligible purchases", ShopAccountSubpage.BuyerProtection),
-        ), onSubpage) }
-        if (protectedState.adminSession != null) {
-            item { AdminAccountEntry(protectedState, onAdminCenter) }
-        }
-        item { EmptyCard("AdisGebeya settings will appear here when configurable shopping preferences are available.") }
-    }
-}
-
-@Composable
-private fun AdminAccountEntry(
-    protectedState: ShopProtectedState,
-    onAdminCenter: () -> Unit,
-) {
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
-        Row(
-            Modifier.fillMaxWidth().clickable { onAdminCenter() }.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(Modifier.size(42.dp).clip(RoundedCornerShape(15.dp)).background(ShopOrange.copy(alpha = .14f)), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.Security, contentDescription = null, tint = ShopOrangeDark, modifier = Modifier.size(22.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text("AdisGebeya Admin", color = ShopInk, fontWeight = FontWeight.SemiBold)
-                Text(
-                    protectedState.adminSession?.primaryRole?.let { backendLabel(it) } ?: "Moderation Center",
-                    color = ShopMuted,
-                    fontSize = 12.sp,
-                )
-            }
-            Icon(Icons.Default.ArrowForward, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(18.dp))
-        }
-    }
-}
-
-@Composable
-private fun AccountGroup(
-    title: String,
-    rows: List<Triple<String, String, ShopAccountSubpage>>,
-    onSubpage: (ShopAccountSubpage) -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(title, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-        Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), elevation = CardDefaults.cardElevation(1.dp)) {
-            Column(Modifier.padding(vertical = 6.dp)) {
-                rows.forEachIndexed { index, row ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onSubpage(row.third) }.padding(horizontal = 16.dp, vertical = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(Modifier.size(40.dp).clip(RoundedCornerShape(14.dp)).background(ShopGreenSoft), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Storefront, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(row.first, color = ShopInk, fontWeight = FontWeight.Medium)
-                            Text(row.second, color = ShopMuted, fontSize = 12.sp)
-                        }
-                        Icon(Icons.Default.ArrowForward, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(18.dp))
-                    }
-                    if (index != rows.lastIndex) HorizontalDivider(color = ShopLine.copy(alpha = .6f), modifier = Modifier.padding(start = 68.dp))
-                }
-            }
-        }
-    }
+    AdisGebeyaBuyerAccountScreen(
+        identity = identity,
+        identityConnected = state.shopIdentityReady,
+        state = protectedState,
+        onProfile = onOpenAdisChatProfile,
+        onOrders = { onSubpage(ShopAccountSubpage.Orders) },
+        onSaved = { onSubpage(ShopAccountSubpage.Saved) },
+        onRecentlyViewed = { onSubpage(ShopAccountSubpage.RecentlyViewed) },
+        onAddresses = { onSubpage(ShopAccountSubpage.Addresses) },
+        onReviews = { onSubpage(ShopAccountSubpage.Reviews) },
+        onBuyerProtection = { onSubpage(ShopAccountSubpage.BuyerProtection) },
+        onAdmin = onAdminCenter,
+    )
 }
 
 private enum class AdminTab(val label: String) {
     Sellers("Sellers"),
     Products("Products"),
+    AllProducts("All Products"),
+    PublicContent("Public Content"),
     Stores("Stores"),
     Refunds("Refunds"),
     Exchanges("Exchanges"),
@@ -1181,24 +1476,73 @@ private enum class AdminTab(val label: String) {
 }
 
 @Composable
+private fun AdminAccessGate(
+    protectedState: ShopProtectedState,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+) {
+    Column(
+        Modifier.fillMaxSize().background(ShopBg).statusBarsPadding().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk) }
+            Text("AdisGebeya Admin", color = ShopInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            IconButton(onClick = onRefresh, enabled = !protectedState.adminLoading) {
+                Icon(Icons.Default.Refresh, contentDescription = "Retry admin access", tint = ShopGreen)
+            }
+        }
+        EmptyCard(
+            if (protectedState.adminLoading) "Loading admin workspace..."
+            else protectedState.adminError?.takeIf { it.isNotBlank() } ?: "You do not have access to AdisGebeya Admin."
+        )
+    }
+}
+
+@Composable
 private fun AdminCenterScreen(
     protectedState: ShopProtectedState,
     onBack: () -> Unit,
     onLoad: () -> Unit,
     onRefresh: () -> Unit,
     onReviewSeller: (String, String, String) -> Unit,
-    onReviewProduct: (String, String, String) -> Unit,
+    onReviewProduct: (String, String, String, String?) -> Unit,
     onUpdateRefund: (String, String, String) -> Unit,
     onUpdateExchange: (String, String, String) -> Unit,
     onModerateReview: (String, String, String, String) -> Unit,
     onOpenProduct: (String) -> Unit,
     onOpenOrder: (String) -> Unit,
     onOpenStore: (String) -> Unit,
+    onLoadAllProducts: (com.adischat.app.feature.shop.data.ShopAdminProductQuery) -> Unit,
+    onAllProductsQueryChange: (com.adischat.app.feature.shop.data.ShopAdminProductQuery) -> Unit,
+    onSelectTab: (String) -> Unit,
+    onLoadPublicContent: (Int, String?) -> Unit,
+    onPreviewPublicContent: (com.adischat.app.feature.shop.data.ShopPublicContentItemDto) -> Unit,
+    onClosePublicContentPreview: () -> Unit,
+    onDecidePublicContent: (String) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(AdminTab.Sellers) }
+    val selectedTab = AdminTab.entries.firstOrNull { it.label == protectedState.adminSelectedTab } ?: AdminTab.Sellers
+    val allProductsQuery = protectedState.allAdminProductsQuery
     var reason by remember { mutableStateOf("") }
+    var pendingContentDecision by remember { mutableStateOf<String?>(null) }
+    var publicContentKind by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(protectedState.publicContentPreview?.entityId, protectedState.adminSession?.profileId) {
+        pendingContentDecision = null
+    }
 
-    LaunchedEffect(Unit) { onLoad() }
+    LaunchedEffect(Unit) { if (protectedState.adminSession == null && !protectedState.adminLoading) onLoad() }
+    LaunchedEffect(selectedTab, allProductsQuery, protectedState.adminSession?.profileId, publicContentKind) {
+        if (selectedTab == AdminTab.AllProducts && protectedState.adminSession != null) onLoadAllProducts(allProductsQuery)
+        if (selectedTab == AdminTab.PublicContent &&
+            com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags.enabled &&
+            "product.moderation.approve" in protectedState.adminSession?.permissions.orEmpty()
+        ) onLoadPublicContent(0, publicContentKind)
+    }
+
+    if (protectedState.adminSession == null) {
+        AdminAccessGate(protectedState, onBack, onRefresh)
+        return
+    }
 
     LazyColumn(
         Modifier.fillMaxSize().background(ShopBg).statusBarsPadding(),
@@ -1224,21 +1568,24 @@ private fun AdminCenterScreen(
             item { EmptyCard(message) }
         }
 
-        if (protectedState.adminSession == null && !protectedState.adminLoading) {
-            item { EmptyCard("You do not have access to AdisGebeya Admin.") }
-        }
-
         item { AdminDashboardCards(protectedState) }
 
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(AdminTab.entries) { tab ->
+                items(AdminTab.entries.filter { tab ->
+                    when (tab) {
+                        AdminTab.AllProducts -> "product.moderation.read" in protectedState.adminSession?.permissions.orEmpty()
+                        AdminTab.PublicContent -> com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags.enabled &&
+                            "product.moderation.approve" in protectedState.adminSession?.permissions.orEmpty()
+                        else -> true
+                    }
+                }) { tab ->
                     val selected = selectedTab == tab
                     Surface(
                         color = if (selected) ShopGreen else ShopSurface,
                         contentColor = if (selected) ShopOnColor else ShopInk,
                         shape = RoundedCornerShape(999.dp),
-                        modifier = Modifier.clickable { selectedTab = tab },
+                        modifier = Modifier.clickable { onSelectTab(tab.label) },
                     ) {
                         Text(tab.label, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                     }
@@ -1260,6 +1607,76 @@ private fun AdminCenterScreen(
         }
 
         when (selectedTab) {
+            AdminTab.PublicContent -> {
+                if (com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags.enabled &&
+                    "product.moderation.approve" in protectedState.adminSession?.permissions.orEmpty()) {
+                    item { Text("Historical content review", color = ShopInk, fontWeight = FontWeight.SemiBold) }
+                    item {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(listOf(null, "store", "product", "image")) { kind ->
+                                OutlinedButton(onClick = { publicContentKind = kind },
+                                    enabled = !protectedState.publicContentLoading && !protectedState.publicContentReviewing) {
+                                    Text(kind?.let(::backendLabel) ?: "All")
+                                }
+                            }
+                        }
+                    }
+                    protectedState.publicContentError?.let { message ->
+                        item { AdminAllProductsMessage(message) }
+                    }
+                    if (protectedState.publicContentLoading) item { EmptyCard("Loading content...") }
+                    val queue = protectedState.publicContentQueue
+                    if (!protectedState.publicContentLoading && queue?.items.isNullOrEmpty()) {
+                        item { EmptyCard("No content awaiting review.") }
+                    }
+                    items(queue?.items.orEmpty(), key = { "public-${it.entityKind}-${it.entityId}" }) { entry ->
+                        OutlinedButton(
+                            onClick = { onPreviewPublicContent(entry) },
+                            enabled = !protectedState.publicContentLoading && !protectedState.publicContentReviewing,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("${backendLabel(entry.entityKind)}  |  ${entry.targetId.take(8)}  |  ${entry.reviewStatus}  |  ${entry.expectedRevision?.asString ?: "Revision unavailable"}")
+                        }
+                    }
+                    item {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = { onLoadPublicContent((protectedState.publicContentOffset - com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags.pageSize).coerceAtLeast(0), publicContentKind) },
+                                enabled = protectedState.publicContentOffset > 0 && !protectedState.publicContentLoading) { Text("Previous") }
+                            OutlinedButton(onClick = { onLoadPublicContent(protectedState.publicContentOffset + com.adischat.app.feature.shop.data.ShopPublicContentReviewFlags.pageSize, publicContentKind) },
+                                enabled = queue != null && protectedState.publicContentOffset + queue.items.size < queue.total && !protectedState.publicContentLoading) { Text("Next") }
+                            TextButton(onClick = { onLoadPublicContent(protectedState.publicContentOffset, publicContentKind) },
+                                enabled = !protectedState.publicContentLoading) { Text("Retry") }
+                        }
+                    }
+                }
+            }
+            AdminTab.AllProducts -> {
+                item {
+                    AdminAllProductsControls(
+                        query = allProductsQuery,
+                        loading = protectedState.allAdminProductsLoading,
+                        onQueryChange = onAllProductsQueryChange,
+                        onRetry = { onLoadAllProducts(allProductsQuery) },
+                    )
+                }
+                protectedState.allAdminProductsError?.let { message -> item { AdminAllProductsMessage(message) } }
+                if (!protectedState.allAdminProductsLoading && protectedState.allAdminProductsError == null && protectedState.allAdminProducts.isEmpty()) {
+                    item { AdminAllProductsMessage("No products match this search.") }
+                }
+                items(protectedState.allAdminProducts, key = { "all-${it.id}" }) { product ->
+                    AdminAllProductRow(product, formatPrice = ::formatEtb, onOpen = { onOpenProduct(product.id) })
+                }
+                item {
+                    AdminAllProductsPagination(
+                        offset = protectedState.allAdminProductsOffset,
+                        pageSize = allProductsQuery.limit,
+                        hasNext = protectedState.allAdminProductsHasNext,
+                        loading = protectedState.allAdminProductsLoading,
+                        onPrevious = { onAllProductsQueryChange(allProductsQuery.copy(offset = (allProductsQuery.offset - allProductsQuery.limit).coerceAtLeast(0))) },
+                        onNext = { onAllProductsQueryChange(allProductsQuery.copy(offset = allProductsQuery.offset + allProductsQuery.limit)) },
+                    )
+                }
+            }
             AdminTab.Sellers -> {
                 if (protectedState.adminSellerApplications.isEmpty()) item { EmptyCard("No seller applications are waiting for review.") }
                 items(protectedState.adminSellerApplications, key = { it.id }) { application ->
@@ -1267,6 +1684,10 @@ private fun AdminCenterScreen(
                 }
             }
             AdminTab.Products -> {
+                if (com.adischat.app.feature.shop.data.ShopBenefitFlags.managementEnabled) {
+                    item { AdminBenefitReviewPanel() }
+                    item { AdminBenefitBrandPanel() }
+                }
                 if (protectedState.adminProducts.isEmpty()) item { EmptyCard("No products are waiting for moderation.") }
                 items(protectedState.adminProducts, key = { it.id }) { product ->
                     AdminProductCard(product, protectedState.busyIds.contains(product.id), reason, onReviewProduct, onOpenProduct)
@@ -1309,6 +1730,50 @@ private fun AdminCenterScreen(
                 }
             }
         }
+    }
+    val preview = protectedState.publicContentPreview
+    if (selectedTab == AdminTab.PublicContent && preview != null) {
+        AlertDialog(
+            onDismissRequest = { if (!protectedState.publicContentReviewing) onClosePublicContentPreview() },
+            title = { Text("${backendLabel(preview.entityKind)} · ${preview.reviewStatus} · revision ${preview.expectedRevision?.asString ?: "unavailable"}") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    Text("Record ${preview.targetId}", color = ShopMuted)
+                    val imageUrl = (preview.content["imageUrl"] ?: preview.content["logoUrl"]) as? String
+                    if (!imageUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = imageUrl,
+                            contentDescription = "Content under review",
+                            modifier = Modifier.fillMaxWidth().height(180.dp),
+                        )
+                    }
+                    preview.content.forEach { (key, value) ->
+                        Text(backendLabel(key), fontWeight = FontWeight.SemiBold)
+                        Text(value?.toString() ?: "Not provided")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pendingContentDecision = "approved" },
+                    enabled = !protectedState.publicContentReviewing && "approve" in preview.permittedActions) { Text("Approve") }
+            },
+            dismissButton = {
+                Row {
+                    TextButton(onClick = { pendingContentDecision = "rejected" },
+                        enabled = !protectedState.publicContentReviewing && "reject" in preview.permittedActions) { Text("Reject") }
+                    TextButton(onClick = onClosePublicContentPreview, enabled = !protectedState.publicContentReviewing) { Text("Close") }
+                }
+            },
+        )
+    }
+    pendingContentDecision?.takeIf { selectedTab == AdminTab.PublicContent && preview != null }?.let { decision ->
+        AlertDialog(
+            onDismissRequest = { pendingContentDecision = null },
+            title = { Text("Confirm ${decision.removeSuffix("ed")}") },
+            text = { Text("Review only the displayed revision. A changed revision will be rejected by the server.") },
+            confirmButton = { TextButton(onClick = { pendingContentDecision = null; onDecidePublicContent(decision) }) { Text("Confirm") } },
+            dismissButton = { TextButton(onClick = { pendingContentDecision = null }) { Text("Cancel") } },
+        )
     }
 }
 
@@ -1609,6 +2074,9 @@ private fun AdminStoreDetailScreen(
                 }
             }
             item { AdminRequestSummary("Refund requests", detail.refundRequests) }
+            if (com.adischat.app.feature.shop.data.ShopBenefitFlags.managementEnabled) {
+                item { AdminBenefitReviewPanel(storeId = storeId) }
+            }
             item { AdminRequestSummary("Exchange requests", detail.exchangeRequests) }
             item { AdminSimpleMapList("Warnings", detail.warnings) }
             item { AdminSimpleMapList("Violations", detail.violations) }
@@ -1662,14 +2130,15 @@ private fun AdminProductDetailScreen(
     onBack: () -> Unit,
     onLoad: () -> Unit,
     onRefresh: () -> Unit,
-    onReviewProduct: (String, String, String) -> Unit,
+    onReviewProduct: (String, String, String, String?) -> Unit,
 ) {
     var reason by remember(productId) { mutableStateOf("") }
     var pendingAction by remember(productId) { mutableStateOf<String?>(null) }
     LaunchedEffect(productId) { onLoad() }
-    val detail = protectedState.selectedAdminProduct
+    val detail = protectedState.selectedAdminProduct?.takeIf { it.product?.id == productId }
     val product = detail?.product
     val moderationStatus = product?.moderationStatus.orEmpty().ifBlank { product?.status.orEmpty() }
+    val reviewable = product?.status == "draft" && moderationStatus in setOf("submitted", "under_review") && !product.submittedAt.isNullOrBlank()
     val busy = protectedState.busyIds.contains(productId)
 
     pendingAction?.let { action ->
@@ -1681,7 +2150,7 @@ private fun AdminProductDetailScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        onReviewProduct(productId, action, reason.ifBlank { defaultProductReviewReason(action) })
+                        onReviewProduct(productId, action, reason.ifBlank { defaultProductReviewReason(action) }, product?.submittedAt)
                         pendingAction = null
                     },
                     enabled = !busy,
@@ -1715,6 +2184,9 @@ private fun AdminProductDetailScreen(
             item { EmptyCard("Product detail is unavailable.") }
         } else if (detail != null && product != null) {
         item { AdminProductGallery(detail.images, product.title.ifBlank { "Product image" }) }
+        if (com.adischat.app.feature.shop.data.ShopBenefitFlags.managementEnabled) {
+            item { AdminBenefitReviewPanel(productId = productId) }
+        }
         item {
             Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1726,8 +2198,8 @@ private fun AdminProductDetailScreen(
                     if (!product.shortDescription.isNullOrBlank()) Text(product.shortDescription, color = ShopMuted, lineHeight = 20.sp)
                     Text(formatEtb(product.priceMinor), color = ShopGreen, fontSize = 26.sp, fontWeight = FontWeight.Black)
                     AdminInfoRow("Category", product.categorySlug ?: "Not set")
-                    AdminInfoRow("Submitted", product.submittedAt ?: "Not submitted")
-                    AdminInfoRow("Reviewed", product.reviewedAt ?: "Not reviewed")
+                    AdminInfoRow("Submitted", formatMarketplaceDateTime(product.submittedAt, "Not submitted"))
+                    AdminInfoRow("Reviewed", formatMarketplaceDateTime(product.reviewedAt, "Not reviewed"))
                 }
             }
         }
@@ -1758,11 +2230,46 @@ private fun AdminProductDetailScreen(
                 }
             }
         }
+        if (detail.variants.isNotEmpty()) {
+            item {
+                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        SectionTitle("Product variants")
+                        detail.variants.forEach { variant ->
+                            val optionLabel = variant.options.orEmpty().entries.joinToString(" • ") { (key, value) ->
+                                "${backendLabel(key)}: ${backendLabel(value?.toString())}"
+                            }.ifBlank { variant.title.ifBlank { "Default option" } }
+                            Text(optionLabel, color = ShopInk, fontWeight = FontWeight.SemiBold)
+                            AdminInfoRow(
+                                formatEtb(variant.priceMinor),
+                                "${variant.inventory?.quantityAvailable ?: 0} available, ${variant.inventory?.quantityReserved ?: 0} reserved",
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        if (detail.specificationValues.isNotEmpty()) {
+            item {
+                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SectionTitle("Category attributes")
+                        detail.specificationValues.forEach { specification ->
+                            val value = specification.valueText
+                                ?: specification.valueNumber?.toString()
+                                ?: specification.valueBoolean?.let { if (it) "Yes" else "No" }
+                                ?: "Not provided"
+                            AdminInfoRow(specification.displayName, listOfNotNull(value, specification.unit).joinToString(" "))
+                        }
+                    }
+                }
+            }
+        }
         item { AdminMapSection("Specifications", product.specifications) }
         item { AdminMapSection("Shipping", product.shippingDetails) }
         item { AdminMapSection("Returns", product.returnPolicy) }
         item { AdminModerationHistory(detail.reviews) }
-        item {
+        if (reviewable) item {
             Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionTitle("Review Action")
@@ -1775,7 +2282,7 @@ private fun AdminProductDetailScreen(
                         colors = shopOutlinedTextFieldColors(),
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { pendingAction = "start_review" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Start") }
+                        OutlinedButton(onClick = { pendingAction = "start_review" }, enabled = !busy && moderationStatus == "submitted", modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Start") }
                         Button(onClick = { pendingAction = "approve" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
                             Text(if (busy) "Saving..." else "Approve")
                         }
@@ -1882,7 +2389,7 @@ private fun AdminModerationHistory(reviews: List<ShopAdminProductReviewDto>) {
                         Text("${backendLabel(review.previousStatus)} -> ${backendLabel(review.newStatus)}", color = ShopMuted, fontSize = 12.sp)
                         review.publicReason?.takeIf { it.isNotBlank() }?.let { Text(it, color = ShopMuted, fontSize = 12.sp) }
                         review.privateNotes?.takeIf { it.isNotBlank() }?.let { Text("Private note recorded", color = ShopOrangeDark, fontSize = 12.sp, fontWeight = FontWeight.Medium) }
-                        review.createdAt?.let { Text(it, color = ShopMuted, fontSize = 11.sp) }
+                        review.createdAt?.let { Text(formatMarketplaceDateTime(it), color = ShopMuted, fontSize = 11.sp) }
                     }
                     HorizontalDivider(color = ShopLine.copy(alpha = .55f))
                 }
@@ -1950,24 +2457,26 @@ private fun AdminProductCard(
     product: ShopAdminProductDto,
     busy: Boolean,
     reason: String,
-    onReviewProduct: (String, String, String) -> Unit,
+    onReviewProduct: (String, String, String, String?) -> Unit,
     onOpenProduct: (String) -> Unit,
 ) {
     val moderationStatus = product.moderationStatus.orEmpty().ifBlank { product.status.orEmpty() }
+    val reviewable = product.status == "draft" && moderationStatus in setOf("submitted", "under_review") && !product.submittedAt.isNullOrBlank()
     AdminReviewCard(
         title = product.title.orEmpty().ifBlank { "Untitled product" },
         subtitle = "${product.storeName.orEmpty().ifBlank { "Store" }} - ${backendLabel(moderationStatus)}",
         meta = formatEtb(product.priceMinor),
         busy = busy,
+        actionsEnabled = reviewable,
         primaryLabel = "Approve",
         secondaryLabel = if (statusKey(moderationStatus) == "submitted") "Start review" else "Request changes",
         tertiaryLabel = "Reject",
-        onPrimary = { onReviewProduct(product.id, "approve", "") },
+        onPrimary = { onReviewProduct(product.id, "approve", "", product.submittedAt) },
         onSecondary = {
             val action = if (statusKey(moderationStatus) == "submitted") "start_review" else "request_changes"
-            onReviewProduct(product.id, action, reason.ifBlank { "Product needs changes before publishing." })
+            onReviewProduct(product.id, action, reason.ifBlank { "Product needs changes before publishing." }, product.submittedAt)
         },
-        onTertiary = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product does not meet AdisGebeya listing standards." }) },
+        onTertiary = { onReviewProduct(product.id, "reject", reason.ifBlank { "Product does not meet AdisGebeya listing standards." }, product.submittedAt) },
         onOpen = { onOpenProduct(product.id) },
     )
 }
@@ -1978,6 +2487,7 @@ private fun AdminReviewCard(
     subtitle: String,
     meta: String,
     busy: Boolean,
+    actionsEnabled: Boolean = true,
     primaryLabel: String,
     secondaryLabel: String,
     tertiaryLabel: String? = null,
@@ -1997,14 +2507,14 @@ private fun AdminReviewCard(
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onSecondary, enabled = !busy, modifier = Modifier.weight(1f)) { Text(secondaryLabel) }
-                Button(onClick = onPrimary, enabled = !busy, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
+                OutlinedButton(onClick = onSecondary, enabled = !busy && actionsEnabled, modifier = Modifier.weight(1f)) { Text(secondaryLabel) }
+                Button(onClick = onPrimary, enabled = !busy && actionsEnabled, modifier = Modifier.weight(1f), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
                     Text(if (busy) "Saving..." else primaryLabel)
                 }
             }
             tertiaryLabel?.let {
-                TextButton(onClick = onTertiary, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
-                    Text(it, color = ShopRed)
+                TextButton(onClick = onTertiary, enabled = !busy && actionsEnabled, modifier = Modifier.fillMaxWidth()) {
+                    Text(it, color = if (busy || !actionsEnabled) ShopMuted else ShopRed)
                 }
             }
         }
@@ -2083,7 +2593,7 @@ private fun AdminOrderSummaryCard(order: ShopAdminOrderDto, detail: ShopAdminOrd
             }
             Text(order.orderNumber.orEmpty().ifBlank { "Order" }, color = ShopInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
             AdminInfoRow("Payment", "${paymentStatusLabel(order.paymentStatus.orEmpty())} - ${formatEtb(order.totalMinor)}")
-            AdminInfoRow("Created", order.createdAt ?: "Not available")
+            AdminInfoRow("Created", formatMarketplaceDateTime(order.createdAt, "Not available"))
             detail.address?.let { address ->
                 AdminInfoRow("Recipient", listOfNotNull(address.recipientName, address.city).joinToString(" - ").ifBlank { "Customer" })
                 AdminInfoRow("Delivery", listOfNotNull(address.addressLine1, address.addressLine2).joinToString(", ").ifBlank { "Address unavailable" })
@@ -2103,8 +2613,21 @@ private fun AdminOrderGroupsSection(detail: ShopAdminOrderDetailDto) {
             detail.groups.forEach { group ->
                 AdminInfoRow("Store", group.storeNameSnapshot ?: "Marketplace store")
                 AdminInfoRow("Status", "${backendLabel(group.status)} / ${fulfillmentStatusLabel(group.fulfillmentStatus.orEmpty())}")
+                AdminInfoRow("Seller response", backendLabel(group.sellerResponseStatus))
+                AdminInfoRow("Response deadline", formatSellerResponseDeadline(group.sellerResponseRequiredAt))
+                group.sellerRespondedAt?.let { AdminInfoRow("Seller responded", formatSellerResponseDeadline(it)) }
+                group.buyerVisibleRejectionReason
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { AdminInfoRow("Rejection reason", backendLabel(it)) }
+                group.sellerResponseExpiredAt?.let { AdminInfoRow("Expired", formatSellerResponseDeadline(it)) }
+                group.sellerResponseExpirationSource?.let { AdminInfoRow("Expiration source", backendLabel(it)) }
+                if (group.sellerResponseRefundStatus != "not_required") {
+                    AdminInfoRow("Refund", backendLabel(group.sellerResponseRefundStatus))
+                }
                 group.items.orEmpty().forEach { item ->
                     AdminInfoRow(item.titleSnapshot.ifBlank { "Item" }, "${item.quantity} x ${formatEtb(item.unitPriceMinor)}")
+                    item.variantDisplayLabel()?.let { AdminInfoRow("Configuration", it) }
                 }
             }
             if (detail.inventory.isNotEmpty()) {
@@ -2124,6 +2647,11 @@ private fun AdminOrderTimelineSection(history: List<com.adischat.app.feature.sho
             SectionTitle("Timeline")
             if (history.isEmpty()) Text("No timeline events yet.", color = ShopMuted) else history.forEach { event ->
                 AdminInfoRow(backendLabel(event.eventCode.orEmpty()), event.publicMessage ?: "${backendLabel(event.previousStatus.orEmpty())} -> ${backendLabel(event.nextStatus.orEmpty())}")
+                AdminInfoRow("Time", formatMarketplaceDateTime(event.occurredAt ?: event.createdAt, "Time unavailable"))
+                event.reason
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                    ?.let { AdminInfoRow("Reason", backendLabel(it)) }
             }
         }
     }
@@ -2282,7 +2810,7 @@ private fun AdminOrderAuditSection(audit: List<ShopAdminAuditLogDto>) {
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             SectionTitle("Audit")
             if (audit.isEmpty()) Text("No audit entries.", color = ShopMuted) else audit.take(12).forEach { row ->
-                AdminInfoRow(backendLabel(row.action.orEmpty()), row.createdAt ?: "Recorded")
+                AdminInfoRow(backendLabel(row.action.orEmpty()), formatMarketplaceDateTime(row.createdAt, "Recorded"))
             }
         }
     }
@@ -2294,7 +2822,7 @@ private fun AdminAuditCard(audit: ShopAdminAuditLogDto) {
         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(backendLabel(audit.action.orEmpty()), color = ShopInk, fontWeight = FontWeight.SemiBold)
             Text("${backendLabel(audit.entityType.orEmpty())} - ${audit.actorName ?: "Admin"}", color = ShopMuted, fontSize = 12.sp)
-            audit.createdAt?.let { Text(it, color = ShopMuted, fontSize = 11.sp) }
+            audit.createdAt?.let { Text(formatMarketplaceDateTime(it), color = ShopMuted, fontSize = 11.sp) }
         }
     }
 }
@@ -2306,6 +2834,14 @@ private fun ShopHomeScreen(
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onCart: () -> Unit,
+    onNotifications: () -> Unit,
+    notificationUnreadCount: Int,
+    marketplaceLanguage: String,
+    onMarketplaceLanguageChange: (String) -> Unit,
+    onImageSearch: () -> Unit,
+    onScanProduct: () -> Unit,
+    onSearch: () -> Unit,
+    onBrowse: (ShopHomeBrowseSection) -> Unit,
     onProduct: (ShopProductDto) -> Unit,
     onStore: (ShopStoreDto) -> Unit,
     onCategory: (ShopCategoryDto) -> Unit,
@@ -2313,111 +2849,173 @@ private fun ShopHomeScreen(
     onToggleFavorite: (ShopProductDto) -> Unit,
     savedIds: Set<String>,
     busyIds: Set<String>,
+    onLoadCategoryFilters: (String) -> Unit,
+    onSearchProducts: (Set<String>, Int?, Int?, Int, Boolean, Boolean, String) -> Unit,
+    onClearProductSearch: () -> Unit,
 ) {
-    var query by remember { mutableStateOf("") }
+    var initialBrandPhaseComplete by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(500)
+        initialBrandPhaseComplete = true
+    }
+    if (shouldShowBuyerInitialLoader(initialBrandPhaseComplete, state.error)) {
+        BuyerMarketplaceInitialLoader()
+        return
+    }
+    if (state.loading && !state.error) {
+        BuyerHomeSkeleton()
+        return
+    }
+
     var filters by remember { mutableStateOf(ShopHomeFilters()) }
-    var showFilters by remember { mutableStateOf(false) }
+    var discoverySurface by remember { mutableStateOf<MarketplaceDiscoverySurface>(MarketplaceDiscoverySurface.None) }
     val selectedCategory = filters.categorySlug
+    val selectedCategoryModel = state.categories.firstOrNull { it.slug == selectedCategory }
+    val selectedCategorySlugs = remember(state.categories, selectedCategory) {
+        marketplaceCategoryAndDescendantSlugs(state.categories, selectedCategory)
+    }
+    LaunchedEffect(selectedCategoryModel?.id) {
+        selectedCategoryModel?.id?.let(onLoadCategoryFilters)
+    }
+    val serverFilterActive = selectedCategory != null || filters.minimumPriceEtb.isNotBlank() ||
+        filters.maximumPriceEtb.isNotBlank() || filters.minimumRating > 0 || filters.inStockOnly ||
+        filters.discountedOnly || filters.sort != MarketplaceSort.Newest.label
+    LaunchedEffect(
+        selectedCategorySlugs,
+        filters.minimumPriceEtb,
+        filters.maximumPriceEtb,
+        filters.minimumRating,
+        filters.inStockOnly,
+        filters.discountedOnly,
+        filters.sort,
+    ) {
+        if (serverFilterActive) {
+            onSearchProducts(
+                selectedCategorySlugs,
+                filters.minimumPriceEtb.toIntOrNull()?.times(100),
+                filters.maximumPriceEtb.toIntOrNull()?.times(100),
+                filters.minimumRating,
+                filters.inStockOnly,
+                false,
+                marketplaceBackendOrder(filters.sort),
+            )
+        } else {
+            onClearProductSearch()
+        }
+    }
     val listState = rememberLazyListState()
-    val products = remember(state.products, query, filters) {
-        state.products
+    val products = remember(state.products, state.discoveryProducts, state.productDetails, filters) {
+        (state.discoveryProducts ?: state.products)
             .filter { product ->
-                val matchesQuery = query.isBlank() ||
-                    product.title.contains(query, ignoreCase = true) ||
-                    product.brand?.contains(query, ignoreCase = true) == true ||
-                    product.store?.name?.contains(query, ignoreCase = true) == true
-                val matchesCategory = selectedCategory == null || product.categorySlug == selectedCategory
+                val matchesCategory = selectedCategory == null || product.categorySlug in selectedCategorySlugs
                 val matchesStock = !filters.inStockOnly || product.stockStatus?.contains("out", ignoreCase = true) != true
-                val matchesDiscount = !filters.discountedOnly || (product.discountPercent ?: 0) > 0
-                matchesQuery && matchesCategory && matchesStock && matchesDiscount
+                val matchesDiscount = !filters.discountedOnly || homePreviousPriceMinor(product) != null
+                val minimumPrice = filters.minimumPriceEtb.toIntOrNull()?.times(100)
+                val maximumPrice = filters.maximumPriceEtb.toIntOrNull()?.times(100)
+                val matchesPrice = (minimumPrice == null || product.priceMinor >= minimumPrice) &&
+                    (maximumPrice == null || product.priceMinor <= maximumPrice)
+                val matchesRating = filters.minimumRating <= 0 || (product.averageRating ?: 0.0) >= filters.minimumRating
+                val detail = state.productDetails[product.id]
+                val matchesAttributes = filters.categoryValues.all { (code, value) ->
+                    detail?.matchesBuyerFilter(code, value) == true
+                }
+                matchesCategory && matchesStock && matchesDiscount && matchesPrice && matchesRating && matchesAttributes
             }
             .let { list ->
                 when (filters.sort) {
                     "Price low to high" -> list.sortedBy { it.priceMinor }
                     "Price high to low" -> list.sortedByDescending { it.priceMinor }
-                    "Most discounted" -> list.sortedByDescending { it.discountPercent ?: 0 }
+                    "Best rated" -> list.sortedByDescending { it.averageRating ?: 0.0 }
+                    "Most sold" -> list.sortedByDescending { it.soldCount ?: 0 }
+                    "Most discounted" -> list.sortedByDescending { verifiedDiscountPercent(it) ?: 0 }
                     else -> list
                 }
             }
     }
-    val deals = products.filter { (it.discountPercent ?: 0) > 0 }
-    val newArrivals = products.take(8)
-    val topProducts = products.filter { (it.soldCount ?: 0) > 0 || (it.reviewCount ?: 0) > 0 }
-        .sortedByDescending { (it.soldCount ?: 0) + ((it.averageRating ?: 0.0) * 10).toInt() }
-    val promotionBanners = remember(state.categories) { promotionBannersFor(state.categories) }
+    val homeSections = remember(products) { compactHomeSections(products) }
+    val rootCategories = remember(state.categories) { state.categories.filter { it.parentId == null && it.buyerVisible } }
 
     LazyColumn(
         state = listState,
-        modifier = Modifier.fillMaxSize().background(ShopBg),
-        contentPadding = PaddingValues(bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        modifier = Modifier.fillMaxSize().background(AdisGebeyaHomeV2Colors.Background),
+        contentPadding = PaddingValues(bottom = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         stickyHeader {
-            AdisGebeyaBrandHeader(
-                cartCount = state.cartCount,
-                onCart = onCart,
-                query = query,
-                onQuery = { query = it },
-                onFilter = { showFilters = true },
+            AdisGebeyaHomeTopBar(
+                language = marketplaceLanguage,
+                onNotifications = onNotifications,
+                notificationUnreadCount = notificationUnreadCount,
+                onSearch = onSearch,
+                onImageSearch = onImageSearch,
+                onScanner = onScanProduct,
+                onLanguage = onMarketplaceLanguageChange,
+                onDiscovery = { discoverySurface = it },
                 activeFilterCount = filters.activeLabels(state.categories).size,
-                modifier = Modifier.fillParentMaxWidth(),
             )
         }
         if (filters.activeLabels(state.categories).isNotEmpty()) {
             item {
                 ShopHomePadded {
-                    ActiveFilterRow(
-                        labels = filters.activeLabels(state.categories),
-                        onClear = { filters = ShopHomeFilters() },
-                    )
+                    MarketplaceActiveFilterChips(filters, state.categories) { filters = it }
                 }
             }
         }
         when {
-            state.loading -> items(5) { ShopHomePadded { SkeletonCard() } }
             state.error -> item { ShopHomePadded { ErrorCard(maintenance = state.maintenance, onRefresh = onRefresh) } }
             else -> {
-                if (promotionBanners.isNotEmpty()) {
-                    item { ShopHomePadded { LocalPromotionCarousel(promotionBanners, onCategory) } }
+                item { ShopHomePadded { PremiumBuyerHomeHero(state.banners, onSearch) } }
+                if (rootCategories.isNotEmpty()) {
+                    item { ShopHomePadded { PremiumHomeCategories(rootCategories, onCategory) } }
                 }
-                if (state.categories.isNotEmpty()) {
-                    item { ShopHomePadded { CategoryShortcutRow(state.categories, onCategory, onSelectFilter = { filters = filters.copy(categorySlug = it.slug) }) } }
-                }
-                if (deals.isNotEmpty()) {
-                    item { ShopHomePadded { ProductRail("Flash deals", deals, onProduct, onToggleFavorite, savedIds, compact = true) } }
+                if (!serverFilterActive && homeSections.deals.isNotEmpty()) {
+                    item { ShopHomePadded { PremiumHomeDealStrip(homeSections.deals.first(), onProduct) } }
                 }
                 if (products.isNotEmpty()) {
-                    item { ShopHomePadded { ProductGridSection("Recommended for you", products, onProduct, onToggleFavorite, savedIds) } }
+                    if (serverFilterActive) {
+                        item { ShopHomePadded { ProductGridSection("Results", products, onProduct, onToggleFavorite, savedIds, maxItems = 20) } }
+                    } else {
+                        if (homeSections.recommended.isNotEmpty()) item { ShopHomePadded { PremiumHomeProductGrid("Recommended for you", homeSections.recommended, savedIds, onProduct, onToggleFavorite, { onBrowse(ShopHomeBrowseSection.Recommended) }) } }
+                        if (homeSections.newArrivals.isNotEmpty()) item { ShopHomePadded { PremiumHomeProductGrid("New Arrivals", homeSections.newArrivals, savedIds, onProduct, onToggleFavorite, { onBrowse(ShopHomeBrowseSection.NewArrivals) }) } }
+                        if (homeSections.deals.size > 1) item { ShopHomePadded { PremiumHomeProductGrid("Deals", homeSections.deals.drop(1), savedIds, onProduct, onToggleFavorite, { onBrowse(ShopHomeBrowseSection.Deals) }) } }
+                    }
                 } else {
-                    item { ShopHomePadded { EmptyCard("No matching products yet. Adjust your search or filters.") } }
+                    item {
+                        ShopHomePadded {
+                            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                                PremiumEmptyState(
+                                    title = if (serverFilterActive) "No matching products" else "No products available",
+                                    message = if (serverFilterActive) "Try changing your filters." else "Check back for new arrivals.",
+                                    icon = Icons.Default.Storefront,
+                                )
+                                if (serverFilterActive) TextButton(onClick = { filters = ShopHomeFilters() }) { Text("Clear filters", color = ShopGreen) }
+                            }
+                        }
+                    }
                 }
-                item { ShopHomePadded { TrustBenefits() } }
-                if (newArrivals.isNotEmpty()) item { ShopHomePadded { ProductRail("New arrivals", newArrivals, onProduct, onToggleFavorite, savedIds, compact = true) } }
-                if (topProducts.isNotEmpty()) item { ShopHomePadded { ProductGridSection("Popular products", topProducts, onProduct, onToggleFavorite, savedIds) } }
             }
         }
     }
 
-    if (showFilters) {
-        FilterBottomSheet(
-            filters = filters,
-            categories = state.categories,
-            onDismiss = { showFilters = false },
-            onApply = {
-                filters = it
-                showFilters = false
-            },
-            onReset = {
-                filters = ShopHomeFilters()
-                showFilters = false
-            },
-        )
-    }
+    MarketplaceDiscoverySurfaceHost(
+        surface = discoverySurface,
+        filters = filters,
+        categories = state.categories,
+        attributes = selectedCategoryModel?.id?.let(state.buyerCategoryAttributes::get).orEmpty(),
+        products = state.products.filter { selectedCategory == null || it.categorySlug in selectedCategorySlugs },
+        productDetails = state.productDetails,
+        loadingAttributes = selectedCategoryModel?.id == state.buyerFilterLoadingCategoryId,
+        onDismiss = { discoverySurface = MarketplaceDiscoverySurface.None },
+        onApply = {
+            filters = it
+            discoverySurface = MarketplaceDiscoverySurface.None
+        },
+    )
 }
 
 @Composable
 private fun ShopHomePadded(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         content()
     }
 }
@@ -2426,40 +3024,27 @@ private fun ShopHomePadded(content: @Composable () -> Unit) {
 private fun AdisGebeyaBrandHeader(
     cartCount: Int,
     onCart: () -> Unit,
-    query: String,
-    onQuery: (String) -> Unit,
+    onNotifications: () -> Unit,
+    notificationUnreadCount: Int,
+    onSearch: () -> Unit,
     onFilter: () -> Unit,
     activeFilterCount: Int,
     modifier: Modifier = Modifier,
 ) {
-    val cornerRadius = 18.dp
     Surface(
-        color = ShopTransparent,
+        color = ShopSurface,
         tonalElevation = 0.dp,
-        modifier = modifier
-            .fillMaxWidth()
-            .shadow(8.dp, RoundedCornerShape(bottomStart = cornerRadius, bottomEnd = cornerRadius)),
+        modifier = modifier.fillMaxWidth().border(1.dp, ShopLine),
     ) {
         Box(
             Modifier
                 .fillMaxWidth()
-                .height(136.dp)
-                .clip(RoundedCornerShape(bottomStart = cornerRadius, bottomEnd = cornerRadius))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            ShopGreenDark,
-                            ShopGreenMid,
-                            ShopGreen,
-                        ),
-                    ),
-                )
+                .background(ShopSurface)
                 .statusBarsPadding()
                 .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
         ) {
-            BrandBackgroundDecoration()
             Column(
-                Modifier.fillMaxSize(),
+                Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Row(
@@ -2476,10 +3061,15 @@ private fun AdisGebeyaBrandHeader(
                                 heading()
                             },
                     ) {
-                        Text("AdisGebeya", color = ShopOnColor, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        Text("AdisGebeya", color = ShopInk, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                         Text("አዲስ ገበያ", color = ShopGreenSoft, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                     }
-                    MarketplaceHeaderAction(Icons.Default.Notifications, "Marketplace notifications", onClick = {}, badge = 0)
+                    MarketplaceHeaderAction(
+                        Icons.Default.Notifications,
+                        "Marketplace notifications",
+                        onClick = onNotifications,
+                        badge = notificationUnreadCount,
+                    )
                     MarketplaceHeaderAction(Icons.Default.ShoppingCart, "Shopping cart", onCart, cartCount)
                 }
                 Row(
@@ -2488,8 +3078,7 @@ private fun AdisGebeyaBrandHeader(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     MarketplaceSearchField(
-                        query = query,
-                        onQuery = onQuery,
+                        onClick = onSearch,
                         modifier = Modifier.weight(1f),
                     )
                     MarketplaceHeaderAction(Icons.Default.FilterList, "Filter products", onFilter, activeFilterCount, active = activeFilterCount > 0)
@@ -2505,19 +3094,19 @@ private fun StickyHeaderDeliveryChip() {
         Modifier
             .height(42.dp)
             .clip(RoundedCornerShape(14.dp))
-            .background(ShopOnColor.copy(alpha = .16f))
-            .border(1.dp, ShopOnColor.copy(alpha = .18f), RoundedCornerShape(14.dp))
+            .background(ShopGreenSoft)
+            .border(1.dp, ShopLine, RoundedCornerShape(14.dp))
             .padding(horizontal = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.LocationOn, contentDescription = null, tint = ShopOnColor, modifier = Modifier.size(20.dp))
+        Icon(Icons.Default.LocationOn, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(5.dp))
         Column(
             Modifier
                 .semantics { contentDescription = "Deliver to, set delivery location" },
         ) {
-            Text("Deliver to", color = ShopOnColor.copy(alpha = .78f), fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
-            Text("Set location", color = ShopOnColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text("Deliver to", color = ShopMuted, fontSize = 9.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+            Text("Addis Ababa", color = ShopInk, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
 }
@@ -2560,36 +3149,22 @@ private fun BrandBackgroundDecoration() {
 
 @Composable
 private fun MarketplaceSearchField(
-    query: String,
-    onQuery: (String) -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
         modifier
-            .height(50.dp)
-            .clip(RoundedCornerShape(18.dp))
-            .background(ShopOnColor)
+            .height(46.dp)
+            .clip(RoundedCornerShape(15.dp))
+            .background(ShopSoft)
+            .border(1.dp, ShopLine, RoundedCornerShape(15.dp))
+            .clickable(onClick = onClick)
             .padding(horizontal = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(Icons.Default.Search, contentDescription = "Search products, brands and stores", tint = ShopInk, modifier = Modifier.size(20.dp))
-        Spacer(Modifier.width(6.dp))
-        androidx.compose.foundation.text.BasicTextField(
-            value = query,
-            onValueChange = onQuery,
-            singleLine = true,
-            textStyle = androidx.compose.ui.text.TextStyle(color = ShopInk, fontSize = 13.sp, fontWeight = FontWeight.Medium),
-            modifier = Modifier.weight(1f),
-            decorationBox = { inner ->
-                if (query.isBlank()) Text("Search products, brands and stores", color = ShopMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                inner()
-            },
-        )
-        if (query.isNotBlank()) {
-            IconButton(onClick = { onQuery("") }, modifier = Modifier.size(36.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Clear search", tint = ShopMuted, modifier = Modifier.size(18.dp))
-            }
-        }
+        Icon(Icons.Default.Search, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(19.dp))
+        Spacer(Modifier.width(8.dp))
+        Text("Search products, stores and categories", color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -2606,9 +3181,8 @@ private fun MarketplaceHeaderAction(
             onClick = onClick,
             modifier = Modifier
                 .size(44.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(ShopOnColor.copy(alpha = .96f))
-                .border(1.dp, ShopOnColor.copy(alpha = .72f), RoundedCornerShape(14.dp)),
+                .clip(CircleShape)
+                .background(ShopSurface),
         ) {
             Icon(icon, contentDescription = description, tint = if (active) ShopGreen else ShopInk, modifier = Modifier.size(21.dp))
         }
@@ -2649,13 +3223,14 @@ internal fun ShopHeader(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
+                HeaderIcon(Icons.Default.ArrowBack, "Back", onClick = onBack)
                 Row(
                     Modifier
                         .weight(1f)
                         .height(48.dp)
-                        .clip(RoundedCornerShape(999.dp))
+                        .clip(RoundedCornerShape(15.dp))
                         .background(ShopSurface)
-                        .border(1.dp, ShopLine, RoundedCornerShape(999.dp))
+                        .border(1.dp, ShopLine, RoundedCornerShape(15.dp))
                         .padding(horizontal = 14.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -2673,8 +3248,6 @@ internal fun ShopHeader(
                         },
                     )
                 }
-                HeaderIcon(Icons.Default.FilterList, "Filter products", onClick = onFilter, badge = activeFilterCount)
-                HeaderIcon(Icons.Default.Notifications, "AdisGebeya notifications", onClick = {})
                 HeaderIcon(Icons.Default.ShoppingCart, "Cart", onClick = onCart, badge = cartCount)
             }
         }
@@ -2716,20 +3289,51 @@ private fun ActiveFilterRow(labels: List<String>, onClear: () -> Unit) {
 private fun FilterBottomSheet(
     filters: ShopHomeFilters,
     categories: List<ShopCategoryDto>,
+    attributes: List<com.adischat.app.feature.shop.data.ShopCategoryAttributeDto>,
+    products: List<ShopProductDto>,
+    productDetails: Map<String, ShopProductDto>,
+    loadingAttributes: Boolean,
     onDismiss: () -> Unit,
     onApply: (ShopHomeFilters) -> Unit,
     onReset: () -> Unit,
 ) {
     var draft by remember(filters) { mutableStateOf(filters) }
+    val minimumPrice = draft.minimumPriceEtb.toIntOrNull()
+    val maximumPrice = draft.maximumPriceEtb.toIntOrNull()
+    val priceRangeValid = minimumPrice == null || maximumPrice == null || maximumPrice >= minimumPrice
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = ShopBg) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp).padding(bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
             Text("Filter products", color = ShopInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
             if (categories.isNotEmpty()) {
-                Text("Category", color = ShopInk, fontWeight = FontWeight.SemiBold)
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item { FilterPill("All", draft.categorySlug == null) { draft = draft.copy(categorySlug = null) } }
-                    items(categories, key = { it.id }) { category ->
-                        FilterPill(category.name, draft.categorySlug == category.slug) { draft = draft.copy(categorySlug = category.slug) }
+                MarketplaceCategoryFilter(
+                    categories = categories,
+                    selectedSlug = draft.categorySlug,
+                    onSelect = { category ->
+                        draft = draft.copy(categorySlug = category?.slug, categoryValues = emptyMap())
+                    },
+                )
+            }
+            if (draft.categorySlug != null) {
+                if (loadingAttributes) {
+                    Text("Loading category filters...", color = ShopMuted, fontSize = 13.sp)
+                } else {
+                    attributes.forEach { attribute ->
+                        val values = buyerFilterValues(attribute.code, products, productDetails)
+                        if (values.isNotEmpty()) {
+                            Text(attribute.displayName.ifBlank { attribute.name }, color = ShopInk, fontWeight = FontWeight.SemiBold)
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(values, key = { it }) { value ->
+                                    FilterPill(value, draft.categoryValues[attribute.code] == value) {
+                                        val updated = draft.categoryValues.toMutableMap()
+                                        if (updated[attribute.code] == value) updated.remove(attribute.code) else updated[attribute.code] = value
+                                        draft = draft.copy(categoryValues = updated)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2738,9 +3342,39 @@ private fun FilterBottomSheet(
                 FilterPill("In stock", draft.inStockOnly) { draft = draft.copy(inStockOnly = !draft.inStockOnly) }
                 FilterPill("Discounted", draft.discountedOnly) { draft = draft.copy(discountedOnly = !draft.discountedOnly) }
             }
+            Text("Price (ETB)", color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = draft.minimumPriceEtb,
+                    onValueChange = { value -> draft = draft.copy(minimumPriceEtb = value.filter(Char::isDigit).take(8)) },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Minimum") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = shopOutlinedTextFieldColors(),
+                )
+                OutlinedTextField(
+                    value = draft.maximumPriceEtb,
+                    onValueChange = { value -> draft = draft.copy(maximumPriceEtb = value.filter(Char::isDigit).take(8)) },
+                    modifier = Modifier.weight(1f),
+                    label = { Text("Maximum") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = shopOutlinedTextFieldColors(),
+                )
+            }
+            if (!priceRangeValid) {
+                Text("Maximum price must be greater than or equal to minimum price.", color = ShopRed, fontSize = 12.sp)
+            }
+            Text("Rating", color = ShopInk, fontWeight = FontWeight.SemiBold)
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(listOf(0 to "Any rating", 4 to "4 stars & above", 3 to "3 stars & above"), key = { it.first }) { option ->
+                    FilterPill(option.second, draft.minimumRating == option.first) { draft = draft.copy(minimumRating = option.first) }
+                }
+            }
             Text("Sort by", color = ShopInk, fontWeight = FontWeight.SemiBold)
             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(listOf("Newest", "Price low to high", "Price high to low", "Most discounted"), key = { it }) { sort ->
+                items(listOf("Newest", "Price low to high", "Price high to low", "Best rated", "Most sold"), key = { it }) { sort ->
                     FilterPill(sort, draft.sort == sort) { draft = draft.copy(sort = sort) }
                 }
             }
@@ -2748,8 +3382,8 @@ private fun FilterBottomSheet(
                 OutlinedButton(onClick = onReset, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp)) {
                     Text("Reset", color = ShopInk)
                 }
-                Button(onClick = { onApply(draft) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
-                    Text("Apply", fontWeight = FontWeight.SemiBold)
+                Button(onClick = { onApply(draft) }, enabled = priceRangeValid, modifier = Modifier.weight(1f), shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
+                    Text("Show results", fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -2857,74 +3491,42 @@ private fun LocalPromotionCarousel(
 }
 
 @Composable
-internal fun PromoCarousel(banners: List<ShopBannerDto>) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        items(banners, key = { it.id }) { banner ->
-            Box(
-                Modifier.fillParentMaxWidth().height(186.dp).clip(RoundedCornerShape(22.dp)).background(ShopGreen),
-            ) {
-                if (banner.imageUrl.isNullOrBlank()) {
-                    BannerFallbackArt()
-                } else {
-                    ShopAssetImage(banner.imageUrl, banner.title, Modifier.fillMaxSize(), iconSize = 48.dp)
-                }
-                Box(Modifier.fillMaxSize().background(Brush.horizontalGradient(listOf(ShopOverlay.copy(alpha = .58f), ShopTransparent))))
-                Column(Modifier.fillMaxSize().padding(18.dp), verticalArrangement = Arrangement.Center) {
-                    Surface(color = ShopOnColor.copy(alpha = .18f), shape = RoundedCornerShape(999.dp)) {
-                        Text("New arrivals", color = ShopOnColor, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp))
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    Text(banner.title, color = ShopOnColor, fontSize = 24.sp, lineHeight = 27.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    if (!banner.subtitle.isNullOrBlank()) {
-                        Text(banner.subtitle, color = ShopOnColor.copy(alpha = .9f), fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Surface(color = ShopOrange, shape = RoundedCornerShape(999.dp)) {
-                        Text("Shop now", color = ShopOnColor, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
-                    }
-                }
-            }
-        }
-        }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-            banners.take(4).forEachIndexed { index, _ ->
-                Box(
-                    Modifier
-                        .padding(horizontal = 3.dp)
-                        .size(width = if (index == 0) 18.dp else 7.dp, height = 7.dp)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(if (index == 0) ShopGreen else ShopLine),
-                )
+internal fun PromoCarousel(banners: List<ShopBannerDto>, fallbackImageUrl: String?, onExplore: () -> Unit) {
+    if (banners.size == 1) {
+        PromoHero(banners.first(), fallbackImageUrl, onExplore)
+    } else {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(banners, key = { it.id }) { banner ->
+                PromoHero(banner, fallbackImageUrl, onExplore, Modifier.fillParentMaxWidth())
             }
         }
     }
 }
 
 @Composable
-private fun BannerFallbackArt() {
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(Brush.horizontalGradient(listOf(ShopGreen, ShopGreenSoft))),
-    ) {
-        Row(
-            Modifier.align(Alignment.CenterEnd).padding(end = 22.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+private fun PromoHero(banner: ShopBannerDto, fallbackImageUrl: String?, onExplore: () -> Unit, modifier: Modifier = Modifier) {
+    Box(modifier.fillMaxWidth().height(136.dp).clip(RoundedCornerShape(12.dp)).background(ShopGreenDark).clickable(onClick = onExplore)) {
+        val imageUrl = banner.imageUrl?.takeIf(String::isNotBlank) ?: fallbackImageUrl
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = banner.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(.43f),
+            )
+        }
+        Column(
+            Modifier.fillMaxHeight().fillMaxWidth(.64f).background(ShopGreenDark).padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
-            listOf(Icons.Default.Devices, Icons.Default.Spa, Icons.Default.Checkroom).forEachIndexed { index, icon ->
-                Box(
-                    Modifier
-                        .size((64 + index * 10).dp)
-                        .clip(CircleShape)
-                        .background(ShopOnColor.copy(alpha = .24f))
-                        .border(1.dp, ShopOnColor.copy(alpha = .32f), CircleShape),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(icon, contentDescription = null, tint = ShopOnColor.copy(alpha = .88f), modifier = Modifier.size((28 + index * 3).dp))
-                }
+            Box(Modifier.width(22.dp).height(3.dp).clip(RoundedCornerShape(2.dp)).background(ShopGold))
+            Spacer(Modifier.height(4.dp))
+            Text(productionBannerTitle(banner.title), color = ShopOnColor, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            banner.subtitle?.takeIf(String::isNotBlank)?.let {
+                Text(productionBannerSubtitle(it), color = ShopOnColor.copy(alpha = .84f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Spacer(Modifier.height(5.dp))
+            Text("Explore  >", color = ShopGold, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -2935,7 +3537,7 @@ private fun TrustBenefits() {
         listOf(
             Triple(Icons.Default.LocalShipping, "Delivery support", "Where sellers support it"),
             Triple(Icons.Default.Security, "Secure checkout", "Protected AdisChat identity"),
-            Triple(Icons.Default.Verified, "Verified sellers", "Approved marketplace stores"),
+            Triple(Icons.Default.Verified, "Approved sellers", "Approved marketplace stores"),
             Triple(Icons.Default.CheckCircle, "Buyer protection", "Order records and support"),
         ).forEach { item ->
             item { TrustChip(item.first, item.second, item.third) }
@@ -2956,75 +3558,98 @@ private fun TrustChip(icon: ImageVector, title: String, subtitle: String) {
 }
 
 @Composable
-private fun CategoryShortcutRow(categories: List<ShopCategoryDto>, onCategory: (ShopCategoryDto) -> Unit, onSelectFilter: (ShopCategoryDto) -> Unit) {
+private fun CategoryShortcutRow(categories: List<ShopCategoryDto>, onCategory: (ShopCategoryDto) -> Unit) {
     if (categories.isEmpty()) {
         return
     }
     LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        item {
-            CategoryShortcut("Categories", Icons.Default.GridView, ShopGreenSoft, ShopGreen) {
-                categories.firstOrNull()?.let(onSelectFilter)
-            }
-        }
         items(categories, key = { it.id }) { category ->
             CategoryShortcut(category.name, categoryIcon(category), categoryTone(category), ShopInk) { onCategory(category) }
-        }
-        item {
-            CategoryShortcut("More", Icons.Default.MoreHoriz, ShopPurpleSoft, ShopInk) {
-                categories.firstOrNull()?.let(onCategory)
-            }
         }
     }
 }
 
 @Composable
 internal fun CategoryRail(categories: List<ShopCategoryDto>, onCategory: (ShopCategoryDto) -> Unit) {
-    if (categories.isEmpty()) return
+    val roots = categories.filter { it.parentId == null }
+    if (roots.isEmpty()) return
     SectionHeader("Popular categories")
-    CategoryShortcutRow(categories, onCategory, onSelectFilter = onCategory)
+    CategoryShortcutRow(roots, onCategory)
 }
 
 @Composable
+private fun CompactHomeCategoryRail(categories: List<ShopCategoryDto>, onCategory: (ShopCategoryDto) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        SectionHeader("Shop by category")
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val itemWidth = (maxWidth - 24.dp) / 4
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(categories, key = { it.id }) { category ->
+                    CategoryShortcut(category.name, categoryIcon(category), ShopGreenSoft, ShopGreen, itemWidth, category.imageUrl) {
+                        onCategory(category)
+                    }
+                }
+            }
+        }
+    }
+}
+
+internal fun productionBannerTitle(value: String): String =
+    if (value.contains("demo", ignoreCase = true) || value.contains("development", ignoreCase = true)) {
+        "Find what you need on AdisGebeya"
+    } else value
+
+internal fun productionBannerSubtitle(value: String): String =
+    if (value.contains("demo", ignoreCase = true) || value.contains("development", ignoreCase = true)) {
+        "Explore products from marketplace stores."
+    } else value
+
+@Composable
 private fun TopCategoryRail(categories: List<ShopCategoryDto>, onCategory: (ShopCategoryDto) -> Unit) {
-    if (categories.isEmpty()) return
+    val roots = categories.filter { it.parentId == null }
+    if (roots.isEmpty()) return
     SectionHeader("Top categories")
     LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        items(categories, key = { it.id }) { category ->
+        items(roots, key = { it.id }) { category ->
             CategoryShortcut(category.name, categoryIcon(category), categoryTone(category), ShopInk) { onCategory(category) }
         }
     }
 }
 
 @Composable
-private fun CategoryShortcut(label: String, icon: ImageVector, background: Color, tint: Color, onClick: () -> Unit) {
-    Column(Modifier.width(82.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
-        Box(Modifier.size(56.dp).clip(CircleShape).background(background), contentAlignment = Alignment.Center) {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(25.dp))
+private fun CategoryShortcut(
+    label: String,
+    icon: ImageVector,
+    background: Color,
+    tint: Color,
+    itemWidth: androidx.compose.ui.unit.Dp = 82.dp,
+    imageUrl: String? = null,
+    onClick: () -> Unit,
+) {
+    Column(Modifier.width(itemWidth).heightIn(min = 88.dp).clickable { onClick() }, horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(Modifier.size(60.dp).clip(CircleShape).background(background), contentAlignment = Alignment.Center) {
+            if (imageUrl.isNullOrBlank()) {
+                Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(25.dp))
+            } else {
+                AsyncImage(model = imageUrl, contentDescription = label, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            }
         }
-        Spacer(Modifier.height(7.dp))
-        Text(label, color = ShopInk, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Spacer(Modifier.height(4.dp))
+        Text(label, color = ShopInk, fontSize = 11.sp, lineHeight = 13.sp, fontWeight = FontWeight.Medium, maxLines = if (LocalDensity.current.fontScale > 1.1f) 3 else 2, overflow = TextOverflow.Ellipsis)
     }
 }
 
-private fun categoryIcon(category: ShopCategoryDto): ImageVector {
-    val key = "${category.name} ${category.slug}".lowercase()
-    return when {
-        "elect" in key || "phone" in key || "laptop" in key -> Icons.Default.Devices
-        "fashion" in key || "cloth" in key || "shirt" in key -> Icons.Default.Checkroom
-        "beauty" in key || "skin" in key || "perfume" in key -> Icons.Default.Spa
-        "home" in key || "kitchen" in key || "furniture" in key -> Icons.Default.Chair
-        "grocery" in key || "food" in key -> Icons.Default.LocalGroceryStore
-        else -> Icons.Default.Storefront
-    }
-}
-
-private fun categoryTone(category: ShopCategoryDto): Color {
+internal fun categoryTone(category: ShopCategoryDto): Color {
     val key = category.name.lowercase()
     return when {
         "beauty" in key -> ShopPinkSoft
         "home" in key -> ShopAmberSoft
         "fashion" in key -> ShopPurpleSoft
         "elect" in key -> ShopBlueSoft
+        "book" in key || "media" in key -> ShopBlueSoft
+        "sport" in key || "outdoor" in key -> ShopAmberSoft
+        "jewel" in key || "watch" in key -> ShopPinkSoft
+        "toy" in key || "baby" in key -> ShopPurpleSoft
         else -> ShopGreenSoft
     }
 }
@@ -3038,9 +3663,9 @@ internal fun ProductRail(
     savedIds: Set<String>,
     compact: Boolean = false,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         SectionHeader(title)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(products, key = { it.id }) { product ->
                 ProductCard(product, Modifier.width(if (compact) 156.dp else 168.dp), onProduct, onToggleFavorite, product.id in savedIds, compact = compact)
             }
@@ -3061,25 +3686,37 @@ internal fun ProductGridSection(
         return
     }
     val visibleProducts = products.take(maxItems)
-    val rowCount = (visibleProducts.size + 1) / 2
-    val screenWidth = LocalConfiguration.current.screenWidthDp.dp
-    val horizontalPadding = 24.dp
-    val columnSpacing = 10.dp
-    val rowSpacing = 14.dp
-    val cardWidth = (screenWidth - horizontalPadding - columnSpacing) / 2
-    val rowHeight = maxOf(276.dp, cardWidth + 106.dp)
-    val gridHeight = (rowHeight * rowCount) + (rowSpacing * (rowCount - 1).coerceAtLeast(0))
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (!title.isNullOrBlank()) SectionHeader(title)
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp).height(gridHeight),
-            userScrollEnabled = false,
-            horizontalArrangement = Arrangement.spacedBy(columnSpacing),
-            verticalArrangement = Arrangement.spacedBy(rowSpacing),
-        ) {
-            items(visibleProducts, key = { it.id }) { product ->
-                ProductCard(product, Modifier.fillMaxWidth(), onProduct, onToggleFavorite, product.id in savedIds)
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            val columns = when {
+                maxWidth >= 900.dp -> 4
+                maxWidth >= 600.dp -> 3
+                else -> 2
+            }
+            val columnSpacing = 8.dp
+            val rowSpacing = 8.dp
+            val cardWidth = (maxWidth - columnSpacing * (columns - 1)) / columns
+            val rowHeights = visibleProducts.chunked(columns).map { row ->
+                val contentHeight = row.maxOf { product ->
+                    88 + (if ((product.reviewCount ?: 0) > 0 || (product.soldCount ?: 0) > 0) 15 else 0) +
+                        (if (homePreviousPriceMinor(product) != null) 14 else 0)
+                }
+                cardWidth + contentHeight.dp
+            }
+            val gridHeight = rowHeights.fold(0.dp) { total, height -> total + height } +
+                rowSpacing * (rowHeights.size - 1).coerceAtLeast(0)
+            val heightsById = visibleProducts.mapIndexed { index, product -> product.id to rowHeights[index / columns] }.toMap()
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxWidth().height(gridHeight),
+                userScrollEnabled = false,
+                horizontalArrangement = Arrangement.spacedBy(columnSpacing),
+                verticalArrangement = Arrangement.spacedBy(rowSpacing),
+            ) {
+                items(visibleProducts, key = { it.id }) { product ->
+                    ProductCard(product, Modifier.fillMaxWidth(), onProduct, onToggleFavorite, product.id in savedIds, cardHeight = heightsById.getValue(product.id))
+                }
             }
         }
     }
@@ -3093,18 +3730,19 @@ private fun ProductCard(
     onToggleFavorite: (ShopProductDto) -> Unit,
     saved: Boolean,
     compact: Boolean = false,
+    cardHeight: androidx.compose.ui.unit.Dp = if (compact) 266.dp else 290.dp,
 ) {
     Card(
         modifier = modifier
-            .height(if (compact) 252.dp else 276.dp)
+            .height(cardHeight)
             .clickable { onProduct(product) },
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = ShopSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp, pressedElevation = 3.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine.copy(alpha = .82f)),
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().aspectRatio(1f).padding(7.dp).clip(RoundedCornerShape(13.dp)).background(ShopSoft)) {
+            Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(ShopSoft)) {
                 val imageUrl = product.images
                     ?.sortedWith(
                         compareByDescending<ShopProductImageDtoSafe> { it.isPrimary == true }
@@ -3114,9 +3752,9 @@ private fun ProductCard(
                     .firstOrNull()
                     ?.imageUrl
                 ShopAssetImage(imageUrl, product.title, Modifier.fillMaxSize(), iconSize = 42.dp, contentScale = ContentScale.Fit)
-                if ((product.discountPercent ?: 0) > 0) {
+                if (verifiedDiscountPercent(product) != null) {
                     Surface(Modifier.align(Alignment.TopStart).padding(6.dp), color = ShopRed, shape = RoundedCornerShape(999.dp)) {
-                        Text("-${product.discountPercent}%", color = ShopOnColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
+                        Text("-${verifiedDiscountPercent(product)}%", color = ShopOnColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp))
                     }
                 }
                 if (shouldShowProductStock(product.stockStatus)) {
@@ -3128,22 +3766,36 @@ private fun ProductCard(
                     Icon(if (saved) Icons.Default.Favorite else Icons.Default.FavoriteBorder, contentDescription = if (saved) "Remove from favorites" else "Add to favorites", tint = if (saved) ShopRed else ShopInk, modifier = Modifier.size(18.dp))
                 }
             }
-            Column(Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(product.title, color = ShopInk, fontSize = if (compact) 12.sp else 14.sp, lineHeight = if (compact) 16.sp else 18.sp, fontWeight = FontWeight.SemiBold, minLines = 2, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Column(Modifier.fillMaxWidth().weight(1f).padding(start = 8.dp, end = 8.dp, top = 4.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(product.title, color = ShopInk, fontSize = if (compact) 12.sp else 13.sp, lineHeight = if (compact) 15.sp else 16.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                productCompactHighlight(product)?.takeUnless { it.equals("none", ignoreCase = true) }?.let { highlight ->
+                    Text(
+                        highlight,
+                        color = ShopMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 val hasReviews = (product.reviewCount ?: 0) > 0
                 val hasSales = (product.soldCount ?: 0) > 0
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(16.dp)) {
-                    if (hasReviews) {
-                        Icon(Icons.Default.Star, contentDescription = null, tint = ShopGold, modifier = Modifier.size(13.dp))
-                        Spacer(Modifier.width(2.dp))
-                        Text("${"%.1f".format(product.averageRating ?: 0.0)} (${product.reviewCount})", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                if (hasReviews || hasSales) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.height(15.dp)) {
+                        if (hasReviews) {
+                            Icon(Icons.Default.Star, contentDescription = null, tint = ShopGold, modifier = Modifier.size(13.dp))
+                            Spacer(Modifier.width(2.dp))
+                            Text("${"%.1f".format(product.averageRating ?: 0.0)} (${product.reviewCount})", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
+                        if (hasReviews && hasSales) Text("  •  ", color = ShopMuted, fontSize = 11.sp)
+                        if (hasSales) Text("${product.soldCount} sold", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                     }
-                    if (hasReviews && hasSales) Text("  •  ", color = ShopMuted, fontSize = 11.sp)
-                    if (hasSales) Text("${product.soldCount} sold", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
                 }
-                Column(Modifier.fillMaxWidth().height(36.dp), verticalArrangement = Arrangement.Bottom) {
-                    Text(formatEtb(product.priceMinor), color = ShopGreen, fontSize = if (compact) 14.sp else 17.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    if ((product.compareAtPriceMinor ?: 0) > product.priceMinor) Text(formatEtb(product.compareAtPriceMinor ?: 0), color = ShopMuted, fontSize = 11.sp, textDecoration = TextDecoration.LineThrough)
+                Spacer(Modifier.weight(1f))
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.Bottom) {
+                    val formattedPrice = formatEtb(product.priceMinor)
+                    Text(formattedPrice, color = ShopGreen, fontSize = if (formattedPrice.length > 14) 12.sp else if (compact) 14.sp else 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    homePreviousPriceMinor(product)?.let { Text(formatEtb(it), color = ShopMuted, fontSize = 11.sp, textDecoration = TextDecoration.LineThrough) }
                 }
             }
         }
@@ -3170,6 +3822,11 @@ internal fun backendLabel(value: String?): String = when (statusKey(value)) {
     "not_shipped" -> "Not shipped"
     "under_review" -> "Under review"
     "not_started" -> "Not started"
+    "expired" -> "Seller response expired"
+    "authorization_void_pending" -> "Authorization cancellation pending"
+    "refund_pending" -> "Refund initiated"
+    "refund_processing" -> "Refund processing"
+    "refund_failed" -> "Refund needs support"
     "" -> ""
     else -> statusKey(value)
         .replace("_", " ")
@@ -3194,6 +3851,38 @@ internal fun issueStatusLabel(status: String?): String = when (statusKey(status)
     "closed" -> "Closed"
     else -> backendLabel(status).ifBlank { "Open" }
 }
+
+internal fun buyerFilterValues(
+    code: String,
+    products: List<ShopProductDto>,
+    productDetails: Map<String, ShopProductDto>,
+): List<String> = products.asSequence()
+    .mapNotNull { productDetails[it.id] }
+    .flatMap { detail ->
+        sequence {
+            detail.variants.filter { it.status == "active" && it.availableQuantity > 0 }.forEach { variant ->
+                variant.options[code]?.takeIf(String::isNotBlank)?.let { yield(it) }
+            }
+            detail.specifications.filter { it.code == code && detail.stockStatus?.contains("out", ignoreCase = true) != true }.forEach { specification ->
+                specification.valueText?.takeIf(String::isNotBlank)?.let { yield(it) }
+                specification.valueNumber?.let { yield(it.toString()) }
+                specification.valueBoolean?.let { yield(if (it) "Yes" else "No") }
+            }
+        }
+    }
+    .distinct()
+    .sortedWith(String.CASE_INSENSITIVE_ORDER)
+    .toList()
+
+internal fun ShopProductDto.matchesBuyerFilter(code: String, value: String): Boolean =
+    variants.any { it.status == "active" && it.availableQuantity > 0 && it.options[code] == value } ||
+        specifications.any {
+            it.code == code && listOfNotNull(
+                it.valueText,
+                it.valueNumber?.toString(),
+                it.valueBoolean?.let { boolean -> if (boolean) "Yes" else "No" },
+            ).contains(value)
+        }
 
 internal fun issueReasonLabel(reason: String?): String = when (statusKey(reason)) {
     "item_not_received" -> "Item not received"
@@ -3231,7 +3920,7 @@ internal fun orderStatusBg(status: String?): Color = when (statusKey(status)) {
     "packed" -> ShopPurpleSoft
     "shipped", "handed_to_carrier", "out_for_delivery" -> ShopAmberSoft
     "delivered", "completed" -> ShopGreenSoft
-    "cancelled", "canceled", "rejected" -> ShopRedSoft
+    "cancelled", "canceled", "rejected", "expired" -> ShopRedSoft
     "refunded" -> ShopSoft
     else -> ShopSoft
 }
@@ -3243,7 +3932,7 @@ internal fun orderStatusColor(status: String?): Color = when (statusKey(status))
     "packed" -> ShopPurple
     "shipped", "handed_to_carrier", "out_for_delivery" -> ShopOrangeDark
     "delivered", "completed" -> ShopGreen
-    "cancelled", "canceled", "rejected" -> ShopRed
+    "cancelled", "canceled", "rejected", "expired" -> ShopRed
     "refunded" -> ShopMuted
     else -> ShopMuted
 }
@@ -3255,14 +3944,16 @@ internal fun fulfillmentStatusColor(status: String?): Color = orderStatusColor(s
 internal fun paymentStatusBg(status: String?): Color = when (statusKey(status)) {
     "paid", "settled", "released" -> ShopGreenSoft
     "unpaid", "pending", "payment_pending" -> ShopAmberSoft
-    "failed", "cancelled", "canceled", "refunded" -> ShopRedSoft
+    "failed", "cancelled", "canceled", "refunded", "refund_failed" -> ShopRedSoft
+    "refund_pending", "refund_processing", "authorization_void_pending" -> ShopAmberSoft
     else -> ShopSoft
 }
 
 internal fun paymentStatusColor(status: String?): Color = when (statusKey(status)) {
     "paid", "settled", "released" -> ShopGreen
     "unpaid", "pending", "payment_pending" -> ShopOrangeDark
-    "failed", "cancelled", "canceled", "refunded" -> ShopRed
+    "failed", "cancelled", "canceled", "refunded", "refund_failed" -> ShopRed
+    "refund_pending", "refund_processing", "authorization_void_pending" -> ShopOrangeDark
     else -> ShopMuted
 }
 
@@ -3273,7 +3964,7 @@ internal fun trackingStatusColor(status: String?): Color = when (statusKey(statu
     "packed" -> ShopPurple
     "shipped", "handed_to_carrier", "out_for_delivery" -> ShopOrange
     "delivered", "completed" -> ShopGreen
-    "cancelled", "canceled", "rejected", "failed" -> ShopRed
+    "cancelled", "canceled", "rejected", "expired", "failed" -> ShopRed
     else -> ShopMuted
 }
 
@@ -3305,40 +3996,11 @@ internal fun ShopAssetImage(
 
 private typealias ShopProductImageDtoSafe = com.adischat.app.feature.shop.data.ShopProductImageDto
 
-@Composable
-private fun StoreRail(stores: List<ShopStoreDto>, onStore: (ShopStoreDto) -> Unit) {
-    SectionHeader("Featured stores")
-    if (stores.isEmpty()) {
-        return
-    }
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        items(stores, key = { it.id }) { store ->
-            Card(Modifier.width(260.dp).clickable { onStore(store) }, shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopOnColor), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(ShopGreenSoft), contentAlignment = Alignment.Center) {
-                        ShopAssetImage(store.logoUrl, store.name, Modifier.fillMaxSize(), iconSize = 28.dp)
-                    }
-                    Spacer(Modifier.width(10.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(store.name, color = ShopInk, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text("${store.category ?: "Marketplace"} • ${store.city ?: "Addis Ababa"}", color = ShopMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if ((store.averageStoreRating ?: 0.0) > 0.0) Text("${"%.1f".format(store.averageStoreRating)} rating", color = ShopMuted, fontSize = 11.sp)
-                            if ((store.totalSales ?: 0) > 0) Text("  ${store.totalSales} sales", color = ShopMuted, fontSize = 11.sp)
-                        }
-                    }
-                    Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = ShopMuted)
-                }
-            }
-        }
-    }
-}
-
 private fun ShopProductDto.toStoreDto(): ShopStoreDto {
     val current = store
     return ShopStoreDto(
         id = current?.id.orEmpty(),
-        name = current?.name ?: "Verified store",
+        name = current?.name ?: "Marketplace store",
         slug = current?.slug.orEmpty(),
         description = current?.description,
         logoUrl = current?.logoUrl,
@@ -3380,15 +4042,29 @@ private fun CheckoutScreen(
     protectedState: ShopProtectedState,
     onBack: () -> Unit,
     onLoadAddresses: () -> Unit,
+    onSaveAddress: (ShopAddressRequest, (String?) -> Unit) -> Unit,
     onConfirm: (String, String, String) -> Unit,
+    onApplyCoupon: (String) -> Unit = {},
+    onApplyVoucher: (String) -> Unit = {},
+    onRemoveDiscount: (String) -> Unit = {},
 ) {
-    var selectedAddressId by remember { mutableStateOf("") }
-    var selectedPaymentMethod by remember { mutableStateOf("") }
     val checkout = protectedState.checkout
+    var addressFlow by remember(checkout?.id) { mutableStateOf(CheckoutAddressFlow(checkout?.id.orEmpty())) }
+    var selectedPaymentMethod by remember { mutableStateOf("") }
+    var couponInput by remember { mutableStateOf("") }
+    var voucherInput by remember { mutableStateOf("") }
     LaunchedEffect(Unit) { onLoadAddresses() }
     LaunchedEffect(protectedState.addresses, checkout) {
-        if (selectedAddressId.isBlank()) selectedAddressId = protectedState.addresses.firstOrNull { it.isDefault }?.id ?: protectedState.addresses.firstOrNull()?.id.orEmpty()
-        if (selectedPaymentMethod.isBlank()) selectedPaymentMethod = checkout?.paymentMethods?.firstOrNull()?.code.orEmpty()
+        if (addressFlow.selectedAddressId.isBlank()) {
+            val defaultId = protectedState.addresses.firstOrNull { it.isDefault }?.id ?: protectedState.addresses.firstOrNull()?.id.orEmpty()
+            if (defaultId.isNotBlank()) addressFlow = addressFlow.select(defaultId)
+        }
+        if (checkout != null && (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0))) {
+            selectedPaymentMethod = "voucher_prepaid"
+        } else if (selectedPaymentMethod.isBlank() || selectedPaymentMethod == "voucher_prepaid") {
+            selectedPaymentMethod = checkout?.paymentMethods?.firstOrNull { it.code != "voucher_prepaid" }?.code
+                ?: checkout?.paymentMethods?.firstOrNull()?.code.orEmpty()
+        }
     }
 
     LazyColumn(
@@ -3396,7 +4072,12 @@ private fun CheckoutScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { PageTitle("Checkout", "Server-verified totals, stock and payment availability") }
+        item {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk) }
+                Text("Checkout", color = ShopInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+            }
+        }
         if (protectedState.loading && checkout == null) {
             item { SkeletonCard() }
         }
@@ -3405,20 +4086,20 @@ private fun CheckoutScreen(
         }
         if (checkout != null) {
             item {
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Delivery address", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
                         if (protectedState.addresses.isEmpty()) {
                             Text("Add a delivery address before confirming checkout.", color = ShopMuted, lineHeight = 20.sp)
                         } else {
                             protectedState.addresses.forEach { address ->
-                                val selected = selectedAddressId == address.id
+                                val selected = addressFlow.selectedAddressId == address.id
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(if (selected) ShopGreenSoft else ShopSoft)
-                                        .clickable { selectedAddressId = address.id }
+                                        .clickable { addressFlow = addressFlow.select(address.id) }
                                         .padding(12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
@@ -3431,28 +4112,178 @@ private fun CheckoutScreen(
                                 }
                             }
                         }
+                        if (!addressFlow.formOpen) {
+                            OutlinedButton(onClick = { addressFlow = addressFlow.open() }) { Text("Add delivery address") }
+                        }
+                    }
+                }
+            }
+            if (addressFlow.formOpen) item {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AddressForm(initial = null, busy = addressFlow.saving, onSave = { request ->
+                        val savingCheckoutId = addressFlow.checkoutId
+                        addressFlow = addressFlow.beginSave()
+                        onSaveAddress(request) { savedId ->
+                            addressFlow = addressFlow.completeSave(savingCheckoutId, savedId)
+                        }
+                    })
+                    TextButton(onClick = { addressFlow = addressFlow.cancel() }, enabled = !addressFlow.saving) { Text("Cancel") }
+                    protectedState.error?.let { ErrorCardMessage(it) }
+                }
+            }
+            item {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Discounts & Vouchers", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+
+                        // Coupon Section
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Discount Coupon", color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            if (!checkout.couponCode.isNullOrBlank()) {
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("${checkout.couponCode} (- ${formatEtb(checkout.couponDiscountMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    TextButton(onClick = { onRemoveDiscount("coupon") }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("Remove", color = ShopMuted, fontSize = 12.sp)
+                                    }
+                                }
+                            } else {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = couponInput,
+                                        onValueChange = { couponInput = it.uppercase() },
+                                        placeholder = { Text("Enter coupon code", fontSize = 13.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = ShopGreen,
+                                            unfocusedBorderColor = ShopLine,
+                                        ),
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onApplyCoupon(couponInput.trim())
+                                            couponInput = ""
+                                        },
+                                        enabled = couponInput.isNotBlank() && !protectedState.loading,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
+                                    ) {
+                                        Text("Apply", fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = ShopLine)
+
+                        // Voucher Section
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Prepaid Store Voucher", color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            if (!checkout.voucherCode.isNullOrBlank()) {
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("${checkout.voucherCode} (- ${formatEtb(checkout.voucherAppliedMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    TextButton(onClick = { onRemoveDiscount("voucher") }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("Remove", color = ShopMuted, fontSize = 12.sp)
+                                    }
+                                }
+                            } else {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = voucherInput,
+                                        onValueChange = { voucherInput = it.uppercase() },
+                                        placeholder = { Text("Enter voucher code", fontSize = 13.sp) },
+                                        singleLine = true,
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = ShopGreen,
+                                            unfocusedBorderColor = ShopLine,
+                                        ),
+                                    )
+                                    Button(
+                                        onClick = {
+                                            onApplyVoucher(voucherInput.trim())
+                                            voucherInput = ""
+                                        },
+                                        enabled = voucherInput.isNotBlank() && !protectedState.loading,
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
+                                    ) {
+                                        Text("Redeem", fontSize = 13.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
             item {
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Authoritative summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                        Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                         InfoRow("Subtotal", formatEtb(checkout.subtotalMinor))
-                        InfoRow("Discount", formatEtb(checkout.discountMinor))
+                        if (checkout.couponDiscountMinor > 0) {
+                            InfoRow("Coupon discount (${checkout.couponCode.orEmpty()})", "- " + formatEtb(checkout.couponDiscountMinor))
+                        }
+                        if (checkout.voucherAppliedMinor > 0) {
+                            InfoRow("Voucher applied (${checkout.voucherCode.orEmpty()})", "- " + formatEtb(checkout.voucherAppliedMinor))
+                        }
                         InfoRow("Shipping", if (checkout.shippingMinor > 0) formatEtb(checkout.shippingMinor) else "Not configured")
                         InfoRow("Tax", formatEtb(checkout.taxMinor))
                         HorizontalDivider(color = ShopLine)
-                        InfoRow("Grand total", formatEtb(checkout.grandTotalMinor))
-                        checkout.expiresAt?.let { Text("Reservation expires: $it", color = ShopMuted, fontSize = 12.sp) }
+                        val payableMinor = if (checkout.isFullyCoveredByVoucher) 0 else if (checkout.remainingPayableMinor > 0) checkout.remainingPayableMinor else checkout.grandTotalMinor
+                        InfoRow("Total payable", formatEtb(payableMinor))
+                        if (checkout.isFullyCoveredByVoucher || (payableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
+                            Row(
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("100% Covered by Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            }
+                        }
+                        checkout.expiresAt?.let { Text("Reserved until ${formatMarketplaceDateTime(it)}", color = ShopMuted, fontSize = 12.sp) }
                     }
                 }
             }
             item {
-                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
+                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text("Payment method", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                        if (checkout.paymentMethods.isEmpty()) {
+                        if (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(ShopGreenSoft)
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Prepaid Store Voucher", color = ShopInk, fontWeight = FontWeight.Medium)
+                                    Text("Order will be confirmed automatically with zero additional charge.", color = ShopMuted, fontSize = 12.sp)
+                                }
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
+                            }
+                        } else if (checkout.paymentMethods.isEmpty()) {
                             ErrorCardMessage("No payment method is enabled yet. Online payments are not configured and Cash on Delivery is disabled by platform rules.")
                         } else {
                             checkout.paymentMethods.forEach { method ->
@@ -3460,7 +4291,7 @@ private fun CheckoutScreen(
                                 Row(
                                     Modifier
                                         .fillMaxWidth()
-                                        .clip(RoundedCornerShape(16.dp))
+                                        .clip(RoundedCornerShape(12.dp))
                                         .background(if (selected) ShopGreenSoft else ShopSoft)
                                         .clickable { selectedPaymentMethod = method.code }
                                         .padding(12.dp),
@@ -3476,13 +4307,13 @@ private fun CheckoutScreen(
             }
             item {
                 Button(
-                    onClick = { onConfirm(checkout.id, selectedAddressId, selectedPaymentMethod) },
-                    enabled = selectedAddressId.isNotBlank() && selectedPaymentMethod.isNotBlank() && !protectedState.loading,
+                    onClick = { onConfirm(checkout.id, addressFlow.selectedAddressId, selectedPaymentMethod) },
+                    enabled = addressFlow.selectedAddressId.isNotBlank() && (selectedPaymentMethod.isNotBlank() || checkout.isFullyCoveredByVoucher) && !addressFlow.formOpen && !protectedState.loading,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = ShopGreen, disabledContainerColor = ShopLine, disabledContentColor = ShopMuted),
                 ) {
-                    Text(if (protectedState.loading) "Confirming..." else "Confirm order", fontWeight = FontWeight.SemiBold)
+                    Text(if (protectedState.loading) "Placing order..." else "Place order", fontWeight = FontWeight.SemiBold)
                 }
             }
             protectedState.checkoutOrder?.let { order ->
@@ -3490,16 +4321,14 @@ private fun CheckoutScreen(
                     Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopGreenSoft)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Text("Order created", color = ShopInk, fontWeight = FontWeight.SemiBold)
-                            Text("Order ${order.id.takeLast(8)} is ${order.status.ifBlank { "payment pending" }}.", color = ShopMuted)
+                            Text("Order ${order.orderNumber ?: order.id.takeLast(8)} • Payment: ${order.paymentStatus} • Status: ${order.status.ifBlank { "created" }}", color = ShopInk, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
             }
         }
         item {
-            Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(50.dp), shape = RoundedCornerShape(18.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopSoft, contentColor = ShopInk)) {
-                Text("Back to cart", fontWeight = FontWeight.Medium)
-            }
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
@@ -3571,27 +4400,52 @@ private fun AddressesScreen(
     onDefault: (String) -> Unit,
 ) {
     var adding by remember { mutableStateOf(false) }
+    var editingAddress by remember { mutableStateOf<ShopAddressDto?>(null) }
     ProtectedPage("Delivery Addresses", 0, onBack, onLoad, protectedState) {
-        Button(onClick = { adding = !adding }, shape = RoundedCornerShape(16.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
-            Text(if (adding) "Close form" else "Add address", fontWeight = FontWeight.Black)
+        Button(
+            onClick = {
+                adding = !adding
+                if (!adding) editingAddress = null
+            },
+            shape = RoundedCornerShape(14.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+        ) {
+            Text(if (adding) "Close form" else "Add address", fontWeight = FontWeight.SemiBold)
         }
-        if (adding) AddressForm(onSave)
+        if (adding) {
+            AddressForm(
+                initial = editingAddress,
+                onSave = { request ->
+                    onSave(request)
+                    adding = false
+                    editingAddress = null
+                },
+            )
+        }
         if (protectedState.addresses.isEmpty()) EmptyCard("No delivery addresses yet.")
         protectedState.addresses.forEach { address ->
-            AddressCard(address, onDelete, onDefault)
+            AddressCard(
+                address = address,
+                onEdit = {
+                    editingAddress = address
+                    adding = true
+                },
+                onDelete = onDelete,
+                onDefault = onDefault,
+            )
         }
     }
 }
 
 @Composable
-private fun AddressForm(onSave: (ShopAddressRequest) -> Unit) {
-    var label by remember { mutableStateOf("Home") }
-    var name by remember { mutableStateOf("") }
-    var phone by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("Addis Ababa") }
-    var line1 by remember { mutableStateOf("") }
-    var line2 by remember { mutableStateOf("") }
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopOnColor)) {
+private fun AddressForm(initial: ShopAddressDto?, busy: Boolean = false, onSave: (ShopAddressRequest) -> Unit) {
+    var label by remember(initial?.id) { mutableStateOf(initial?.label ?: "Home") }
+    var name by remember(initial?.id) { mutableStateOf(initial?.recipientName.orEmpty()) }
+    var phone by remember(initial?.id) { mutableStateOf(initial?.phone.orEmpty()) }
+    var city by remember(initial?.id) { mutableStateOf(initial?.city?.ifBlank { "Addis Ababa" } ?: "Addis Ababa") }
+    var line1 by remember(initial?.id) { mutableStateOf(initial?.addressLine1.orEmpty()) }
+    var line2 by remember(initial?.id) { mutableStateOf(initial?.addressLine2.orEmpty()) }
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopOnColor), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(label, { label = it }, label = { Text("Label") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
             OutlinedTextField(name, { name = it }, label = { Text("Recipient name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
@@ -3600,18 +4454,32 @@ private fun AddressForm(onSave: (ShopAddressRequest) -> Unit) {
             OutlinedTextField(line1, { line1 = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
             OutlinedTextField(line2, { line2 = it }, label = { Text("Landmark optional") }, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
             Button(
-                onClick = { onSave(ShopAddressRequest(label = label, recipientName = name, phone = phone, city = city, addressLine1 = line1, addressLine2 = line2.ifBlank { null }, isDefault = true)) },
+                onClick = {
+                    onSave(
+                        ShopAddressRequest(
+                            id = initial?.id,
+                            label = label,
+                            recipientName = name,
+                            phone = phone,
+                            city = city,
+                            addressLine1 = line1,
+                            addressLine2 = line2.ifBlank { null },
+                            isDefault = initial?.isDefault ?: false,
+                        ),
+                    )
+                },
+                enabled = !busy && label.isNotBlank() && name.isNotBlank() && phone.isNotBlank() && city.isNotBlank() && line1.isNotBlank(),
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
-            ) { Text("Save address", fontWeight = FontWeight.Black) }
+            ) { Text(if (busy) "Saving..." else if (initial == null) "Save address" else "Update address", fontWeight = FontWeight.SemiBold) }
         }
     }
 }
 
 @Composable
-private fun AddressCard(address: ShopAddressDto, onDelete: (String) -> Unit, onDefault: (String) -> Unit) {
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopOnColor)) {
+private fun AddressCard(address: ShopAddressDto, onEdit: () -> Unit, onDelete: (String) -> Unit, onDefault: (String) -> Unit) {
+    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopOnColor), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(address.label.ifBlank { "Address" }, color = ShopInk, fontWeight = FontWeight.Black)
@@ -3620,8 +4488,11 @@ private fun AddressCard(address: ShopAddressDto, onDelete: (String) -> Unit, onD
             Text("${address.recipientName} • ${address.phone}", color = ShopMuted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("${address.addressLine1}${address.addressLine2?.let { ", $it" } ?: ""}, ${address.city}", color = ShopInk, lineHeight = 19.sp)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onDefault(address.id) }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Set default") }
-                Button(onClick = { onDelete(address.id) }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopRed)) { Text("Delete") }
+                OutlinedButton(onClick = onEdit, shape = RoundedCornerShape(12.dp)) { Text("Edit") }
+                if (!address.isDefault) {
+                    Button(onClick = { onDefault(address.id) }, shape = RoundedCornerShape(12.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Set default") }
+                }
+                TextButton(onClick = { onDelete(address.id) }) { Text("Delete", color = ShopRed) }
             }
         }
     }
@@ -3645,18 +4516,18 @@ private fun OrdersScreen(
     onClearReceipt: () -> Unit,
 ) {
     var selectedTab by remember { mutableStateOf("All") }
-    val tabs = listOf("All", "To Pay", "Processing", "Shipped", "Delivered", "Cancelled")
+    val tabs = listOf("All", "Pending", "Processing", "Shipped", "Delivered", "Cancelled")
     val filtered = protectedState.orders.filter { order ->
         when (selectedTab) {
-            "To Pay" -> order.paymentStatus in listOf("unpaid", "pending", "payment_pending")
-            "Processing" -> order.fulfillmentStatus in listOf("awaiting_seller_confirmation", "accepted", "processing", "packed")
+            "Pending" -> order.fulfillmentStatus in listOf("awaiting_seller_confirmation", "created")
+            "Processing" -> order.fulfillmentStatus in listOf("accepted", "processing", "packed")
             "Shipped" -> order.status == "shipped" || order.fulfillmentStatus in listOf("handed_to_carrier", "shipped", "out_for_delivery")
             "Delivered" -> order.status in listOf("delivered", "completed") || order.fulfillmentStatus == "delivered"
-            "Cancelled" -> order.status in listOf("cancelled", "rejected") || order.fulfillmentStatus in listOf("cancelled", "rejected")
+            "Cancelled" -> order.status in listOf("cancelled", "rejected") || order.fulfillmentStatus in listOf("cancelled", "rejected", "expired")
             else -> true
         }
     }
-    ProtectedPage("My AdisGebeya Orders", 0, onBack, onLoad, protectedState) {
+    ProtectedPage("My Orders", 0, onBack, onLoad, protectedState) {
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(tabs) { tab ->
                 FilterChipLike(tab, selectedTab == tab) { selectedTab = tab }
@@ -3669,12 +4540,40 @@ private fun OrdersScreen(
                 order = order,
                 deliveryCode = visibleCode,
                 busy = protectedState.busyIds.contains("delivery-code-${order.id}"),
+                onRefresh = onLoad,
                 onOpen = onOpen,
                 onCancel = onCancel,
                 onRevealCode = onRevealCode,
             )
         }
-        protectedState.selectedOrder?.let { order ->
+    }
+}
+
+@Composable
+private fun BuyerOrderDetailRoute(
+    orderId: String,
+    orderGroupId: String?,
+    protectedState: ShopProtectedState,
+    vm: ShopViewModel,
+    onBack: () -> Unit,
+    onTracking: () -> Unit,
+) {
+    val order = protectedState.selectedOrder?.takeIf { selected ->
+        selected.id == orderId || orderGroupId?.let { groupId -> selected.groups.orEmpty().any { it.id == groupId } } == true
+    }
+    ProtectedPage(
+        title = "Order Details",
+        cartCount = 0,
+        onBack = onBack,
+        onLoad = {
+            if (orderId.isNotBlank()) vm.loadOrderDetail(orderId)
+            else orderGroupId?.let(vm::loadOrderDetailForGroup)
+        },
+        protectedState = protectedState,
+    ) {
+        if (order == null) {
+            EmptyCard("Loading order details...")
+        } else {
             OrderDetailCard(
                 order = order,
                 deliveryCode = protectedState.deliveryCode?.takeIf { it.orderId == order.id },
@@ -3687,20 +4586,18 @@ private fun OrdersScreen(
                 exchangeRequests = protectedState.selectedExchangeRequests,
                 receipt = protectedState.selectedReceipt,
                 busy = protectedState.busyIds.contains("issue-${order.id}"),
-                onSubmitIssue = onSubmitIssue,
-                onSubmitProductReview = onSubmitProductReview,
-                onSubmitStoreReview = onSubmitStoreReview,
-                onSubmitRefund = onSubmitRefund,
-                onSubmitExchange = onSubmitExchange,
-                onBuyAgain = onBuyAgain,
-                onLoadReceipt = onLoadReceipt,
-                onClearReceipt = onClearReceipt,
+                onRefresh = { vm.loadOrderDetail(order.id) },
+                onTracking = onTracking,
+                onRevealCode = vm::revealDeliveryCode,
+                onSubmitIssue = vm::submitOrderIssue,
+                onSubmitProductReview = vm::submitProductReview,
+                onSubmitStoreReview = vm::submitStoreReview,
+                onSubmitRefund = vm::submitRefundRequest,
+                onSubmitExchange = vm::submitExchangeRequest,
+                onBuyAgain = vm::buyAgainFromOrder,
+                onLoadReceipt = vm::loadReceipt,
+                onClearReceipt = vm::clearReceipt,
             )
-        }
-        if (protectedState.selectedOrder == null) {
-            protectedState.deliveryCode?.let {
-                ErrorCardMessage("Delivery code: ${it.deliveryCode}. Show it only after receiving the order.")
-            }
         }
     }
 }
@@ -3710,16 +4607,47 @@ private fun OrderCard(
     order: ShopOrderDto,
     deliveryCode: com.adischat.app.feature.shop.data.ShopDeliveryCodeDto?,
     busy: Boolean,
+    onRefresh: () -> Unit,
     onOpen: (String) -> Unit,
     onCancel: (String, String) -> Unit,
     onRevealCode: (String) -> Unit,
 ) {
-    val clipboard = LocalClipboardManager.current
-    val canCancel = order.fulfillmentStatus in listOf("awaiting_seller_confirmation", "accepted", "created")
-    val canRevealCode = order.fulfillmentStatus in listOf("handed_to_carrier", "shipped", "out_for_delivery")
-    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
+    val groups = order.groups.orEmpty()
+    val firstItem = groups.flatMap { it.items.orEmpty() }.firstOrNull()
+    val itemCount = groups.flatMap { it.items.orEmpty() }.sumOf { it.quantity }
+    val storeNames = groups.mapNotNull { it.storeNameSnapshot?.trim()?.takeIf(String::isNotEmpty) }.distinct()
+    Card(
+        onClick = { onOpen(order.id) },
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(ShopSurface),
+        border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(order.orderNumber ?: "Order ${order.id.takeLast(8)}", color = ShopInk, fontWeight = FontWeight.SemiBold)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)).background(ShopSoft),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    ShopAssetImage(firstItem?.imageSnapshot, firstItem?.titleSnapshot ?: "Order item", Modifier.fillMaxSize(), iconSize = 24.dp)
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(order.orderNumber ?: "Order ${order.id.takeLast(8)}", color = ShopInk, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(
+                        storeNames.joinToString().ifBlank { "AdisGebeya seller" },
+                        color = ShopMuted,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        "$itemCount item${if (itemCount == 1) "" else "s"} • ${formatMarketplaceDateTime(order.createdAt)}",
+                        color = ShopMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = "Open order details", tint = ShopMuted)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 MiniBadge(orderStatusLabel(order.status), orderStatusBg(order.status), orderStatusColor(order.status))
                 order.paymentStatus?.let { MiniBadge(paymentStatusLabel(it), paymentStatusBg(it), paymentStatusColor(it)) }
@@ -3728,39 +4656,9 @@ private fun OrderCard(
             if (order.paymentStatus in listOf("unpaid", "pending", "payment_pending")) {
                 Text("Payment due on delivery", color = ShopMuted, fontSize = 13.sp)
             }
-            order.createdAt?.let { Text(it, color = ShopMuted, fontSize = 12.sp) }
-            Text(formatEtb(order.totalMinor), color = ShopGreen, fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { onOpen(order.id) }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
-                    Text("Track")
-                }
-                Button(
-                    onClick = { onRevealCode(order.id) },
-                    enabled = canRevealCode && !busy,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ShopInk),
-                ) {
-                    Text(if (busy) "Loading..." else "Delivery code")
-                }
-                if (canCancel) {
-                    Button(onClick = { onCancel(order.id, "Customer requested cancellation") }, shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopRed)) {
-                        Text("Cancel")
-                    }
-                }
-            }
-            deliveryCode?.takeIf { it.deliveryCode.isNotBlank() }?.let { code ->
-                Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(ShopGreenSoft), border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = .2f))) {
-                    Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Delivery code", color = ShopInk, fontWeight = FontWeight.SemiBold)
-                            Text(code.deliveryCode, color = ShopGreen, fontWeight = FontWeight.Black, fontSize = 22.sp)
-                            Text(code.message ?: "Show it only after receiving the order.", color = ShopMuted, fontSize = 12.sp, lineHeight = 17.sp)
-                        }
-                        IconButton(onClick = { clipboard.setText(AnnotatedString(code.deliveryCode)) }) {
-                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy delivery code", tint = ShopGreen)
-                        }
-                    }
-                }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(formatEtb(order.totalMinor), color = ShopGreen, fontWeight = FontWeight.SemiBold)
+                Text("View details", color = ShopGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -3770,7 +4668,7 @@ private fun OrderCard(
 internal fun FilterChipLike(label: String, selected: Boolean, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
-        shape = RoundedCornerShape(999.dp),
+        shape = RoundedCornerShape(10.dp),
         color = if (selected) ShopGreen else ShopSurface,
         border = if (selected) null else androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
     ) {
@@ -3797,6 +4695,9 @@ private fun OrderDetailCard(
     exchangeRequests: List<ShopExchangeRequestDto>,
     receipt: ShopReceiptDto?,
     busy: Boolean,
+    onRefresh: () -> Unit,
+    onTracking: () -> Unit,
+    onRevealCode: (String) -> Unit,
     onSubmitIssue: (String, String?, String, String) -> Unit,
     onSubmitProductReview: (String, String, Int, String, String) -> Unit,
     onSubmitStoreReview: (String, String, Int, String) -> Unit,
@@ -3849,11 +4750,60 @@ private fun OrderDetailCard(
             )
         }
     }
+    order.groups.orEmpty().forEach { group ->
+        SellerResponseDeadlineCard(
+            group = group,
+            audience = SellerResponseAudience.BUYER,
+            onDeadlineReached = onRefresh,
+        )
+    }
     receipt?.let {
         ReceiptDialog(receipt = it, onDismiss = onClearReceipt)
     }
     Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface)) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(order.orderNumber ?: "Order details", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 19.sp)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MiniBadge(orderStatusLabel(order.status), orderStatusBg(order.status), orderStatusColor(order.status))
+                order.paymentStatus?.let { MiniBadge(paymentStatusLabel(it), paymentStatusBg(it), paymentStatusColor(it)) }
+                order.fulfillmentStatus?.let { MiniBadge(fulfillmentStatusLabel(it), fulfillmentStatusBg(it), fulfillmentStatusColor(it)) }
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(formatMarketplaceDateTime(order.createdAt), color = ShopMuted, fontSize = 12.sp)
+                Text(formatEtb(order.totalMinor), color = ShopGreen, fontWeight = FontWeight.Bold)
+            }
+            order.groups.orEmpty().forEach { group ->
+                HorizontalDivider(color = ShopLine)
+                Text(group.storeNameSnapshot ?: "Marketplace seller", color = ShopInk, fontWeight = FontWeight.SemiBold)
+                group.items.orEmpty().forEach { item ->
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            Modifier.size(52.dp).clip(RoundedCornerShape(12.dp)).background(ShopSoft),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            ShopAssetImage(item.imageSnapshot, item.titleSnapshot, Modifier.fillMaxSize(), iconSize = 22.dp)
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(item.titleSnapshot.ifBlank { "Order item" }, color = ShopInk, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            item.variantDisplayLabel()?.let { Text(it, color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            Text("Quantity ${item.quantity}", color = ShopMuted, fontSize = 12.sp)
+                        }
+                        Text(formatEtb(item.lineTotalMinor), color = ShopInk, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                group.payment?.let { payment ->
+                    Text("Payment: ${marketplaceStatusLabel(payment.methodCode)} • ${paymentStatusLabel(payment.status)}", color = ShopMuted, fontSize = 12.sp)
+                }
+                group.deliveryAddress?.let { address ->
+                    Text("Delivery", color = ShopInk, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        listOfNotNull(address.addressLine1, address.addressLine2, address.city).filter(String::isNotBlank).joinToString(", "),
+                        color = ShopMuted,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
             PostDeliveryActionSection(
                 order = order,
                 actions = actions,
@@ -3869,18 +4819,23 @@ private fun OrderDetailCard(
                     }
                 },
             )
-            Text("Tracking timeline", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 18.sp)
-            if (order.history.orEmpty().isEmpty()) {
-                Text("No tracking events yet.", color = ShopMuted)
-            } else {
-                order.history.orEmpty().sortedBy { it.occurredAt ?: it.createdAt ?: "" }.forEach { event ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
-                        Box(Modifier.size(10.dp).clip(CircleShape).background(trackingStatusColor(event.status.ifBlank { event.nextStatus.orEmpty() })))
-                        Column {
-                            Text(event.publicMessage ?: event.nextStatus ?: event.status, color = ShopInk, fontWeight = FontWeight.SemiBold)
-                            Text(event.occurredAt ?: event.createdAt.orEmpty(), color = ShopMuted, fontSize = 12.sp)
-                        }
+            Card(
+                onClick = onTracking,
+                colors = CardDefaults.cardColors(Color(0xFFF1F0FF)),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFC7C4F2)),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Icon(Icons.Default.LocalShipping, contentDescription = null, tint = Color(0xFF1E1B4B))
+                    Column(Modifier.weight(1f)) {
+                        Text("Track order", color = ShopInk, fontWeight = FontWeight.SemiBold)
+                        Text(marketplaceStatusLabel(order.fulfillmentStatus ?: order.status), color = ShopMuted, fontSize = 12.sp)
                     }
+                    Icon(Icons.Default.ArrowForward, contentDescription = "Open order tracking", tint = ShopMuted)
                 }
             }
             order.groups.orEmpty().forEach { group ->
@@ -3890,9 +4845,7 @@ private fun OrderDetailCard(
                 group.shipmentCarrier?.let { Text("Carrier: $it", color = ShopMuted) }
                 group.shipmentTrackingNumber?.let { Text("Tracking: $it", color = ShopMuted) }
             }
-            deliveryCode?.let {
-                ErrorCardMessage("Delivery code: ${it.deliveryCode}. Show it only after receiving the order.")
-            }
+            BuyerDeliveryCodeSection(order, deliveryCode?.deliveryCode, false, onRevealCode)
             BuyerProtectionIssueSection(
                 order = order,
                 issueOptions = issueOptions,
@@ -3910,6 +4863,13 @@ private fun OrderDetailCard(
     }
 }
 
+internal fun com.adischat.app.feature.shop.data.ShopOrderItemDto.variantDisplayLabel(): String? =
+    variantSnapshot?.options?.values?.filter(String::isNotBlank)?.takeIf(List<String>::isNotEmpty)?.joinToString(" • ")
+        ?: variantSnapshot?.title?.takeIf(String::isNotBlank)
+
+internal fun com.adischat.app.feature.shop.data.ShopOrderItemDto.quantityWithUnit(): String =
+    "$quantity${unitSnapshot?.symbol?.takeIf(String::isNotBlank)?.let { " $it" } ?: ""}"
+
 @Composable
 private fun PostDeliveryActionSection(
     order: ShopOrderDto,
@@ -3923,16 +4883,16 @@ private fun PostDeliveryActionSection(
     val completed = actions?.isCompleted == true || order.status in listOf("delivered", "completed") || order.fulfillmentStatus == "delivered"
     if (!completed) return
     Card(
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(ShopGreenSoft),
         border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = .16f)),
     ) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
                 Column {
-                    Text("Completed order actions", color = ShopInk, fontWeight = FontWeight.Black, fontSize = 17.sp)
-                    Text("Reviews, receipt, refund/exchange and Buy Again are verified by the server.", color = ShopMuted, fontSize = 12.sp, lineHeight = 17.sp)
+                    Text("Completed order actions", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    Text("Reviews, requests and receipts are verified by the server.", color = ShopMuted, fontSize = 12.sp, lineHeight = 16.sp)
                 }
             }
             if (productReviews.isNotEmpty() || storeReviews.isNotEmpty()) {
@@ -3977,8 +4937,8 @@ private fun RowScope.ActionPill(label: String, enabled: Boolean, icon: ImageVect
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = Modifier.weight(1f).height(46.dp),
-        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.weight(1f).height(48.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.outlinedButtonColors(contentColor = if (enabled) ShopGreen else ShopMuted),
         border = androidx.compose.foundation.BorderStroke(1.dp, if (enabled) ShopGreen.copy(alpha = .42f) else ShopLine),
     ) {
@@ -4271,12 +5231,12 @@ internal fun ProtectedPage(
         if (showHeader) {
             stickyHeader { ShopHeader(cartCount = cartCount, onBack = onBack, onCart = {}) }
         }
-        item { PageTitle(title, "Manage your AdisGebeya activity") }
+        item { PageTitle(title, "") }
         if (protectedState.loading) {
             item { SkeletonCard() }
         }
         protectedState.error?.let { message ->
-            item { EmptyCard(message) }
+            item { EmptyCard("Couldn't load this page. Check your connection and try again.") }
         }
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
@@ -4300,8 +5260,8 @@ private fun PlaceholderShopPage(title: String, message: String, onBack: () -> Un
 @Composable
 internal fun PageTitle(title: String, subtitle: String) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, color = ShopInk, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-        Text(subtitle, color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+        Text(title, color = ShopInk, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+        if (subtitle.isNotBlank()) Text(subtitle, color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Normal)
     }
 }
 
@@ -4336,9 +5296,9 @@ internal fun SkeletonCard() {
         Modifier
             .fillMaxWidth()
             .height(168.dp)
-            .clip(RoundedCornerShape(24.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(ShopSurface)
-            .border(1.dp, ShopLine.copy(alpha = .72f), RoundedCornerShape(24.dp))
+            .border(1.dp, ShopLine.copy(alpha = .72f), RoundedCornerShape(14.dp))
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -4399,7 +5359,7 @@ internal fun processSellerProductImage(context: Context, uri: Uri): ProcessedSel
 
     var sample = 1
     val maxDimension = max(bounds.outWidth, bounds.outHeight)
-    while (maxDimension / sample > 2400) sample *= 2
+    while (maxDimension / sample > 1800) sample *= 2
     val options = BitmapFactory.Options().apply { inSampleSize = sample }
     val decoded = resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, options) }
         ?: error("Image could not be read.")
@@ -4417,22 +5377,25 @@ internal fun processSellerProductImage(context: Context, uri: Uri): ProcessedSel
         ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
         ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
     }
-    val oriented = if (!matrix.isIdentity) Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true) else decoded
-    val scale = minOf(1f, 1800f / max(oriented.width, oriented.height).toFloat())
-    val finalBitmap = if (scale < 1f) {
-        Bitmap.createScaledBitmap(oriented, (oriented.width * scale).roundToInt(), (oriented.height * scale).roundToInt(), true)
-    } else {
-        oriented
+    var oriented: Bitmap = decoded
+    var finalBitmap: Bitmap = decoded
+    try {
+        if (!matrix.isIdentity) oriented = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, matrix, true)
+        val scale = minOf(1f, 1800f / max(oriented.width, oriented.height).toFloat())
+        finalBitmap = if (scale < 1f) {
+            Bitmap.createScaledBitmap(oriented, (oriented.width * scale).roundToInt(), (oriented.height * scale).roundToInt(), true)
+        } else {
+            oriented
+        }
+        val out = ByteArrayOutputStream()
+        if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, 86, out)) error("Image could not be compressed.")
+        val bytes = out.toByteArray()
+        if (bytes.isEmpty()) error("Image could not be prepared.")
+        if (bytes.size > 5 * 1024 * 1024) error("Image is too large. Choose a smaller photo.")
+        return ProcessedSellerProductImage(bytes = bytes, mimeType = "image/jpeg", width = finalBitmap.width, height = finalBitmap.height)
+    } finally {
+        if (finalBitmap !== oriented) finalBitmap.recycle()
+        if (oriented !== decoded) oriented.recycle()
+        decoded.recycle()
     }
-    val width = finalBitmap.width
-    val height = finalBitmap.height
-    val out = ByteArrayOutputStream()
-    if (!finalBitmap.compress(Bitmap.CompressFormat.JPEG, 86, out)) error("Image could not be compressed.")
-    val bytes = out.toByteArray()
-    if (bytes.isEmpty()) error("Image could not be prepared.")
-    if (bytes.size > 5 * 1024 * 1024) error("Image is too large. Choose a smaller photo.")
-    if (finalBitmap !== oriented) finalBitmap.recycle()
-    if (oriented !== decoded) oriented.recycle()
-    decoded.recycle()
-    return ProcessedSellerProductImage(bytes = bytes, mimeType = "image/jpeg", width = width, height = height)
 }
