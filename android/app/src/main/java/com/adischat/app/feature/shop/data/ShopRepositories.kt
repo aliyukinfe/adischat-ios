@@ -419,8 +419,29 @@ class ShopIdentityRepository(
 class CartRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
+    private val supabaseApi: ShopSupabaseApi? = ShopSupabaseClient.api,
 ) {
+    private suspend fun resolveSessionJti(): String {
+        val token = identity.sessionToken().getOrNull()?.trim().orEmpty()
+        return if (token.isNotBlank()) token else "qa-contract-test-buyer-session"
+    }
+
+    private fun parseQaCart(data: Map<String, Any?>): ShopCartDto {
+        val gson = com.google.gson.Gson()
+        val json = gson.toJsonTree(data)
+        return gson.fromJson(json, ShopCartDto::class.java)
+    }
+
     suspend fun getCart(): Result<ShopCartDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCartAction(mapOf(
+                "p_session_jti" to jti,
+                "p_action" to "read"
+            ))
+            val cart = parseQaCart(res)
+            return@runCatching if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
+        }
         val service = api ?: error("Your cart is temporarily unavailable.")
         val cart = identity.authorizedRequest { token -> service.cart(token) }.cart
             ?: error("Your cart is temporarily unavailable.")
@@ -428,6 +449,18 @@ class CartRepository(
     }
 
     suspend fun add(productId: String, variantId: String? = null, quantity: Int = 1): Result<ShopCartDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCartAction(mapOf(
+                "p_session_jti" to jti,
+                "p_action" to "add",
+                "p_product_id" to productId,
+                "p_variant_id" to variantId,
+                "p_quantity" to quantity
+            ))
+            val cart = parseQaCart(res)
+            return@runCatching if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
+        }
         val service = api ?: error("Your cart is temporarily unavailable.")
         val cart = identity.authorizedRequest { token ->
             service.addCartItem(token, ShopCartItemRequest(productId = productId, variantId = variantId, quantity = quantity))
@@ -437,6 +470,17 @@ class CartRepository(
     }
 
     suspend fun update(itemId: String, quantity: Int): Result<ShopCartDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCartAction(mapOf(
+                "p_session_jti" to jti,
+                "p_action" to "update",
+                "p_item_id" to itemId,
+                "p_quantity" to quantity
+            ))
+            val cart = parseQaCart(res)
+            return@runCatching if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
+        }
         val service = api ?: error("Your cart is temporarily unavailable.")
         val cart = identity.authorizedRequest { token ->
             service.updateCartItem(token, ShopCartItemUpdateRequest(itemId = itemId, quantity = quantity))
@@ -446,6 +490,16 @@ class CartRepository(
     }
 
     suspend fun remove(itemId: String): Result<ShopCartDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCartAction(mapOf(
+                "p_session_jti" to jti,
+                "p_action" to "remove",
+                "p_item_id" to itemId
+            ))
+            val cart = parseQaCart(res)
+            return@runCatching if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
+        }
         val service = api ?: error("Your cart is temporarily unavailable.")
         val cart = identity.authorizedRequest { token ->
             service.removeCartItem(token, ShopCartItemIdRequest(itemId = itemId))
@@ -455,13 +509,22 @@ class CartRepository(
     }
 
     suspend fun clear(): Result<ShopCartDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaCartAction(mapOf(
+                "p_session_jti" to jti,
+                "p_action" to "clear"
+            ))
+            val cart = parseQaCart(res)
+            return@runCatching if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
+        }
         val service = api ?: error("Your cart is temporarily unavailable.")
         val cart = identity.authorizedRequest { token -> service.clearCart(token) }.cart
             ?: error("Your cart is temporarily unavailable.")
         if (ShopReviewedMedia.enabled) ShopReviewedMedia.cart(cart) else cart
     }
 
-    fun isAvailable(): Boolean = api != null
+    fun isAvailable(): Boolean = if (BuildConfig.QA_BUILD && supabaseApi != null) true else api != null
 }
 
 class FavoriteRepository(
@@ -522,7 +585,7 @@ class AddressRepository(
         if (com.adischat.app.BuildConfig.QA_BUILD) {
             return@runCatching listOf(
                 ShopAddressDto(
-                    id = "qa-staging-address-bole-1",
+                    id = "a0000000-0000-4000-8000-000000000002",
                     label = "Home",
                     recipientName = "Aliyu (QA Buyer)",
                     phone = "+251911223344",
@@ -577,8 +640,34 @@ class AddressRepository(
 class OrderRepository(
     private val identity: ShopIdentityRepository = ShopIdentityRepository(),
     private val api: ShopFunctionApi? = ShopFunctionClient.api,
+    private val supabaseApi: ShopSupabaseApi? = ShopSupabaseClient.api,
 ) {
+    private suspend fun resolveSessionJti(): String {
+        val token = identity.sessionToken().getOrNull()?.trim().orEmpty()
+        return if (token.isNotBlank()) token else "qa-contract-test-buyer-session"
+    }
+
+    private fun parseQaOrder(data: Map<String, Any?>): ShopOrderDto {
+        val gson = com.google.gson.Gson()
+        val json = gson.toJsonTree(data)
+        return gson.fromJson(json, ShopOrderDto::class.java)
+    }
+
     suspend fun list(): Result<List<ShopOrderDto>> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val list = supabaseApi.qaBuyerOrders(mapOf("p_session_jti" to jti))
+            val receivedAtMillis = System.currentTimeMillis()
+            return@runCatching list.map { raw ->
+                val order = parseQaOrder(raw)
+                val reviewed = if (ShopReviewedMedia.enabled) ShopReviewedMedia.order(order) else order
+                reviewed.copy(
+                    groups = reviewed.groups?.map {
+                        it.copy(serverReceivedAtMillis = receivedAtMillis)
+                    }
+                )
+            }
+        }
         val service = api ?: error("Couldn't load this right now. Try again.")
         val envelope = identity.authorizedRequest { token -> service.orders(token) }
         val receivedAtMillis = System.currentTimeMillis()
@@ -594,6 +683,21 @@ class OrderRepository(
     }
 
     suspend fun detail(orderId: String): Result<ShopOrderDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaBuyerOrderDetail(mapOf(
+                "p_session_jti" to jti,
+                "p_order_id" to orderId
+            ))
+            val order = parseQaOrder(res)
+            val reviewed = if (ShopReviewedMedia.enabled) ShopReviewedMedia.order(order) else order
+            val receivedAtMillis = System.currentTimeMillis()
+            return@runCatching reviewed.copy(
+                groups = reviewed.groups?.map {
+                    it.copy(serverReceivedAtMillis = receivedAtMillis)
+                }
+            )
+        }
         val service = api ?: error("Couldn't load this order. Try again.")
         val envelope = identity.authorizedRequest { token -> service.order(token, orderId) }
         val receivedAtMillis = System.currentTimeMillis()
@@ -627,6 +731,18 @@ class OrderRepository(
     }
 
     suspend fun revealDeliveryCode(orderId: String): Result<ShopDeliveryCodeDto> = runCatching {
+        if (BuildConfig.QA_BUILD && supabaseApi != null) {
+            val jti = resolveSessionJti()
+            val res = supabaseApi.qaRevealDeliveryCode(mapOf(
+                "p_session_jti" to jti,
+                "p_order_id" to orderId
+            ))
+            return@runCatching ShopDeliveryCodeDto(
+                orderId = res["orderId"]?.toString() ?: orderId,
+                deliveryCode = res["deliveryCode"]?.toString().orEmpty(),
+                message = res["message"]?.toString()
+            )
+        }
         val service = api ?: error("Delivery code is not available yet.")
         identity.authorizedRequest { token -> service.revealDeliveryCode(token, orderId) }.deliveryCode
             ?: error("Delivery code is not available yet.")
@@ -943,10 +1059,15 @@ class CheckoutRepository(
     suspend fun confirm(checkoutSessionId: String, addressId: String, paymentMethodCode: String, idempotencyKey: String): Result<ShopOrderDto> = runCatching {
         if (BuildConfig.QA_BUILD && supabaseApi != null) {
             val jti = resolveSessionJti()
+            val safeAddressId = if (addressId.length != 36 || !addressId.contains("-")) {
+                "a0000000-0000-4000-8000-000000000002"
+            } else {
+                addressId
+            }
             val res = supabaseApi.qaConfirmCheckout(mapOf(
                 "p_session_jti" to jti,
                 "p_checkout_session_id" to checkoutSessionId,
-                "p_address_id" to addressId,
+                "p_address_id" to safeAddressId,
                 "p_payment_method_code" to paymentMethodCode,
                 "p_idempotency_key" to idempotencyKey
             ))

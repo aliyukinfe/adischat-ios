@@ -944,10 +944,8 @@ class ShopViewModel(
                     _protectedState.value = _protectedState.value.copy(checkoutOrder = order, loading = false, error = null)
                     val orderMsg = if (order.paymentStatus == "paid") "Order created and verified (paid via voucher)." else "Order created. Payment is pending."
                     _state.value = _state.value.copy(message = orderMsg)
-                    if (!com.adischat.app.BuildConfig.QA_BUILD) {
-                        loadOrders()
-                        loadCart()
-                    }
+                    loadOrders()
+                    loadCart()
                 }
                 .onFailure {
                     confirmIdempotencyKeys.remove(checkoutSessionId)
