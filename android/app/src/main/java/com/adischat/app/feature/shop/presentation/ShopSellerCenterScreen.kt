@@ -127,6 +127,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -160,6 +163,7 @@ import coil.compose.AsyncImage
 import com.adischat.app.R
 import com.adischat.app.feature.shop.data.ShopBannerDto
 import com.adischat.app.feature.shop.data.ShopCategoryDto
+import com.adischat.app.feature.shop.data.ShopSellingUnitDto
 import com.adischat.app.feature.shop.data.ShopAddressDto
 import com.adischat.app.feature.shop.data.ShopAddressRequest
 import com.adischat.app.feature.shop.data.ShopAdminAuditLogDto
@@ -227,10 +231,15 @@ private val SellerCenterOnColor = AdisGebeyaColors.OnColor
 @Composable
 internal fun SellerCenterScreen(
     protectedState: ShopProtectedState,
+    openNotificationsInitially: Boolean = false,
     categories: List<ShopCategoryDto>,
+    sellingUnits: List<ShopSellingUnitDto>,
     onBack: () -> Unit,
     onLoad: () -> Unit,
     onLoadSellerFeatures: () -> Unit,
+    onLoadNotifications: () -> Unit,
+    onMarkNotificationRead: (String) -> Unit,
+    onMarkAllNotificationsRead: () -> Unit,
     messageActions: SellerMessageActions,
     businessActions: SellerBusinessActions,
     onSaveApplicationDraft: (ShopSellerApplicationRequest) -> Unit,
@@ -239,28 +248,166 @@ internal fun SellerCenterScreen(
     onUploadApplicationDocument: (String, ByteArray, String, String) -> Unit,
     onRemoveApplicationDocument: (String) -> Unit,
     onRespondSellerRequest: (String, String, String, Int) -> Unit,
-    onSellerAction: (String, String, String, String?, String?, String?) -> Unit,
+    onSellerAction: (String, String, String, String?, String?, String?, Int?) -> Unit,
     onCreateProduct: () -> Unit,
     onEditProduct: (String) -> Unit,
     onCloseProductEditor: () -> Unit,
     onSaveProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onSaveBeforeImagePick: (String, ShopSellerProductDraftPayload, () -> Unit) -> Unit,
+    onSaveAndSubmitProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onLoadCategoryAttributes: (String) -> Unit,
     onSubmitProduct: (String) -> Unit,
-    onUploadProductMedia: (String, ByteArray, String, Int, Int, String) -> Unit,
+    onArchiveProduct: (String) -> Unit,
+    onUploadProductMedia: (String, List<android.net.Uri>, android.content.Context, String) -> Unit,
+    onRetryProductMedia: (String) -> Unit,
     onDeleteProductMedia: (String, String) -> Unit,
     onReorderProductMedia: (String, List<String>, String) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(SellerCenterTab.Dashboard) }
+    var selectedTab by rememberSaveable { mutableStateOf(SellerCenterTab.Dashboard) }
+    var tabHistory by rememberSaveable { mutableStateOf(emptyList<String>()) }
     var orderFilter by remember { mutableStateOf("New") }
-    LaunchedEffect(Unit) { onLoad() }
+    var selectedOrderGroupId by rememberSaveable { mutableStateOf<String?>(null) }
+    var showNotifications by rememberSaveable { mutableStateOf(openNotificationsInitially) }
+    var notificationOriginTab by rememberSaveable { mutableStateOf<SellerCenterTab?>(null) }
+    var returnToNotifications by rememberSaveable { mutableStateOf(false) }
+    var confirmEditorClose by rememberSaveable { mutableStateOf(false) }
+    val productEditorStateHolder = rememberSaveableStateHolder()
+    val currentProtectedState by rememberUpdatedState(protectedState)
+    fun openTab(tab: SellerCenterTab) {
+        returnToNotifications = false
+        notificationOriginTab = null
+        if (tab != selectedTab) {
+            tabHistory = tabHistory + selectedTab.name
+            selectedTab = tab
+        }
+    }
+    fun closeNotifications() {
+        showNotifications = false
+        notificationOriginTab?.let { origin ->
+            if (selectedTab != origin) {
+                selectedTab = origin
+                if (tabHistory.lastOrNull() == origin.name) tabHistory = tabHistory.dropLast(1)
+            }
+        }
+        notificationOriginTab = null
+        returnToNotifications = false
+    }
+    fun openNotificationDestination(tab: SellerCenterTab) {
+        val origin = notificationOriginTab ?: selectedTab
+        openTab(tab)
+        notificationOriginTab = origin
+        returnToNotifications = true
+        showNotifications = false
+    }
+    fun goBack() {
+        when {
+            showNotifications -> closeNotifications()
+            selectedOrderGroupId != null -> {
+                selectedOrderGroupId = null
+                if (returnToNotifications) {
+                    showNotifications = true
+                    returnToNotifications = false
+                }
+            }
+            currentProtectedState.selectedConversation != null -> {
+                messageActions.close()
+                if (returnToNotifications) {
+                    showNotifications = true
+                    returnToNotifications = false
+                }
+            }
+            selectedTab == SellerCenterTab.Products && currentProtectedState.selectedSellerProduct != null -> confirmEditorClose = true
+            returnToNotifications -> {
+                showNotifications = true
+                returnToNotifications = false
+            }
+            tabHistory.isNotEmpty() -> {
+                selectedTab = SellerCenterTab.valueOf(tabHistory.last())
+                tabHistory = tabHistory.dropLast(1)
+            }
+            selectedTab != SellerCenterTab.Dashboard -> selectedTab = SellerCenterTab.Dashboard
+            else -> onBack()
+        }
+    }
+    BackHandler { goBack() }
+    if (confirmEditorClose) {
+        AlertDialog(
+            onDismissRequest = { confirmEditorClose = false },
+            title = { Text("Close product editor?") },
+            text = { Text("Unsaved changes stay in this Seller Center session. Save the draft to keep changes on your store before leaving Seller Center.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmEditorClose = false
+                    onCloseProductEditor()
+                }) { Text("Close editor") }
+            },
+            dismissButton = { TextButton(onClick = { confirmEditorClose = false }) { Text("Keep editing") } },
+        )
+    }
+    LaunchedEffect(openNotificationsInitially) {
+        if (openNotificationsInitially) {
+            notificationOriginTab = selectedTab
+            showNotifications = true
+        }
+    }
+    val notificationStoreId = protectedState.sellerBusiness?.selectedStore?.id
+    val storeOrderGroups = if (protectedState.sellerOrdersLoaded && protectedState.sellerOrderStoreId == notificationStoreId) {
+        protectedState.sellerOrderGroups.filter { it.storeId == notificationStoreId }
+    } else emptyList()
+    val storeConversations = protectedState.sellerConversations.filter { it.storeId == notificationStoreId }
+    LaunchedEffect(notificationStoreId) { selectedOrderGroupId = null }
+    LaunchedEffect(notificationStoreId, protectedState.sellerApplication?.id) {
+        if (!notificationStoreId.isNullOrBlank() || protectedState.sellerApplication != null) onLoadNotifications()
+    }
+    var sellerResolutionStarted by remember { mutableStateOf(false) }
+    var initialBrandPhaseComplete by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        sellerResolutionStarted = true
+        onLoad()
+        delay(500)
+        initialBrandPhaseComplete = true
+    }
+    if (shouldShowSellerInitialLoader(initialBrandPhaseComplete, protectedState.error != null)) {
+        SellerCenterInitialLoader()
+        return
+    }
+    val resolvingSeller = isSellerIdentityResolving(
+        resolutionStarted = sellerResolutionStarted,
+        loading = protectedState.loading,
+        sellerStatus = protectedState.sellerStatus,
+        hasApplication = protectedState.sellerApplication != null,
+        hasError = protectedState.error != null,
+    )
+    if (resolvingSeller) {
+        SellerCenterDashboardSkeleton()
+        return
+    }
+
     val featuresUnlocked = sellerFeaturesUnlocked(protectedState.sellerStatus)
     LaunchedEffect(featuresUnlocked) {
         if (featuresUnlocked) onLoadSellerFeatures()
     }
 
-    if (!featuresUnlocked) {
+    val resolvingSellerDashboard = featuresUnlocked &&
+        protectedState.loading &&
+        protectedState.sellerBusiness == null &&
+        protectedState.sellerOrderGroups.isEmpty() &&
+        protectedState.sellerProducts.isEmpty() &&
+        protectedState.sellerConversations.isEmpty()
+    if (resolvingSellerDashboard) {
+        SellerCenterDashboardSkeleton()
+        return
+    }
+
+    if (!featuresUnlocked && !showNotifications) {
         SellerApplicantScreen(
             protectedState = protectedState,
             onBack = onBack,
+            notificationUnreadCount = protectedState.sellerNotificationUnreadCount,
+            onOpenNotifications = {
+                notificationOriginTab = selectedTab
+                showNotifications = true
+            },
             onSaveDraft = onSaveApplicationDraft,
             onSubmit = onSubmitCompleteApplication,
             onRespondInfoRequest = onRespondApplicationInfoRequest,
@@ -270,10 +417,90 @@ internal fun SellerCenterScreen(
         return
     }
 
+    if (showNotifications) {
+        ShopNotificationsScreen(
+            notifications = protectedState.sellerNotifications.takeIf { protectedState.sellerNotificationStoreId == notificationStoreId }.orEmpty(),
+            unreadCount = protectedState.sellerNotificationUnreadCount.takeIf { protectedState.sellerNotificationStoreId == notificationStoreId } ?: 0,
+            loading = protectedState.loading,
+            onBack = ::closeNotifications,
+            onRefresh = onLoadNotifications,
+            onMarkRead = onMarkNotificationRead,
+            onMarkAllRead = onMarkAllNotificationsRead,
+            sellerView = true,
+            onOpen = { target ->
+                when (target) {
+                    is ShopNotificationTarget.SellerOrder -> {
+                        openNotificationDestination(SellerCenterTab.Orders)
+                        if (storeOrderGroups.any { it.id == target.orderGroupId }) {
+                            selectedOrderGroupId = target.orderGroupId
+                        }
+                    }
+                    is ShopNotificationTarget.Conversation -> {
+                        if (storeConversations.any {
+                                it.id == target.conversationId && it.storeId == notificationStoreId
+                            }) {
+                            openNotificationDestination(SellerCenterTab.Messages)
+                            messageActions.open(target.conversationId)
+                        }
+                    }
+                    ShopNotificationTarget.SellerRequests -> {
+                        openNotificationDestination(SellerCenterTab.Requests)
+                    }
+                    ShopNotificationTarget.SellerProducts -> {
+                        openNotificationDestination(SellerCenterTab.Products)
+                    }
+                    ShopNotificationTarget.SellerMore -> {
+                        openNotificationDestination(SellerCenterTab.More)
+                    }
+                    else -> Unit
+                }
+            },
+        )
+        return
+    }
+
+    selectedOrderGroupId?.let { groupId ->
+        val group = storeOrderGroups.firstOrNull { it.id == groupId }
+        if (group != null) {
+            SellerOrderDetailPage(
+                group = group,
+                busy = protectedState.busyIds.contains(group.id),
+                onBack = { goBack() },
+                onSellerAction = onSellerAction,
+                onDeadlineReached = onLoadSellerFeatures,
+            )
+            return
+        }
+    }
+
+    if (selectedTab == SellerCenterTab.Messages && protectedState.selectedConversation != null) {
+        Box(
+            Modifier.fillMaxSize().background(SellerCenterBackground).statusBarsPadding().padding(16.dp),
+        ) {
+            SellerMessagesPage(
+                state = protectedState,
+                onLoad = messageActions.load,
+                onOpen = messageActions.open,
+                onClose = messageActions.close,
+                onRefreshConversation = messageActions.refresh,
+                onSend = messageActions.send,
+                onUpload = messageActions.upload,
+                onAction = messageActions.update,
+                onTyping = messageActions.typing,
+                onOpenProduct = { productId ->
+                    messageActions.close()
+                    openTab(SellerCenterTab.Products)
+                    messageActions.openProduct(productId)
+                },
+            )
+        }
+        return
+    }
+
     Scaffold(
         containerColor = SellerCenterBackground,
         bottomBar = {
-            SellerCenterBottomBar(selectedTab = selectedTab, onSelect = { selectedTab = it })
+            SellerCenterBottomBar(selectedTab = selectedTab, onSelect = ::openTab)
         },
     ) { padding ->
         LazyColumn(
@@ -284,13 +511,14 @@ internal fun SellerCenterScreen(
             item {
                 SellerHeader(
                     protectedState = protectedState,
-                    onBack = onBack,
-                    onSearch = { selectedTab = SellerCenterTab.Products },
-                    onMessages = { selectedTab = SellerCenterTab.Messages },
+                    onBack = { goBack() },
+                    onSearch = { openTab(SellerCenterTab.Products) },
+                    onMessages = { openTab(SellerCenterTab.Messages) },
+                    onNotifications = {
+                        notificationOriginTab = selectedTab
+                        showNotifications = true
+                    },
                 )
-            }
-            if (protectedState.loading) {
-                items(3) { SkeletonCard() }
             }
             protectedState.error?.let { message ->
                 item { EmptyCard(message) }
@@ -307,49 +535,74 @@ internal fun SellerCenterScreen(
                             onRemoveDocument = onRemoveApplicationDocument,
                         )
                     }
-                    item { SellerKpiGrid(protectedState.sellerOrderGroups) }
+                    item { SellerKpiGrid(storeOrderGroups) }
                     item {
                         SellerQuickActions(
-                            onTab = { selectedTab = it },
-                            onMore = { selectedTab = SellerCenterTab.More },
+                            onTab = ::openTab,
+                            onMore = { openTab(SellerCenterTab.More) },
                         )
                     }
-                    item { SellerRecentOrders(protectedState.sellerOrderGroups, onOpenOrders = { selectedTab = SellerCenterTab.Orders }) }
+                    item { SellerRecentOrders(storeOrderGroups, onOpenOrders = { openTab(SellerCenterTab.Orders) }) }
                 }
                 SellerCenterTab.Orders -> {
                     item { SellerOrdersPageHeader(orderFilter, onFilter = { orderFilter = it }) }
-                    val filtered = protectedState.sellerOrderGroups.filter { sellerOrderMatchesTab(it, orderFilter) }
-                    if (filtered.isEmpty()) {
+                    val filtered = storeOrderGroups.filter { sellerOrderMatchesTab(it, orderFilter) }
+                    if (!protectedState.sellerOrdersLoaded || protectedState.sellerOrderStoreId != notificationStoreId) {
+                        item { CircularProgressIndicator() }
+                    } else if (filtered.isEmpty()) {
                         item { EmptyCard("No ${orderFilter.lowercase()} seller orders right now.") }
                     } else {
                         items(filtered, key = { it.id }) { group ->
-                            SellerOrderGroupCard(group, protectedState.busyIds.contains(group.id), onSellerAction)
+                            SellerOrderListCard(
+                                group = group,
+                                onOpen = { selectedOrderGroupId = group.id },
+                                onDeadlineReached = onLoadSellerFeatures,
+                            )
                         }
                     }
                 }
                 SellerCenterTab.Products -> {
-                    item {
+                    item(key = "seller-products-page") {
                         SellerProductsPage(
                             protectedState = protectedState,
+                            editorStateHolder = productEditorStateHolder,
                             categories = categories,
+                            sellingUnits = sellingUnits,
                             onCreateProduct = onCreateProduct,
                             onEditProduct = onEditProduct,
-                            onCloseEditor = onCloseProductEditor,
+                            onCloseEditor = { confirmEditorClose = true },
                             onSaveProduct = onSaveProduct,
+                            onSaveBeforeImagePick = onSaveBeforeImagePick,
+                            onSaveAndSubmitProduct = onSaveAndSubmitProduct,
+                            onLoadCategoryAttributes = onLoadCategoryAttributes,
                             onSubmitProduct = onSubmitProduct,
+                            onArchiveProduct = onArchiveProduct,
                             onUploadProductMedia = onUploadProductMedia,
+                            onRetryProductMedia = onRetryProductMedia,
                             onDeleteProductMedia = onDeleteProductMedia,
                             onReorderProductMedia = onReorderProductMedia,
                         )
                     }
                 }
                 SellerCenterTab.Requests -> {
-                    item { SellerRequestsPage(protectedState.sellerRequests, protectedState.busyIds, onRespondSellerRequest) }
+                    item {
+                        SellerRequestsPage(
+                            if (protectedState.sellerRequestsStoreId == notificationStoreId)
+                                protectedState.sellerRequests ?: ShopSellerRequestsDto()
+                            else ShopSellerRequestsDto(),
+                            protectedState.busyIds,
+                            onRespondSellerRequest,
+                        )
+                    }
                 }
                 SellerCenterTab.Messages -> {
                     item {
                         SellerMessagesPage(
-                            state = protectedState,
+                            state = protectedState.copy(
+                                sellerConversations = storeConversations,
+                                sellerMessageUnreadCount = storeConversations.sumOf { it.unreadCount.coerceAtLeast(0) },
+                                selectedConversation = protectedState.selectedConversation?.takeIf { it.storeId == notificationStoreId },
+                            ),
                             onLoad = messageActions.load,
                             onOpen = messageActions.open,
                             onClose = messageActions.close,
@@ -358,11 +611,24 @@ internal fun SellerCenterScreen(
                             onUpload = messageActions.upload,
                             onAction = messageActions.update,
                             onTyping = messageActions.typing,
+                            onOpenProduct = { productId ->
+                                messageActions.close()
+                                openTab(SellerCenterTab.Products)
+                                messageActions.openProduct(productId)
+                            },
                         )
                     }
                 }
                 SellerCenterTab.More -> {
-                    item { SellerBusinessSuite(protectedState.sellerBusiness, protectedState.busyIds, businessActions) }
+                    item {
+                        SellerBusinessSuite(
+                            protectedState.sellerBusiness,
+                            protectedState.busyIds,
+                            businessActions,
+                            loading = protectedState.loading,
+                            hasError = protectedState.error != null,
+                        )
+                    }
                 }
             }
         }
@@ -410,10 +676,12 @@ private fun SellerHeader(
     onBack: () -> Unit,
     onSearch: () -> Unit,
     onMessages: () -> Unit,
+    onNotifications: () -> Unit,
 ) {
     val app = protectedState.sellerApplication
+    val notificationStoreId = protectedState.sellerBusiness?.selectedStore?.id
     val status = protectedState.sellerStatus.ifBlank { app?.status ?: "not_started" }
-    val storeName = app?.proposedStoreName ?: protectedState.sellerOrderGroups.firstOrNull()?.storeNameSnapshot ?: "Seller Account"
+    val storeName = if (status == "approved") "Seller Center" else app?.proposedStoreName ?: "Seller Account"
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(SellerCenterOnColor),
@@ -429,7 +697,12 @@ private fun SellerHeader(
                 }
                 Row(Modifier.align(Alignment.TopEnd).padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     HeaderIcon(Icons.Default.Search, "Search seller center", onClick = onSearch)
-                    HeaderIcon(Icons.Default.Notifications, "Seller notifications", onClick = {})
+                    HeaderIcon(
+                        Icons.Default.Notifications,
+                        "Seller notifications",
+                        onClick = onNotifications,
+                        badge = protectedState.sellerNotificationUnreadCount.takeIf { protectedState.sellerNotificationStoreId == notificationStoreId } ?: 0,
+                    )
                     HeaderIcon(Icons.Default.Message, "Seller messages", onClick = onMessages)
                 }
             }
@@ -529,12 +802,17 @@ private fun SellerRequestCard(type: String, title: String, status: String, body:
             }
             if (body.isNotBlank()) Text(body, color = SellerCenterMuted, lineHeight = 19.sp, maxLines = 3, overflow = TextOverflow.Ellipsis)
             if (amount.isNotBlank()) Text(amount, color = SellerCenterGreen, fontWeight = FontWeight.Black)
-            OutlinedButton(onClick = onRespond, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Text(if (busy) "Sending..." else "Send seller response")
+            if (sellerRequestCanRespond(status)) {
+                OutlinedButton(onClick = onRespond, enabled = !busy, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                    Text(if (busy) "Sending..." else "Send seller response")
+                }
             }
         }
     }
 }
+
+internal fun sellerRequestCanRespond(status: String): Boolean =
+    status !in setOf("rejected", "cancelled", "completed", "closed")
 
 @Composable
 private fun SellerKpiGrid(groups: List<ShopOrderGroupDto>) {
@@ -655,7 +933,7 @@ private fun sellerOrderMatchesTab(group: ShopOrderGroupDto, tab: String): Boolea
         "Packed" -> status == "packed"
         "Shipped" -> status in listOf("handed_to_carrier", "shipped", "out_for_delivery")
         "Completed" -> status == "delivered"
-        "Cancelled" -> status in listOf("cancelled", "rejected")
+        "Cancelled" -> status in listOf("cancelled", "rejected", "expired")
         "Returns" -> status.contains("return", ignoreCase = true)
         else -> true
     }

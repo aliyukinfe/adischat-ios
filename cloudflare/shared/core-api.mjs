@@ -16,6 +16,9 @@ function boolInt(value) { return value ? 1 : 0; }
 function asBool(value) { return value === true || value === 1 || value === "1"; }
 function cleanText(value, max = 4000) { return String(value ?? "").slice(0, max); }
 function cleanEmail(value) { return cleanText(value, 160).trim().toLowerCase(); }
+function parseJsonText(value, fallback = null) {
+  try { return typeof value === "string" ? JSON.parse(value) : (value ?? fallback); } catch { return fallback; }
+}
 function normalizeUsername(value, fallback = "") {
   const raw = String(value || fallback || "").trim().toLowerCase().replace(/^@/, "");
   const cleaned = raw.replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_+|_+$/g, "").slice(0, 24);
@@ -99,9 +102,128 @@ function userJson(row = {}) {
     verification_request_status: row.verification_request_status || null,
     verified: Number(row.verification_level || 0) >= 3,
     lastSeenVisibility: row.last_seen_visibility || row.lastSeenVisibility || "public",
+    onlineStatusVisibility: row.online_status_visibility || row.onlineStatusVisibility || "same_as_last_seen",
+    profilePhotoVisibility: row.profile_photo_visibility || row.profilePhotoVisibility || "everyone",
+    phoneNumberVisibility: row.phone_number_visibility || row.phoneNumberVisibility || "nobody",
+    readReceiptsEnabled: asBool(row.read_receipts_enabled ?? row.readReceiptsEnabled ?? 1),
+    whoCanMessageMe: row.who_can_message_me || row.whoCanMessageMe || "everyone",
+    whoCanCallMe: row.who_can_call_me || row.whoCanCallMe || "everyone",
+    whoCanAddMeToGroups: row.who_can_add_me_to_groups || row.whoCanAddMeToGroups || "everyone",
     accountStatus: row.account_status || row.accountStatus || "active",
     deletedAt: Number(row.deleted_at || row.deletedAt || 0),
   };
+}
+
+function restaurantOrderJson(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    restaurant_slug: row.restaurant_slug,
+    customer_name: row.customer_name,
+    table_number: row.table_number,
+    order_seq: row.order_seq,
+    order_type: row.order_type || "dine-in",
+    status: row.status || "pending",
+    total: Number(row.total || 0),
+    items: parseJsonText(row.items, []),
+    payment_method: row.payment_method || "",
+    payment_ref: row.payment_ref || "",
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    _source_table: "cloudflare_d1",
+  };
+}
+
+function restaurantSlugFromPath(pathname) {
+  const match = pathname.match(/^\/api\/public\/restaurants\/([^/]+)\/orders(?:\/([^/]+))?$/);
+  if (!match) return null;
+  return { slug: cleanText(decodeURIComponent(match[1]), 80).toLowerCase(), id: match[2] ? decodeURIComponent(match[2]) : "" };
+}
+
+async function ensureRestaurantOrdersTable(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS restaurant_orders (
+    id TEXT PRIMARY KEY,
+    restaurant_slug TEXT NOT NULL,
+    customer_name TEXT,
+    table_number INTEGER,
+    order_seq INTEGER,
+    order_type TEXT DEFAULT 'dine-in',
+    status TEXT NOT NULL DEFAULT 'pending',
+    total REAL NOT NULL DEFAULT 0,
+    items TEXT NOT NULL DEFAULT '[]',
+    payment_method TEXT,
+    payment_ref TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`).run();
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS idx_restaurant_orders_slug_status_created ON restaurant_orders(restaurant_slug, status, created_at)").run();
+}
+
+async function handlePublicRestaurantOrders(request, env) {
+  const url = new URL(request.url);
+  const route = restaurantSlugFromPath(url.pathname);
+  if (!route) return null;
+  if (!env.DB) return json({ success: false, error: "D1 database is not configured" }, 500);
+  await ensureRestaurantOrdersTable(env);
+
+  const slug = route.slug;
+  const t = now();
+  if (request.method === "GET") {
+    const ids = (url.searchParams.get("ids") || "").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 50);
+    const statuses = (url.searchParams.get("statuses") || "pending,accepted,preparing,ready").split(",").map((v) => v.trim()).filter(Boolean).slice(0, 10);
+    let rows;
+    if (ids.length) {
+      const placeholders = ids.map(() => "?").join(",");
+      rows = await env.DB.prepare(`SELECT * FROM restaurant_orders WHERE restaurant_slug=? AND id IN (${placeholders}) ORDER BY created_at ASC`)
+        .bind(slug, ...ids).all();
+    } else {
+      const placeholders = statuses.map(() => "?").join(",");
+      rows = await env.DB.prepare(`SELECT * FROM restaurant_orders WHERE restaurant_slug=? AND status IN (${placeholders}) ORDER BY created_at ASC LIMIT 200`)
+        .bind(slug, ...statuses).all();
+    }
+    return json({ success: true, rows: (rows.results || []).map(restaurantOrderJson), table: "cloudflare_d1" });
+  }
+
+  if (request.method === "POST") {
+    const body = await bodyJson(request);
+    const next = await env.DB.prepare("SELECT COALESCE(MAX(order_seq), 0) + 1 AS next_seq FROM restaurant_orders WHERE restaurant_slug=?").bind(slug).first();
+    const orderId = cleanText(body.id || id(`ord_${slug}`), 120);
+    const orderSeq = Number(body.order_seq || next?.next_seq || 1);
+    const items = Array.isArray(body.items) ? body.items : [];
+    await env.DB.prepare(`INSERT INTO restaurant_orders
+      (id, restaurant_slug, customer_name, table_number, order_seq, order_type, status, total, items, payment_method, payment_ref, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(
+        orderId,
+        slug,
+        cleanText(body.customer_name || "", 180),
+        body.table_number ?? null,
+        orderSeq,
+        cleanText(body.order_type || "dine-in", 40),
+        cleanText(body.status || "pending", 40),
+        Number(body.total || 0),
+        JSON.stringify(items).slice(0, 250000),
+        cleanText(body.payment_method || "", 80),
+        cleanText(body.payment_ref || "", 250000),
+        t,
+        t
+      ).run();
+    const row = await env.DB.prepare("SELECT * FROM restaurant_orders WHERE id=? AND restaurant_slug=?").bind(orderId, slug).first();
+    return json({ success: true, row: restaurantOrderJson(row), table: "cloudflare_d1" });
+  }
+
+  if (request.method === "PATCH") {
+    const body = await bodyJson(request);
+    const orderId = cleanText(body.id || route.id || "", 120);
+    const status = cleanText(body.status || "", 40);
+    if (!orderId || !status) return json({ success: false, error: "id and status are required" }, 400);
+    await env.DB.prepare("UPDATE restaurant_orders SET status=?, updated_at=? WHERE id=? AND restaurant_slug=?")
+      .bind(status, t, orderId, slug).run();
+    const row = await env.DB.prepare("SELECT * FROM restaurant_orders WHERE id=? AND restaurant_slug=?").bind(orderId, slug).first();
+    return json({ success: true, row: restaurantOrderJson(row), table: "cloudflare_d1" });
+  }
+
+  return json({ success: false, error: "Method not allowed" }, 405);
 }
 
 async function getUser(env, uid) {
@@ -189,9 +311,13 @@ async function sendMessagePush(env, conversation, sender, message) {
   await sendPushToUser(env, receiverUid, {
     type: "message",
     conversationId: message.conversationId,
+    chatId: message.conversationId,
     messageId: message.id,
     senderId: sender.uid,
     senderName,
+    title: senderName,
+    body,
+  }, {
     title: senderName,
     body,
   });
@@ -327,6 +453,10 @@ async function handleUsers(request, env, user) {
     }
     return json(userJson(row));
   }
+  if (request.method === "GET" && ["/api/users/privacy", "/api/users/me/privacy", "/api/settings/privacy", "/settings/privacy"].includes(url.pathname)) {
+    const row = await ensureUserProfile(env, user);
+    return json(userJson(row));
+  }
   if (request.method === "POST" && url.pathname === "/api/users/sync") {
     const body = await bodyJson(request);
     const existing = await ensureUserProfile(env, user, body);
@@ -351,15 +481,53 @@ async function handleUsers(request, env, user) {
       .bind(user.uid, name, username, cleanText(body.phone, 64), cleanText(body.email || user.email, 160), cleanText(body.dob, 32), "", existing?.role || body.role || "user", boolInt(body.emailVerified), now(), now(), now()).run();
     return json(userJson(await getUser(env, user.uid)));
   }
-  if (request.method === "PUT" && url.pathname === "/api/users/privacy") {
+  if ((["PUT", "POST", "PATCH"].includes(request.method)) &&
+      ["/api/users/privacy", "/api/users/me/privacy", "/api/settings/privacy", "/settings/privacy"].includes(url.pathname)) {
     const body = await bodyJson(request);
-    const visibility = ["public", "private"].includes(body.lastSeenVisibility) ? body.lastSeenVisibility : "public";
-    await env.DB.prepare("UPDATE users SET last_seen_visibility=?, updated_at=? WHERE uid=?")
-      .bind(visibility, now(), user.uid).run();
+    const current = await getUser(env, user.uid);
+    const lastSeenVisibility = ["public", "private"].includes(body.lastSeenVisibility)
+      ? body.lastSeenVisibility
+      : current?.last_seen_visibility || "public";
+    const onlineStatusVisibility = ["same_as_last_seen", "public", "private"].includes(body.onlineStatusVisibility)
+      ? body.onlineStatusVisibility
+      : current?.online_status_visibility || "same_as_last_seen";
+    const profilePhotoVisibility = ["everyone", "contacts", "nobody"].includes(body.profilePhotoVisibility)
+      ? body.profilePhotoVisibility
+      : current?.profile_photo_visibility || "everyone";
+    const phoneNumberVisibility = ["everyone", "contacts", "nobody"].includes(body.phoneNumberVisibility)
+      ? body.phoneNumberVisibility
+      : current?.phone_number_visibility || "nobody";
+    const readReceiptsEnabled = typeof body.readReceiptsEnabled === "boolean"
+      ? boolInt(body.readReceiptsEnabled)
+      : Number(current?.read_receipts_enabled ?? 1);
+    const whoCanMessageMe = ["everyone", "contacts", "nobody"].includes(body.whoCanMessageMe)
+      ? body.whoCanMessageMe
+      : current?.who_can_message_me || "everyone";
+    const whoCanCallMe = ["everyone", "contacts", "nobody"].includes(body.whoCanCallMe)
+      ? body.whoCanCallMe
+      : current?.who_can_call_me || "everyone";
+    const whoCanAddMeToGroups = ["everyone", "contacts", "nobody"].includes(body.whoCanAddMeToGroups)
+      ? body.whoCanAddMeToGroups
+      : current?.who_can_add_me_to_groups || "everyone";
+    await env.DB.prepare(`UPDATE users SET
+        last_seen_visibility=?,
+        online_status_visibility=?,
+        profile_photo_visibility=?,
+        phone_number_visibility=?,
+        read_receipts_enabled=?,
+        who_can_message_me=?,
+        who_can_call_me=?,
+        who_can_add_me_to_groups=?,
+        updated_at=?
+      WHERE uid=?`)
+      .bind(lastSeenVisibility, onlineStatusVisibility, profilePhotoVisibility, phoneNumberVisibility, readReceiptsEnabled, whoCanMessageMe, whoCanCallMe, whoCanAddMeToGroups, now(), user.uid).run();
     return json(userJson(await getUser(env, user.uid)));
   }
-  if (request.method === "DELETE" && url.pathname === "/api/users/me") {
+  if ((request.method === "DELETE" && url.pathname === "/api/users/me") ||
+      (request.method === "POST" && url.pathname === "/api/users/me/delete") ||
+      (["DELETE", "POST"].includes(request.method) && ["/api/account", "/api/account/delete", "/account", "/account/delete", "/api/settings/account/delete"].includes(url.pathname))) {
     const t = now();
+    await ensureUserProfile(env, user);
     await env.DB.prepare(
       `UPDATE users SET
         name='Deleted Account',
@@ -376,6 +544,8 @@ async function handleUsers(request, env, user) {
     ).bind(t, t, user.uid).run();
     await env.DB.prepare("DELETE FROM push_tokens WHERE uid=?").bind(user.uid).run().catch(() => null);
     await env.DB.prepare("UPDATE linked_devices SET revoked_at=? WHERE user_id=? AND revoked_at=0").bind(t, user.uid).run().catch(() => null);
+    await env.DB.prepare("DELETE FROM sessions WHERE uid=? OR user_id=?").bind(user.uid, user.uid).run().catch(() => null);
+    await env.DB.prepare("DELETE FROM desktop_sessions WHERE uid=? OR user_id=?").bind(user.uid, user.uid).run().catch(() => null);
     return json({ deleted: true, deletedAt: t });
   }
   const updateMatch = url.pathname.match(/^\/api\/users\/([^/]+)$/);
@@ -400,8 +570,13 @@ async function handleUsers(request, env, user) {
     })));
   }
   if (request.method === "POST" && url.pathname === "/api/users/heartbeat") {
-    await env.DB.prepare("UPDATE users SET last_seen=?, updated_at=? WHERE uid=?").bind(now(), now(), user.uid).run();
-    return json({ ok: true, lastSeen: now() });
+    const t = now();
+    const minWriteAgeMs = 60_000;
+    const result = await env.DB.prepare("UPDATE users SET last_seen=?, updated_at=? WHERE uid=? AND COALESCE(last_seen, 0)<?")
+      .bind(t, t, user.uid, t - minWriteAgeMs).run();
+    const written = Number(result?.meta?.changes || 0) > 0;
+    console.debug("[presence] heartbeat", { uid: user.uid, written });
+    return json({ ok: true, lastSeen: t, written });
   }
   const presenceMatch = url.pathname.match(/^\/api\/users\/([^/]+)\/presence$/);
   if (request.method === "GET" && presenceMatch) {
@@ -420,6 +595,23 @@ async function handleUsers(request, env, user) {
 
 async function handleConversations(request, env, user) {
   const url = new URL(request.url);
+  if (request.method === "GET" && url.pathname === "/api/conversations/updates") {
+    const rows = await env.DB.prepare(`SELECT id, type, participant1_id, participant2_id, user_id, last_message, last_message_at, updated_at, p1_unread, p2_unread, unread_for_user, unread_for_admin
+      FROM conversations
+      WHERE participant1_id=? OR participant2_id=? OR user_id=?
+      ORDER BY last_message_at DESC, updated_at DESC`).bind(user.uid, user.uid, user.uid).all();
+    return json((rows.results || []).map((row) => {
+      const isP1 = row.participant1_id === user.uid;
+      const unread = row.type === "direct" ? (isP1 ? row.p1_unread : row.p2_unread) : (row.user_id === user.uid ? row.unread_for_user : row.unread_for_admin);
+      return {
+        id: row.id,
+        type: row.type || "support",
+        lastMessage: row.last_message || "",
+        lastMessageAt: Number(row.last_message_at || row.updated_at || 0),
+        unreadCount: Number(unread || 0),
+      };
+    }));
+  }
   if (request.method === "GET" && url.pathname === "/api/conversations") {
     const rows = await env.DB.prepare(`SELECT c.*, u.name AS other_name, u.photo_url AS other_photo_url, u.verification_level AS other_verification_level
       FROM conversations c
@@ -449,13 +641,16 @@ async function handleConversations(request, env, user) {
     const conversation = await getConversationForUser(env, conversationId, user.uid);
     if (!conversation) return json({ error: "Conversation not found" }, 404);
     if (request.method === "GET") {
+      const after = Number(url.searchParams.get("after") || 0);
+      const afterClause = after > 0 ? " AND m.timestamp > ?" : "";
+      const params = after > 0 ? [conversationId, after] : [conversationId];
       const rows = await env.DB.prepare(`SELECT m.*, u.name AS sender_name, u.photo_url AS sender_photo_url, u.verification_level AS sender_verification_level,
         COALESCE(r.deliveredAt, 0) AS delivered_at, COALESCE(r.readAt, 0) AS read_at
         FROM messages m
         LEFT JOIN users u ON u.uid=m.sender_id
         LEFT JOIN message_receipts r ON r.threadType='direct' AND r.threadId=m.conversation_id AND r.messageId=m.id AND r.uid<>m.sender_id
-        WHERE m.conversation_id=?
-        ORDER BY m.timestamp ASC LIMIT 1000`).bind(conversationId).all();
+        WHERE m.conversation_id=?${afterClause}
+        ORDER BY m.timestamp ASC LIMIT 1000`).bind(...params).all();
       return json((rows.results || []).map(messageJson));
     }
     if (request.method === "POST") {
@@ -695,7 +890,62 @@ async function handleNotifications(request, env, user) {
 }
 
 export async function handlePublicCoreRequest(request, env) {
-  return handlePublicAuth(request, env);
+  return (await handlePublicRestaurantOrders(request, env))
+    || (await handlePublicAuth(request, env));
+}
+
+function secretsMatch(actual, expected) {
+  const left = new TextEncoder().encode(String(actual || ""));
+  const right = new TextEncoder().encode(String(expected || ""));
+  if (!left.length || left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) difference |= left[index] ^ right[index];
+  return difference === 0;
+}
+
+export async function handleInternalShopPushRequest(request, env) {
+  const url = new URL(request.url);
+  if (request.method !== "POST" || url.pathname !== "/api/internal/shop/push") return null;
+  if (!env.ADISHOP_PUSH_BRIDGE_SECRET || !secretsMatch(request.headers.get("x-adishop-push-secret"), env.ADISHOP_PUSH_BRIDGE_SECRET)) {
+    return json({ error: "Unauthorized" }, 401);
+  }
+  const body = await bodyJson(request);
+  const receiverUid = cleanText(body.receiverUid, 160).trim();
+  const conversationId = cleanText(body.conversationId, 160).trim();
+  const messageId = cleanText(body.messageId, 160).trim();
+  const notificationId = cleanText(body.notificationId, 160).trim();
+  const requestedType = cleanText(body.type || "shop_message", 80).trim();
+  const context = cleanText(body.context, 12).trim().toLowerCase();
+  const allowedTypes = new Set([
+    "shop_message",
+    "seller_confirmation_pending",
+    "seller_order_received",
+    "seller_response_reminder",
+    "seller_response_expired",
+    "automatic_refund_initiated",
+  ]);
+  const title = cleanText(body.title || "New AdisGebeya message", 120).trim();
+  const notificationBody = cleanText(body.body || "You have a new marketplace message.", 240).trim();
+  if (!receiverUid || !allowedTypes.has(requestedType) || !["buyer", "seller"].includes(context)) return json({ error: "Invalid request" }, 400);
+  if (context === "seller" && !cleanText(body.storeId, 160).trim()) return json({ error: "Invalid request" }, 400);
+  if (requestedType === "shop_message" && (!conversationId || !messageId)) return json({ error: "Invalid request" }, 400);
+  if (requestedType !== "shop_message" && !notificationId) return json({ error: "Invalid request" }, 400);
+
+  const result = await sendPushToUser(env, receiverUid, {
+    type: requestedType,
+    receiverId: receiverUid,
+    area: "adischat_shop",
+    context,
+    conversationId,
+    messageId,
+    notificationId,
+    orderId: cleanText(body.orderId, 160).trim(),
+    orderGroupId: cleanText(body.orderGroupId, 160).trim(),
+    storeId: cleanText(body.storeId, 160).trim(),
+    title,
+    body: notificationBody,
+  }, null);
+  return json({ ok: Boolean(result?.ok), sent: Number(result?.sent || 0), reason: result?.reason || null });
 }
 
 export async function handleCoreApiRequest(request, env, user) {

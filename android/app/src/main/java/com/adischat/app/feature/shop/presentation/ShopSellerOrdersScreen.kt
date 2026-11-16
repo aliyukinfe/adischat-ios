@@ -218,11 +218,15 @@ private val SellerOrderAmberSoft = AdisGebeyaColors.SoftOrange
 private val SellerOrderOnColor = AdisGebeyaColors.OnColor
 
 
+internal fun sellerRejectionActionAvailable(fulfillment: String): Boolean =
+    fulfillment in setOf("awaiting_seller_confirmation", "created", "accepted")
+
 @Composable
 internal fun SellerOrderGroupCard(
     group: ShopOrderGroupDto,
     busy: Boolean,
-    onSellerAction: (String, String, String, String?, String?, String?) -> Unit,
+    onSellerAction: (String, String, String, String?, String?, String?, Int?) -> Unit,
+    onDeadlineReached: () -> Unit,
 ) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
@@ -238,7 +242,7 @@ internal fun SellerOrderGroupCard(
                 Column(Modifier.weight(1f)) {
                     Text(group.storeNameSnapshot ?: "Seller order", color = SellerOrderText, fontWeight = FontWeight.Black, fontSize = 18.sp)
                     Text("Order ${group.order?.orderNumber ?: "pending"}", color = SellerOrderMuted)
-                    group.order?.createdAt?.let { Text(it, color = SellerOrderMuted, fontSize = 12.sp) }
+                    group.order?.createdAt?.let { Text(formatMarketplaceDateTime(it), color = SellerOrderMuted, fontSize = 12.sp) }
                 }
                 if (fulfillment == "delivered") {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SellerOrderGreen)
@@ -248,6 +252,11 @@ internal fun SellerOrderGroupCard(
                 MiniBadge(fulfillmentStatusLabel(fulfillment), fulfillmentStatusBg(fulfillment), fulfillmentStatusColor(fulfillment))
                 (group.paymentStatus ?: group.payment?.status)?.let { MiniBadge(paymentStatusLabel(it), paymentStatusBg(it), paymentStatusColor(it)) }
             }
+            SellerResponseDeadlineCard(
+                group = group,
+                audience = SellerResponseAudience.SELLER,
+                onDeadlineReached = onDeadlineReached,
+            )
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(SellerOrderSoft)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("Order summary", color = SellerOrderText, fontWeight = FontWeight.Black)
@@ -304,6 +313,7 @@ internal fun SellerOrderGroupCard(
                     Spacer(Modifier.width(10.dp))
                     Column(Modifier.weight(1f)) {
                         Text(item.titleSnapshot, color = SellerOrderText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        item.variantDisplayLabel()?.let { Text(it, color = SellerOrderMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }
                         Text("${item.quantity} x ${formatEtb(item.unitPriceMinor)}", color = SellerOrderMuted, fontSize = 12.sp)
                     }
                     Text(formatEtb(item.lineTotalMinor), color = SellerOrderGreen, fontWeight = FontWeight.Black)
@@ -316,7 +326,7 @@ internal fun SellerOrderGroupCard(
                         Box(Modifier.size(9.dp).clip(CircleShape).background(trackingStatusColor(event.status.ifBlank { event.nextStatus.orEmpty() })))
                         Column {
                             Text(event.publicMessage ?: event.nextStatus ?: event.status, color = SellerOrderText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                            Text(event.occurredAt ?: event.createdAt.orEmpty(), color = SellerOrderMuted, fontSize = 11.sp)
+                            Text(formatMarketplaceDateTime(event.occurredAt ?: event.createdAt), color = SellerOrderMuted, fontSize = 11.sp)
                         }
                     }
                 }
@@ -343,21 +353,26 @@ internal fun SellerOrderGroupCard(
                 )
             }
             when (fulfillment) {
-                "awaiting_seller_confirmation", "created" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SellerActionButton("Accept", busy) { onSellerAction(group.id, "accept", "", null, null, null) }
-                    SellerActionButton("Reject", busy) { showRejectDialog = true }
+                "awaiting_seller_confirmation", "created", "accepted" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (fulfillment == "accepted") {
+                        SellerActionButton("Processing", busy) { onSellerAction(group.id, "processing", "", null, null, null, null) }
+                    } else {
+                        SellerActionButton("Accept", busy) { onSellerAction(group.id, "accept", "", null, null, null, group.sellerResponseVersion) }
+                    }
+                    if (sellerRejectionActionAvailable(fulfillment)) {
+                        SellerActionButton("Reject", busy) { showRejectDialog = true }
+                    }
                 }
-                "accepted" -> SellerActionButton("Processing", busy) { onSellerAction(group.id, "processing", "", null, null, null) }
-                "processing" -> SellerActionButton("Packed", busy) { onSellerAction(group.id, "packed", "", null, null, null) }
-                "packed" -> SellerActionButton("Ship", busy) { onSellerAction(group.id, "handed_to_carrier", "", null, "Seller delivery", trackingNumber.ifBlank { null }) }
+                "processing" -> SellerActionButton("Packed", busy) { onSellerAction(group.id, "packed", "", null, null, null, null) }
+                "packed" -> SellerActionButton("Ship", busy) { onSellerAction(group.id, "handed_to_carrier", "", null, "Seller delivery", trackingNumber.ifBlank { null }, null) }
                 "handed_to_carrier", "shipped", "out_for_delivery" -> SellerActionButton("Delivered", busy || deliveryCode.length != 6) {
-                    onSellerAction(group.id, "delivered", "", null, null, deliveryCode)
+                    onSellerAction(group.id, "delivered", "", null, null, deliveryCode, null)
                 }
                 "delivered" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = SellerOrderGreen)
                     Text("Done", color = SellerOrderGreen, fontWeight = FontWeight.Black)
                 }
-                "cancelled", "rejected" -> Text(fulfillment.replaceFirstChar { it.uppercase() }, color = SellerOrderMuted, fontWeight = FontWeight.SemiBold)
+                "cancelled", "rejected", "expired" -> Text(fulfillmentStatusLabel(fulfillment), color = SellerOrderMuted, fontWeight = FontWeight.SemiBold)
                 else -> EmptyCard("No seller action is available for this order state.")
             }
         }
@@ -369,7 +384,7 @@ internal fun SellerOrderGroupCard(
             onDismiss = { if (!busy) showRejectDialog = false },
             onReject = { reasonCode, explanation ->
                 showRejectDialog = false
-                onSellerAction(group.id, "reject", explanation, reasonCode, null, null)
+                onSellerAction(group.id, "reject", explanation, reasonCode, null, null, group.sellerResponseVersion)
             },
         )
     }

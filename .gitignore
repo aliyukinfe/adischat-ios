@@ -1,6 +1,8 @@
 node_modules/
 .DS_Store
 android/local.properties
+android/qa.local.properties
+android/app/src/qa/google-services.json
 *.log
 
 .vercel

@@ -219,6 +219,7 @@ internal fun StoreDetailsScreen(
     store: ShopStoreDto,
     state: ShopHomeState,
     onBack: () -> Unit,
+    onCart: () -> Unit,
     onProduct: (ShopProductDto) -> Unit,
     onAddToCart: (ShopProductDto) -> Unit,
     onToggleFavorite: (ShopProductDto) -> Unit,
@@ -246,28 +247,36 @@ internal fun StoreDetailsScreen(
             matchesQuery && matchesCategory
         }
     }
-    LazyColumn(Modifier.fillMaxSize().background(StoreBackground).statusBarsPadding().navigationBarsPadding(), contentPadding = PaddingValues(start = 6.dp, end = 6.dp, top = 12.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+    LazyColumn(Modifier.fillMaxSize().background(StoreBackground).statusBarsPadding().navigationBarsPadding(), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
-            ShopHeader(cartCount = state.cartCount, onBack = onBack, onCart = {})
-            Card(shape = RoundedCornerShape(28.dp), colors = CardDefaults.cardColors(StoreSurface)) {
-                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Box(Modifier.fillMaxWidth().height(150.dp).clip(RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)).background(StoreGreenSoft), contentAlignment = Alignment.Center) {
+            ShopHeader(cartCount = state.cartCount, onBack = onBack, onCart = onCart)
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(StoreGreenSoft), contentAlignment = Alignment.Center) {
                         ShopAssetImage(store.coverUrl, store.name, Modifier.fillMaxSize(), iconSize = 64.dp)
                     }
                     Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(64.dp).clip(RoundedCornerShape(20.dp)).background(StoreSoft), contentAlignment = Alignment.Center) {
+                        Box(Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)).background(StoreSoft), contentAlignment = Alignment.Center) {
                             ShopAssetImage(store.logoUrl, store.name, Modifier.fillMaxSize(), iconSize = 34.dp)
                         }
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(store.name, color = StoreText, fontWeight = FontWeight.Black, fontSize = 22.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(store.name, color = StoreText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 if (store.approvalStatus.equals("approved", ignoreCase = true)) {
                                     Spacer(Modifier.width(6.dp))
                                     Icon(Icons.Default.Verified, contentDescription = "Approved store", tint = StoreGreen, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            Text("${store.category ?: "Marketplace"} • ${store.city ?: "Addis Ababa"}", color = StoreMuted, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                            Text(
+                                listOfNotNull(
+                                    store.category?.trim()?.takeIf(String::isNotEmpty),
+                                    store.city?.trim()?.takeIf(String::isNotEmpty),
+                                ).joinToString(" • ").ifBlank { "Marketplace" },
+                                color = StoreMuted,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 13.sp,
+                            )
                         }
                     }
                     if (!store.description.isNullOrBlank()) {
@@ -291,7 +300,7 @@ internal fun StoreDetailsScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Search this store") },
+                placeholder = { Text("Search in store") },
                 modifier = Modifier.fillMaxWidth(),
                 colors = shopOutlinedTextFieldColors(),
                 singleLine = true,
@@ -305,7 +314,7 @@ internal fun StoreDetailsScreen(
             }
         }
         item {
-            SectionTitle("Products")
+            PremiumSectionHeader("Products", subtitle = "${filtered.size} available")
             if (filtered.isEmpty()) {
                 EmptyCard("No products match this store filter.")
             } else {
@@ -313,7 +322,7 @@ internal fun StoreDetailsScreen(
             }
         }
         item {
-            Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(StoreSurface)) {
+            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SectionTitle("Policies")
                     Text("Orders use AdisGebeya checkout, protected seller fulfillment and customer delivery confirmation where available.", color = StoreMuted, lineHeight = 20.sp)

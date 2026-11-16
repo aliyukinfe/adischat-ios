@@ -12,3 +12,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+-keepattributes Signature,*Annotation*
+-keep class retrofit2.** { *; }
+-keep interface com.adischat.app.network.** { *; }
+-keep interface com.adischat.app.feature.shop.data.** { *; }
+-keepclassmembers class com.adischat.app.** {
+    @com.google.gson.annotations.SerializedName <fields>;
+}
+-keep class com.adischat.app.data.model.** { *; }
+-keep class com.adischat.app.network.** { *; }
+-keep class com.adischat.app.feature.shop.data.** { *; }

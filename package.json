@@ -5,7 +5,27 @@
   "main": "index.js",
   "scripts": {
     "sync:ios": "python scripts/patch_capacitor_spm_versions.py && cap sync ios && python scripts/normalize_capacitor_spm_paths.py",
-    "doctor:ios": "cap doctor ios"
+    "doctor:ios": "cap doctor ios",
+    "wrangler:main:dev": "npx wrangler dev --config cloudflare/main-worker/wrangler.toml",
+    "wrangler:wallet:dev": "npx wrangler dev --config cloudflare/wallet-worker/wrangler.toml",
+    "wrangler:main:dry-run": "npx wrangler deploy --dry-run --config cloudflare/main-worker/wrangler.toml",
+    "wrangler:wallet:dry-run": "npx wrangler deploy --dry-run --config cloudflare/wallet-worker/wrangler.toml",
+    "wrangler:main:deploy": "npx wrangler deploy --config cloudflare/main-worker/wrangler.toml",
+    "wrangler:wallet:deploy": "npx wrangler deploy --config cloudflare/wallet-worker/wrangler.toml",
+    "wrangler:migrate:main:chat": "npx wrangler d1 execute adischat-db --remote --file cloudflare/migrations/001_chat_actions.sql",
+    "wrangler:migrate:main:verification": "npx wrangler d1 execute adischat-db --remote --file cloudflare/migrations/003_channel_verification.sql",
+    "wrangler:migrate:main:calls": "npx wrangler d1 execute adischat-db --remote --file cloudflare/migrations/004_calls.sql",
+    "wrangler:migrate:main:receipts": "npx wrangler d1 execute adischat-db --remote --file cloudflare/migrations/005_message_receipts.sql",
+    "wrangler:migrate:wallet:chat": "npx wrangler d1 execute ADISCHAT_WALLET_DB --remote --file cloudflare/migrations/001_chat_actions.sql",
+    "wrangler:migrate:wallet:gamepot": "npx wrangler d1 execute ADISCHAT_WALLET_DB --remote --file cloudflare/migrations/002_gamepot.sql",
+    "wrangler:migrate:wallet:verification": "npx wrangler d1 execute ADISCHAT_WALLET_DB --remote --file cloudflare/migrations/003_channel_verification.sql",
+    "wrangler:migrate:all": "npm run wrangler:migrate:main:chat && npm run wrangler:migrate:main:verification && npm run wrangler:migrate:main:calls && npm run wrangler:migrate:main:receipts && npm run wrangler:migrate:wallet:chat && npm run wrangler:migrate:wallet:gamepot && npm run wrangler:migrate:wallet:verification",
+    "desktop:install": "npm install --prefix desktop",
+    "desktop:dev": "npm run dev --prefix desktop",
+    "desktop:build": "npm run build --prefix desktop",
+    "desktop:tauri:dev": "npm run tauri:dev --prefix desktop",
+    "desktop:tauri:build": "npm run tauri:build --prefix desktop",
+    "desktop:tauri:build:windows": "npm run tauri:build:windows --prefix desktop"
   },
   "keywords": [],
   "author": "",
@@ -24,5 +44,8 @@
     "@capacitor/geolocation": "^8.2.0",
     "@capacitor/ios": "^8.4.0",
     "@capacitor/local-notifications": "^8.2.0"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.110.7"
   }
 }

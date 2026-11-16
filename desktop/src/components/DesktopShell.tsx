@@ -8,8 +8,9 @@ import { clearDesktopSession, describeToken, getDesktopSessionToken, loginWithEm
 import { readCache, writeCache } from "@/lib/cache";
 import { DesktopCallEngine, type CallState } from "@/lib/callEngine";
 import { notifyNewMessage, requestNotificationPermission, setAppBadge } from "@/lib/desktopNotifications";
+import { VIDEO_CALLS_ENABLED } from "@/lib/featureFlags";
 import { DesktopRealtime } from "@/lib/realtime";
-import type { AdminChannelVerification, AdminGameApproval, AdminReport, AdminStats, AdminVerificationRequest, ChannelPost, CommunityRoom, Conversation, DesktopPreferences, DesktopQrSession, DesktopQrStatus, DesktopThread, Message, PresenceInfo, User, UserSummary } from "@/lib/types";
+import type { AdminChannelVerification, AdminGameApproval, AdminReport, AdminStats, AdminVerificationRequest, ChannelPost, CommunityRoom, Conversation, ConversationUpdate, DesktopPreferences, DesktopQrSession, DesktopQrStatus, DesktopThread, Message, PresenceInfo, User, UserSummary } from "@/lib/types";
 import { CallDeviceSettings, CallLayer } from "./CallLayer";
 import { ProfilePanel, type ProfileTarget } from "./ProfilePanel";
 
@@ -59,7 +60,10 @@ const defaultPreferences: DesktopPreferences = {
   language: "en",
   lastSeenVisibility: "everyone",
   profilePhotoVisibility: "everyone",
+  phoneNumberVisibility: "nobody",
   whoCanMessageMe: "everyone",
+  whoCanCallMe: "everyone",
+  whoCanAddMeToGroups: "everyone",
   readReceipts: true,
   connectionIndicatorStyle: "orbit"
 };
@@ -116,6 +120,14 @@ function postPreviewText(post: ChannelPost | undefined) {
   if (!post) return "";
   return post.body || post.title || (post.mediaUrl ? "New post" : "");
 }
+
+function mergeById<T extends { id: string }>(current: T[], incoming: T[]) {
+  if (!incoming.length) return current;
+  const byId = new Map(current.map((item) => [item.id, item]));
+  for (const item of incoming) byId.set(item.id, { ...(byId.get(item.id) || {}), ...item });
+  return Array.from(byId.values());
+}
+
 
 /**
  * Rebuilds the thread list per section. When a section's fetch failed (its arg is
@@ -266,6 +278,8 @@ export function DesktopShell() {
   // below this are "new" — scrolling back up over seen messages never inflates it.
   const seenBottomRef = useRef(0);
   const realtimeRef = useRef<DesktopRealtime | null>(null);
+  const lastMarkedReadRef = useRef<Record<string, string>>({});
+  const lastDesktopActivityRef = useRef(Date.now());
   const engineRef = useRef<DesktopCallEngine | null>(null);
   const threadsRef = useRef<DesktopThread[]>([]);
   const prefsRef = useRef<DesktopPreferences>(prefs);
@@ -387,19 +401,53 @@ export function DesktopShell() {
     };
   }, []);
 
+  useEffect(() => {
+    const cleanupCall = (reason: string) => engineRef.current?.emergencyCleanup(reason);
+    const handleBeforeUnload = () => cleanupCall("app_close");
+    const handleRouteChange = () => cleanupCall("route_change");
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("pagehide", handleBeforeUnload);
+    window.addEventListener("popstate", handleRouteChange);
+    window.addEventListener("hashchange", handleRouteChange);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("pagehide", handleBeforeUnload);
+      window.removeEventListener("popstate", handleRouteChange);
+      window.removeEventListener("hashchange", handleRouteChange);
+    };
+  }, []);
+
   // Listen for incoming calls once the signed-in uid is known.
   useEffect(() => {
     if (me?.uid) engineRef.current?.startIncomingWatcher(me.uid);
     return () => engineRef.current?.stopIncomingWatcher();
   }, [me?.uid]);
 
-  // Presence heartbeat so other devices see this desktop as online.
+  // Presence heartbeat so other devices see this desktop as online without writing on every idle poll.
   useEffect(() => {
     if (!isAuthenticated) return;
-    const beat = () => void api.heartbeat().catch(() => undefined);
-    beat();
-    const timer = window.setInterval(beat, 45_000);
-    return () => window.clearInterval(timer);
+    let timer = 0;
+    const recordActivity = () => { lastDesktopActivityRef.current = Date.now(); };
+    const intervalMs = () => {
+      const recentlyActive = Date.now() - lastDesktopActivityRef.current < 2 * 60_000;
+      return recentlyActive && !document.hidden ? 60_000 : 3 * 60_000;
+    };
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void api.heartbeat().catch(() => undefined);
+        schedule();
+      }, intervalMs());
+    };
+    ["pointerdown", "keydown", "focus"].forEach((event) => window.addEventListener(event, recordActivity, { passive: true }));
+    document.addEventListener("visibilitychange", schedule);
+    void api.heartbeat().catch(() => undefined);
+    schedule();
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", schedule);
+      ["pointerdown", "keydown", "focus"].forEach((event) => window.removeEventListener(event, recordActivity));
+    };
   }, [isAuthenticated]);
 
   // Live presence for the open private chat (header status + profile panel accuracy).
@@ -487,6 +535,22 @@ export function DesktopShell() {
     });
   }, [activeId, isAuthenticated]);
 
+  const applyConversationUpdates = useCallback((updates: ConversationUpdate[]) => {
+    if (!updates.length) return;
+    const byId = new Map(updates.map((update) => [update.id, update]));
+    setThreads((current) => current.map((thread) => {
+      const update = byId.get(thread.id);
+      if (!update || thread.kind !== "chat") return thread;
+      return {
+        ...thread,
+        lastPreview: update.lastMessage ?? thread.lastPreview,
+        lastAt: update.lastMessageAt || thread.lastAt,
+        unreadCount: activeThreadRef.current?.id === thread.id ? 0 : Number(update.unreadCount || 0),
+        raw: { ...(thread.raw as Conversation), ...update }
+      };
+    }).sort(sortThreads));
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) return;
     void requestNotificationPermission();
@@ -496,11 +560,31 @@ export function DesktopShell() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const timer = window.setInterval(() => {
-      void loadThreads();
-    }, 8000);
-    return () => window.clearInterval(timer);
-  }, [isAuthenticated, loadThreads]);
+    let running = false;
+    const poll = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const updates = await api.getConversationUpdates();
+        applyConversationUpdates(updates);
+        console.debug("[desktop-poll]", { source: "conversation-updates", count: updates.length });
+      } finally {
+        running = false;
+      }
+    };
+    const intervalMs = () => (document.hidden ? 60_000 : 30_000);
+    let timer = window.setInterval(poll, intervalMs());
+    const onVisibility = () => {
+      window.clearInterval(timer);
+      timer = window.setInterval(poll, intervalMs());
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    void poll();
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [applyConversationUpdates, isAuthenticated]);
 
   useEffect(() => {
     const term = query.trim();
@@ -540,16 +624,19 @@ export function DesktopShell() {
       () => activeThreadRef.current,
       {
         onMessages: (threadId, messages) => {
+          let mergedMessages: Message[] = messages;
           setMessagesByThread((current) => {
-            const previousLast = current[threadId]?.at(-1)?.id;
-            const nextLast = messages.at(-1)?.id;
+            const previous = current[threadId] || [];
+            const previousLast = previous.at(-1)?.id;
+            mergedMessages = mergeById(previous, messages).sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+            const nextLast = mergedMessages.at(-1)?.id;
             const thread = threadsRef.current.find((item) => item.id === threadId);
             if (thread && previousLast && nextLast && previousLast !== nextLast && activeId !== threadId) {
-              notifyNewMessage(thread, messages.at(-1)!);
+              notifyNewMessage(thread, mergedMessages.at(-1)!);
             }
-            return { ...current, [threadId]: messages };
+            return { ...current, [threadId]: mergedMessages };
           });
-          const last = messages.at(-1);
+          const last = mergedMessages.at(-1);
           if (last) {
             setThreads((current) => current.map((thread) =>
               thread.id === threadId
@@ -564,8 +651,12 @@ export function DesktopShell() {
           }
         },
         onChannelPosts: (threadId, posts) => {
-          setPostsByThread((current) => ({ ...current, [threadId]: posts }));
-          const last = posts.at(-1);
+          let mergedPosts: ChannelPost[] = posts;
+          setPostsByThread((current) => {
+            mergedPosts = mergeById(current[threadId] || [], posts).sort((a, b) => Number(a.createdAt || 0) - Number(b.createdAt || 0));
+            return { ...current, [threadId]: mergedPosts };
+          });
+          const last = mergedPosts.at(-1);
           if (last) {
             setThreads((current) => current.map((thread) =>
               thread.id === threadId
@@ -579,7 +670,8 @@ export function DesktopShell() {
             ).sort(sortThreads));
           }
         },
-        onStatus: setConnectionStatus
+        onStatus: setConnectionStatus,
+        onSocketDisconnect: () => engineRef.current?.emergencyCleanup("socket_disconnect")
       }
     );
     realtimeRef.current.start();
@@ -601,7 +693,12 @@ export function DesktopShell() {
       const messages = thread.kind === "group" ? await api.getCommunityMessages(thread.id) : await api.getMessages(thread.id);
       console.info("[desktop-load] messages", { threadId: thread.id, kind: thread.kind, count: messages.length });
       setMessagesByThread((current) => ({ ...current, [thread.id]: messages }));
-      void api.markRead(thread.id, thread.kind === "group").catch(() => undefined);
+      const lastMessage = messages.at(-1);
+      const markKey = `${thread.id}:${lastMessage?.id || "empty"}`;
+      if (lastMessage && lastMarkedReadRef.current[thread.id] !== markKey) {
+        lastMarkedReadRef.current[thread.id] = markKey;
+        void api.markRead(thread.id, thread.kind === "group").catch(() => undefined);
+      }
     } catch (error) {
       console.warn("[desktop-load] active thread FAILED", { id: thread.id, kind: thread.kind, error: String(error) });
     }
@@ -853,6 +950,32 @@ export function DesktopShell() {
     }
   }
 
+  async function leaveActiveCommunity() {
+    if (!activeThread || (activeThread.kind !== "group" && activeThread.kind !== "channel")) return;
+    const label = activeThread.kind === "channel" ? "Unfollow channel" : "Leave group";
+    if (!window.confirm(`${label}: ${activeThread.title}?`)) return;
+    try {
+      if (activeThread.kind === "channel") await api.unfollowChannel(activeThread.id);
+      else await api.leaveGroup(activeThread.id);
+      setThreads((current) => current.filter((thread) => !(thread.kind === activeThread.kind && thread.id === activeThread.id)));
+      setMessagesByThread((current) => {
+        const next = { ...current };
+        delete next[activeThread.id];
+        return next;
+      });
+      setPostsByThread((current) => {
+        const next = { ...current };
+        delete next[activeThread.id];
+        return next;
+      });
+      setActiveId("");
+      await loadThreads();
+      showToast(activeThread.kind === "channel" ? "Channel unfollowed" : "Left group");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : activeThread.kind === "channel" ? "Unable to unfollow channel." : "Unable to leave group.");
+    }
+  }
+
   function canDropFiles() {
     return Boolean(activeThread && activeThread.kind !== "channel");
   }
@@ -888,6 +1011,10 @@ export function DesktopShell() {
   function startCall(type: "voice" | "video") {
     const receiverUid = (activeThread?.raw as Conversation | undefined)?.otherUserId;
     if (!receiverUid || !activeThread) return;
+    if (type === "video" && !VIDEO_CALLS_ENABLED) {
+      showToast("Video calls are paused for this stability release");
+      return;
+    }
     void engineRef.current?.startOutgoing(
       { uid: receiverUid, name: activeThread.title, photoUrl: activeThread.avatar },
       type
@@ -896,6 +1023,10 @@ export function DesktopShell() {
 
   function callUser(user: { uid: string; name: string; photoUrl?: string }, type: "voice" | "video") {
     setProfileTarget(null);
+    if (type === "video" && !VIDEO_CALLS_ENABLED) {
+      showToast("Video calls are paused for this stability release");
+      return;
+    }
     void engineRef.current?.startOutgoing(user, type);
   }
 
@@ -1194,7 +1325,24 @@ export function DesktopShell() {
             setPrefs={(next) => setPrefs((current) => ({ ...current, ...next }))}
             onBack={() => setView("messaging")}
             onEditProfile={() => setView("profile")}
+            onPrivacyChange={async (patch) => {
+              const updated = await api.updatePrivacy(patch);
+              setMe(updated);
+            }}
+            onDeleteAccount={async () => {
+              engineRef.current?.emergencyCleanup("logout");
+              await api.deleteAccount();
+              clearDesktopSession();
+              setDesktopSessionToken("");
+              setMe(null);
+              setThreads([]);
+              setMessagesByThread({});
+              setPostsByThread({});
+              setProfileLoadState("idle");
+              void logout();
+            }}
             onLogout={() => {
+              engineRef.current?.emergencyCleanup("logout");
               clearDesktopSession();
               setDesktopSessionToken("");
               setMe(null);
@@ -1210,7 +1358,8 @@ export function DesktopShell() {
               thread={activeThread}
               presence={activePresence}
               onVoice={() => startCall("voice")}
-              onVideo={() => startCall("video")}
+              onVideo={VIDEO_CALLS_ENABLED ? () => startCall("video") : undefined}
+              onLeaveCommunity={activeThread.kind === "group" || activeThread.kind === "channel" ? () => void leaveActiveCommunity() : undefined}
               onOpenProfile={activeThread.kind === "chat" ? () => openProfileForThread(activeThread) : undefined}
               search={messageSearch}
               setSearch={setMessageSearch}
@@ -1317,7 +1466,7 @@ export function DesktopShell() {
           onClose={() => setProfileTarget(null)}
           onMessage={(uid) => void messageUser(uid)}
           onVoiceCall={(user) => callUser(user, "voice")}
-          onVideoCall={(user) => callUser(user, "video")}
+          onVideoCall={VIDEO_CALLS_ENABLED ? (user) => callUser(user, "video") : undefined}
           onEditOwnProfile={() => {
             setProfileTarget(null);
             setView("profile");
@@ -1672,11 +1821,12 @@ function presenceLabel(presence: PresenceInfo | null) {
   return "Last seen recently";
 }
 
-function ChatHeader({ thread, presence, onVoice, onVideo, onOpenProfile, search, setSearch }: {
+function ChatHeader({ thread, presence, onVoice, onVideo, onLeaveCommunity, onOpenProfile, search, setSearch }: {
   thread: DesktopThread;
   presence: PresenceInfo | null;
   onVoice: () => void;
-  onVideo: () => void;
+  onVideo?: () => void;
+  onLeaveCommunity?: () => void;
   onOpenProfile?: () => void;
   search: string;
   setSearch: (v: string) => void;
@@ -1707,7 +1857,12 @@ function ChatHeader({ thread, presence, onVoice, onVideo, onOpenProfile, search,
       </div>
       <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search inside chat" />
       {thread.kind === "chat" ? <button onClick={onVoice} aria-label="Voice call"><AppIcon name="phone" /></button> : null}
-      {thread.kind === "chat" ? <button onClick={onVideo} aria-label="Video call"><AppIcon name="video" /></button> : null}
+      {thread.kind === "chat" && onVideo ? <button onClick={onVideo} aria-label="Video call"><AppIcon name="video" /></button> : null}
+      {thread.kind === "group" || thread.kind === "channel" ? (
+        <button onClick={onLeaveCommunity} aria-label={thread.kind === "channel" ? "Unfollow channel" : "Leave group"}>
+          {thread.kind === "channel" ? "Unfollow" : "Leave"}
+        </button>
+      ) : null}
       <button aria-label="More options"><AppIcon name="more" /></button>
     </header>
   );
@@ -2496,6 +2651,8 @@ function SettingsPage({
   setPrefs,
   onBack,
   onEditProfile,
+  onPrivacyChange,
+  onDeleteAccount,
   onLogout
 }: {
   user: User | null;
@@ -2503,9 +2660,12 @@ function SettingsPage({
   setPrefs: (patch: Partial<DesktopPreferences>) => void;
   onBack: () => void;
   onEditProfile: () => void;
+  onPrivacyChange: (patch: Parameters<typeof api.updatePrivacy>[0]) => Promise<void>;
+  onDeleteAccount: () => Promise<void>;
   onLogout: () => void;
 }) {
   const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState("");
   const cacheBytes = typeof window === "undefined"
     ? 0
     : Object.keys(localStorage).reduce((sum, key) => sum + key.length + (localStorage.getItem(key)?.length || 0), 0);
@@ -2514,6 +2674,41 @@ function SettingsPage({
     ["desktop:messages", "desktop:posts", "desktop:threads"].forEach((key) => localStorage.removeItem(key));
     setNotice("Cached conversations cleared");
   }
+
+  async function savePrivacy(localPatch: Partial<DesktopPreferences>, apiPatch: Parameters<typeof api.updatePrivacy>[0], success: string) {
+    setBusy(success);
+    setNotice("");
+    setPrefs(localPatch);
+    try {
+      await onPrivacyChange(apiPatch);
+      setNotice(success);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Unable to update privacy settings.");
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function deleteAccount() {
+    if (!window.confirm("Delete your AdisChat account? This signs out all devices and cannot be undone.")) return;
+    setBusy("Deleting account");
+    setNotice("");
+    try {
+      await onDeleteAccount();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Account deletion unavailable.");
+      setBusy("");
+    }
+  }
+
+  const lastSeenValue = user?.lastSeenVisibility === "private" ? "nobody" : prefs.lastSeenVisibility;
+  const onlineValue = user?.onlineStatusVisibility === "private" ? "nobody" : user?.onlineStatusVisibility === "public" ? "everyone" : "same_as_last_seen";
+  const profilePhotoValue = user?.profilePhotoVisibility || prefs.profilePhotoVisibility;
+  const phoneNumberValue = user?.phoneNumberVisibility || prefs.phoneNumberVisibility || "nobody";
+  const messageValue = user?.whoCanMessageMe || prefs.whoCanMessageMe;
+  const callValue = user?.whoCanCallMe || prefs.whoCanCallMe || "everyone";
+  const groupInviteValue = user?.whoCanAddMeToGroups || prefs.whoCanAddMeToGroups || "everyone";
+  const readReceiptsValue = user?.readReceiptsEnabled ?? prefs.readReceipts;
 
   return (
     <div className="detail-page">
@@ -2524,15 +2719,20 @@ function SettingsPage({
           <ActionRow label="Edit profile" value={user?.name || "Profile"} onClick={onEditProfile} />
           <ActionRow label="Change username" value={user?.username ? `@${user.username}` : "Not set"} onClick={onEditProfile} />
           <ActionRow label="Active sessions/devices" value="Current desktop session" />
+          <ActionRow label="Delete Account" value={busy === "Deleting account" ? "Deleting..." : "Permanent"} danger onClick={() => void deleteAccount()} />
           <ActionRow label="Logout" danger onClick={onLogout} />
         </SettingsCard>
 
         <SettingsCard title="Privacy">
-          <SelectSetting label="Last seen & online" value={prefs.lastSeenVisibility} options={["everyone", "contacts", "nobody"]} onChange={(lastSeenVisibility) => setPrefs({ lastSeenVisibility: lastSeenVisibility as DesktopPreferences["lastSeenVisibility"] })} />
-          <SelectSetting label="Profile photo visibility" value={prefs.profilePhotoVisibility} options={["everyone", "contacts", "nobody"]} onChange={(profilePhotoVisibility) => setPrefs({ profilePhotoVisibility: profilePhotoVisibility as DesktopPreferences["profilePhotoVisibility"] })} />
-          <SelectSetting label="Who can message me" value={prefs.whoCanMessageMe} options={["everyone", "contacts"]} onChange={(whoCanMessageMe) => setPrefs({ whoCanMessageMe: whoCanMessageMe as DesktopPreferences["whoCanMessageMe"] })} />
-          <ActionRow label="Blocked users" value="Manage in backend when endpoint is enabled" />
-          <ToggleRow label="Read receipts" checked={prefs.readReceipts} onChange={(readReceipts) => setPrefs({ readReceipts })} />
+          <SelectSetting label="Last seen & online" value={lastSeenValue} options={["everyone", "nobody"]} onChange={(value) => void savePrivacy({ lastSeenVisibility: value as DesktopPreferences["lastSeenVisibility"] }, { lastSeenVisibility: value === "nobody" ? "private" : "public" }, "Privacy settings saved")} />
+          <SelectSetting label="Online status" value={onlineValue} options={["same_as_last_seen", "everyone", "nobody"]} onChange={(value) => void savePrivacy({}, { onlineStatusVisibility: value === "nobody" ? "private" : value === "everyone" ? "public" : "same_as_last_seen" }, "Online status updated")} />
+          <SelectSetting label="Profile photo visibility" value={profilePhotoValue} options={["everyone", "contacts", "nobody"]} onChange={(value) => void savePrivacy({ profilePhotoVisibility: value as DesktopPreferences["profilePhotoVisibility"] }, { profilePhotoVisibility: value as "everyone" | "contacts" | "nobody" }, "Profile photo privacy saved")} />
+          <SelectSetting label="Phone number visibility" value={phoneNumberValue} options={["everyone", "contacts", "nobody"]} onChange={(value) => void savePrivacy({ phoneNumberVisibility: value as DesktopPreferences["phoneNumberVisibility"] }, { phoneNumberVisibility: value as "everyone" | "contacts" | "nobody" }, "Phone number privacy saved")} />
+          <SelectSetting label="Who can message me" value={messageValue} options={["everyone", "contacts", "nobody"]} onChange={(value) => void savePrivacy({ whoCanMessageMe: value as DesktopPreferences["whoCanMessageMe"] }, { whoCanMessageMe: value as "everyone" | "contacts" | "nobody" }, "Message privacy saved")} />
+          <SelectSetting label="Who can call me" value={callValue} options={["everyone", "contacts", "nobody"]} onChange={(value) => void savePrivacy({ whoCanCallMe: value as DesktopPreferences["whoCanCallMe"] }, { whoCanCallMe: value as "everyone" | "contacts" | "nobody" }, "Call privacy saved")} />
+          <SelectSetting label="Who can add me to groups" value={groupInviteValue} options={["everyone", "contacts", "nobody"]} onChange={(value) => void savePrivacy({ whoCanAddMeToGroups: value as DesktopPreferences["whoCanAddMeToGroups"] }, { whoCanAddMeToGroups: value as "everyone" | "contacts" | "nobody" }, "Group invite privacy saved")} />
+          <ActionRow label="Blocked users" value="Block from chat profiles" onClick={() => setNotice("Open a chat profile and use Block to add someone to your blocked list.")} />
+          <ToggleRow label="Read receipts" checked={readReceiptsValue} onChange={(readReceipts) => void savePrivacy({ readReceipts }, { readReceiptsEnabled: readReceipts }, "Read receipts updated")} />
         </SettingsCard>
 
         <SettingsCard title="Calls & Devices">

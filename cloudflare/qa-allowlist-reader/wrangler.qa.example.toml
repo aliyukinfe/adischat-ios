@@ -1,0 +1,10 @@
+# Template only. Private service target; no public routes or workers.dev endpoint.
+name = "adischat-qa-allowlist-reader"
+main = "src/index.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[[d1_databases]]
+binding = "QA_STATE_DB"
+database_name = "adischat-qa-identity-state"
+database_id = "REPLACE_WITH_APPROVED_QA_D1_ID"

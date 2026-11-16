@@ -24,12 +24,12 @@ class VerificationRepository {
         selfieUrl: String,
     ): Result<Unit> = runCatching {
         api.submitVerification(
-            VerificationSubmitBody(
-                fullName     = fullName,
-                documentType = documentType,
-                documentUrl  = documentUrl,
-                selfieUrl    = selfieUrl,
-            )
+        VerificationSubmitBody(
+        fullName     = fullName,
+        documentType = documentType,
+        documentUrl  = documentUrl,
+        selfieUrl    = selfieUrl,
+        )
         )
         Unit
     }
@@ -47,7 +47,7 @@ class VerificationRepository {
         Unit
     }
 
-    // ── Channel verification (blue badge) ──────────────────────────────────────
+    // - Channel verification (blue badge) -
     suspend fun getChannelVerification(channelId: String): Result<com.adischat.app.network.ChannelVerificationResponse> =
         runCatching { walletApi.getChannelVerification(channelId) }
 

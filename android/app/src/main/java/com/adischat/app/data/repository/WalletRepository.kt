@@ -22,12 +22,12 @@ class WalletRepository {
 
     suspend fun activate(username: String, phone: String, pin: String): Result<WalletState> = walletResult {
         api.activateWallet(WalletActivateBody(username = username, phone = phone, pin = pin))
-            .toState(transactions = getTransactions().getOrDefault(emptyList()))
+        .toState(transactions = getTransactions().getOrDefault(emptyList()))
     }
 
     suspend fun changePin(oldPin: String, newPin: String): Result<WalletState> = walletResult {
         api.changeWalletPin(WalletChangePinBody(oldPin = oldPin, newPin = newPin))
-            .toState(transactions = getTransactions().getOrDefault(emptyList()))
+        .toState(transactions = getTransactions().getOrDefault(emptyList()))
     }
 
     suspend fun deposit(amount: Double): Result<WalletState> = walletResult {
@@ -63,10 +63,10 @@ class WalletRepository {
     suspend fun getPayCode(): Result<WalletState> = walletResult {
         val payCode = api.payCode()
         getWallet().getOrThrow().copy(
-            payCode = payCode.formattedCode.ifBlank { payCode.code },
-            payQrPayload = payCode.qrPayload,
-            payBarcodePayload = payCode.barcodePayload.ifBlank { payCode.code },
-            payExpiresAt = payCode.expiresAt,
+        payCode = payCode.formattedCode.ifBlank { payCode.code },
+        payQrPayload = payCode.qrPayload,
+        payBarcodePayload = payCode.barcodePayload.ifBlank { payCode.code },
+        payExpiresAt = payCode.expiresAt,
         )
     }
 
@@ -88,12 +88,12 @@ private fun walletErrorMessage(error: Throwable): String {
         val parsed = runCatching { JSONObject(body).optString("error") }.getOrNull().orEmpty()
         if (parsed.isNotBlank()) return parsed
         return when (error.code()) {
-            400 -> "Check the wallet details and try again"
-            401 -> "Please sign in again"
-            403 -> "User verification or a valid PIN is required"
-            404 -> "Recipient wallet not found"
-            423 -> "Wallet is locked"
-            else -> "Wallet request failed (${error.code()})"
+        400 -> "Check the wallet details and try again"
+        401 -> "Please sign in again"
+        403 -> "User verification or a valid PIN is required"
+        404 -> "Recipient wallet not found"
+        423 -> "Wallet is locked"
+        else -> "Wallet request failed (${error.code()})"
         }
     }
     return CloudflareClient.friendlyErrorMessage(error, "Wallet request failed")
@@ -120,13 +120,13 @@ private fun WalletTransactionResponse.toTransaction(): WalletTransaction =
         id = id,
         reference = reference,
         title = when (type) {
-            "send" -> "Sent money"
-            "receive" -> "Received money"
-            "deposit" -> "Deposit"
-            "merchant_pay" -> "Merchant payment"
-            "merchant_receive" -> "Merchant collection"
-            "admin_adjust" -> "Admin adjustment"
-            else -> type.replaceFirstChar { it.uppercase() }
+        "send" -> "Sent money"
+        "receive" -> "Received money"
+        "deposit" -> "Deposit"
+        "merchant_pay" -> "Merchant payment"
+        "merchant_receive" -> "Merchant collection"
+        "admin_adjust" -> "Admin adjustment"
+        else -> type.replaceFirstChar { it.uppercase() }
         },
         amount = amount,
         type = type,

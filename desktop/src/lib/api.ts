@@ -1,5 +1,5 @@
 import { clearDesktopSession, getAuthToken, logout } from "./auth";
-import type { AdminChannelVerification, AdminGameApproval, AdminReport, AdminStats, AdminVerificationRequest, CallRealtimeToken, CallSession, CallSignal, ChannelPost, CommunityRoom, Conversation, DesktopQrSession, DesktopQrStatus, LinkedDevice, Message, PresenceInfo, RawUser, User, UserSummary } from "./types";
+import type { AdminChannelVerification, AdminGameApproval, AdminReport, AdminStats, AdminVerificationRequest, CallRealtimeToken, CallSession, CallSignal, ChannelPost, CommunityRoom, Conversation, ConversationUpdate, DesktopQrSession, DesktopQrStatus, LinkedDevice, Message, PresenceInfo, RawUser, User, UserSummary } from "./types";
 
 /**
  * Normalizes a raw user payload into our `User` shape. The backend uses
@@ -41,7 +41,15 @@ export function normalizeUser(raw: RawUser | null | undefined): User {
     deleted: Boolean(source.deleted || source.status === "deleted" || source.account_status === "deleted"),
     status: source.status || source.account_status || "",
     verified: source.verified ?? source.is_verified ?? source.isVerified ?? false,
-    verificationLevel: source.verificationLevel ?? source.verification_level ?? 0
+    verificationLevel: source.verificationLevel ?? source.verification_level ?? 0,
+    lastSeenVisibility: source.lastSeenVisibility || source.last_seen_visibility || "public",
+    onlineStatusVisibility: source.onlineStatusVisibility || source.online_status_visibility || "same_as_last_seen",
+    profilePhotoVisibility: source.profilePhotoVisibility || source.profile_photo_visibility || "everyone",
+    phoneNumberVisibility: source.phoneNumberVisibility || source.phone_number_visibility || "nobody",
+    readReceiptsEnabled: Boolean(source.readReceiptsEnabled ?? source.read_receipts_enabled ?? true),
+    whoCanMessageMe: source.whoCanMessageMe || source.who_can_message_me || "everyone",
+    whoCanCallMe: source.whoCanCallMe || source.who_can_call_me || "everyone",
+    whoCanAddMeToGroups: source.whoCanAddMeToGroups || source.who_can_add_me_to_groups || "everyone"
   };
 }
 
@@ -57,6 +65,20 @@ const MAIN_API = (process.env.NEXT_PUBLIC_ADISCHAT_API_URL || "https://adischat-
 const COMMUNITY_API = (process.env.NEXT_PUBLIC_ADISCHAT_COMMUNITY_API_URL || "https://adischat-wallet-api.adischat.workers.dev").replace(/\/$/, "");
 
 type ApiScope = "main" | "community";
+const inFlight = new Map<string, { controller: AbortController; promise: Promise<unknown> }>();
+const requestTimes: number[] = [];
+
+function recordRequest(source: string) {
+  const now = Date.now();
+  while (requestTimes.length && now - requestTimes[0] >= 60_000) requestTimes.shift();
+  requestTimes.push(now);
+  const rpm = requestTimes.length;
+  if (rpm > 100) {
+    console.warn("[desktop-api] excessive request rate", { source, requestsPerMinute: rpm, activeRequests: inFlight.size });
+  } else {
+    console.debug("[desktop-api]", { source, requestsPerMinute: rpm, activeRequests: inFlight.size });
+  }
+}
 
 function forceDesktopLogout() {
   clearDesktopSession();
@@ -66,7 +88,7 @@ function forceDesktopLogout() {
   void logout().catch(() => undefined);
 }
 
-async function request<T>(path: string, init: RequestInit = {}, scope: ApiScope = "main"): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}, scope: ApiScope = "main", dedupe = true): Promise<T> {
   const token = await getAuthToken();
   const base = scope === "community" ? COMMUNITY_API : MAIN_API;
   const headers = new Headers(init.headers);
@@ -75,7 +97,17 @@ async function request<T>(path: string, init: RequestInit = {}, scope: ApiScope 
     headers.set("Content-Type", "application/json");
   }
 
-  const response = await fetch(`${base}${path}`, { ...init, headers });
+  const method = (init.method || "GET").toUpperCase();
+  const key = `${scope}:${method}:${path}:${init.body ? String(init.body) : ""}`;
+  if (dedupe && method === "GET") {
+    const existing = inFlight.get(key);
+    if (existing) return existing.promise as Promise<T>;
+  }
+  const controller = new AbortController();
+  const signal = init.signal || controller.signal;
+  recordRequest(`${method} ${path}`);
+  const promise = (async () => {
+  const response = await fetch(`${base}${path}`, { ...init, headers, signal });
   if (!response.ok) {
     const raw = await response.text();
     let message = `Request failed (${response.status})`;
@@ -89,11 +121,23 @@ async function request<T>(path: string, init: RequestInit = {}, scope: ApiScope 
       const sessionProblem = /auth|token|session|revoked|expired|unauthor/i.test(message);
       if (sessionProblem) forceDesktopLogout();
     }
+    if (response.status === 404) {
+      if (/privacy|settings/i.test(path)) message = "Unable to update privacy settings.";
+      else if (/leave|unfollow|groups|channels|communities/i.test(path)) message = "Unable to leave or unfollow this community.";
+      else if (/account|users\/me/i.test(path)) message = "Account deletion unavailable.";
+    }
     throw new Error(message);
   }
 
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
+  })();
+  if (dedupe && method === "GET") inFlight.set(key, { controller, promise });
+  try {
+    return await promise;
+  } finally {
+    if (inFlight.get(key)?.promise === promise) inFlight.delete(key);
+  }
 }
 
 export const api = {
@@ -108,6 +152,18 @@ export const api = {
   logoutAllDesktopDevices: () =>
     request<{ ok?: boolean }>("/api/linked-devices/logout-all", { method: "POST", body: JSON.stringify({}) }),
   getMe: async () => normalizeUser(await request<RawUser>("/api/users/me")),
+  getPrivacy: async () => normalizeUser(await request<RawUser>("/api/settings/privacy")),
+  updatePrivacy: async (body: {
+    lastSeenVisibility?: "public" | "private";
+    onlineStatusVisibility?: "same_as_last_seen" | "public" | "private";
+    profilePhotoVisibility?: "everyone" | "contacts" | "nobody";
+    phoneNumberVisibility?: "everyone" | "contacts" | "nobody";
+    readReceiptsEnabled?: boolean;
+    whoCanMessageMe?: "everyone" | "contacts" | "nobody";
+    whoCanCallMe?: "everyone" | "contacts" | "nobody";
+    whoCanAddMeToGroups?: "everyone" | "contacts" | "nobody";
+  }) => normalizeUser(await request<RawUser>("/api/settings/privacy", { method: "PUT", body: JSON.stringify(body) })),
+  deleteAccount: () => request<{ deleted?: boolean; deletedAt?: number }>("/api/account/delete", { method: "POST", body: JSON.stringify({}) }),
   updateUser: async (uid: string, body: Partial<User>) =>
     normalizeUser(
       await request<RawUser>(`/api/users/${encodeURIComponent(uid)}`, {
@@ -150,13 +206,14 @@ export const api = {
       })
     ),
   getConversations: () => request<Conversation[]>("/api/conversations"),
+  getConversationUpdates: () => request<ConversationUpdate[]>("/api/conversations/updates"),
   getCommunities: (type: "group" | "channel", q = "") =>
     request<CommunityRoom[]>(`/api/communities?type=${type}&q=${encodeURIComponent(q)}`, {}, "community"),
-  getMessages: (id: string) => request<Message[]>(`/api/conversations/${encodeURIComponent(id)}/messages`),
-  getCommunityMessages: (id: string) =>
-    request<Message[]>(`/api/communities/${encodeURIComponent(id)}/messages`, {}, "community"),
-  getChannelPosts: (id: string) =>
-    request<{ posts?: ChannelPost[] } | ChannelPost[]>(`/api/channels/${encodeURIComponent(id)}/posts`, {}, "community"),
+  getMessages: (id: string, after = 0) => request<Message[]>(`/api/conversations/${encodeURIComponent(id)}/messages${after > 0 ? `?after=${encodeURIComponent(String(after))}` : ""}`),
+  getCommunityMessages: (id: string, after = 0) =>
+    request<Message[]>(`/api/communities/${encodeURIComponent(id)}/messages${after > 0 ? `?after=${encodeURIComponent(String(after))}` : ""}`, {}, "community"),
+  getChannelPosts: (id: string, after = 0) =>
+    request<{ posts?: ChannelPost[] } | ChannelPost[]>(`/api/channels/${encodeURIComponent(id)}/posts${after > 0 ? `?after=${encodeURIComponent(String(after))}` : ""}`, {}, "community"),
   sendMessage: (id: string, text: string, media?: Partial<Message>) =>
     request<Message>(`/api/conversations/${encodeURIComponent(id)}/messages`, {
       method: "POST",
@@ -168,6 +225,10 @@ export const api = {
       { method: "POST", body: JSON.stringify({ text, type: media?.type || "text", ...media }) },
       "community"
     ),
+  leaveGroup: (id: string) =>
+    request<{ ok?: boolean; joined?: boolean }>(`/api/groups/${encodeURIComponent(id)}/leave`, { method: "POST", body: JSON.stringify({}) }, "community"),
+  unfollowChannel: (id: string) =>
+    request<{ ok?: boolean; joined?: boolean }>(`/api/channels/${encodeURIComponent(id)}/unfollow`, { method: "POST", body: JSON.stringify({}) }, "community"),
   markRead: (threadId: string, community = false) =>
     request<void>(
       `/api/${community ? "communities" : "conversations"}/${encodeURIComponent(threadId)}/read`,
@@ -255,6 +316,10 @@ export const api = {
     const response = await request<{ call: CallSession }>("/api/calls/reject", { method: "POST", body: JSON.stringify({ callId }) });
     return response.call;
   },
+  ringingAck: async (callId: string) => {
+    const response = await request<{ call: CallSession }>("/api/calls/ringing_ack", { method: "POST", body: JSON.stringify({ callId }) });
+    return response.call;
+  },
   cancelCall: async (callId: string) => {
     const response = await request<{ call: CallSession }>("/api/calls/cancel", { method: "POST", body: JSON.stringify({ callId }) });
     return response.call;
@@ -275,6 +340,10 @@ export const api = {
   },
   getActiveCall: async () => {
     const response = await request<{ call?: CallSession | null }>("/api/calls/active");
+    return response.call || null;
+  },
+  getPendingCall: async () => {
+    const response = await request<{ call?: CallSession | null }>("/api/calls/pending");
     return response.call || null;
   },
   getCallHistory: async (limit = 50) => {

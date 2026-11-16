@@ -1,0 +1,20 @@
+name = "adischat-wallet-api"
+main = "src/index.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "adischat-f4a77"
+CORS_ORIGIN = "*"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "ADISCHAT_WALLET_DB"
+database_id = "02825693-22dc-4e36-8885-2be782ada454"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "adischat-media"
+
+[ai]
+binding = "AI"

@@ -91,6 +91,11 @@ def validateQaIsolation = {
      "QA_IDENTITY_BRIDGE_URL", "QA_MEDIA_BASE_URL"].each { name ->
         validateIsolatedQaUrl(name, allowedHosts, null)
     }
+    def qaIssuerUri = new URI(qaValue("QA_IDENTITY_BRIDGE_URL"))
+    if (qaIssuerUri.host != "adischat-qa-shop-issuer.adischat.workers.dev" ||
+        qaIssuerUri.port != -1 || (qaIssuerUri.path && qaIssuerUri.path != "/")) {
+        throw new GradleException("QA Shop identity bridge must be the dedicated QA issuer")
+    }
     def qaShopRef = qaValue("QA_SHOP_PROJECT_REF")
     if (!qaShopRef.matches("[a-z]{20}") ||
         qaShopRef == "mcewjfnkrtiiolzibsuh" ||
@@ -100,7 +105,8 @@ def validateQaIsolation = {
     }
     if (!qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY") ||
         qaValue("QA_SHOP_SUPABASE_PUBLISHABLE_KEY").toLowerCase().contains("paste") ||
-        qaValue("QA_SHOP_ASSERTION_ISSUER") == "" || qaValue("QA_SHOP_ASSERTION_AUDIENCE") == "") {
+        qaValue("QA_SHOP_ASSERTION_ISSUER") != "adischat-staging-opkqyvttbyezjbqwkvho" ||
+        qaValue("QA_SHOP_ASSERTION_AUDIENCE") != "adishop-staging-edge") {
         throw new GradleException("QA Shop key and identity configuration must be separate and complete")
     }
     validateRestaurantsQaEndpoints(allowedHosts)
@@ -144,8 +150,8 @@ android {
         applicationId "com.adischat.app"
         minSdk = 24
         targetSdk = 36
-        versionCode 121
-        versionName "1.0.121"
+        versionCode 122
+        versionName "1.0.122"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         def shopSupabaseUrl = keystoreProperties['ADISHOP_SUPABASE_URL'] ?: System.getenv('ADISHOP_SUPABASE_URL') ?: "https://mcewjfnkrtiiolzibsuh.supabase.co"
         def shopSupabasePublishableKey = keystoreProperties['ADISHOP_SUPABASE_PUBLISHABLE_KEY'] ?: System.getenv('ADISHOP_SUPABASE_PUBLISHABLE_KEY') ?: keystoreProperties['ADISHOP_SUPABASE_ANON_KEY'] ?: System.getenv('ADISHOP_SUPABASE_ANON_KEY') ?: ""
@@ -202,9 +208,9 @@ android {
             buildConfigField "String", "ADISCHAT_FIREBASE_PROJECT_ID", '"adischat-qa"'
             buildConfigField "boolean", "QA_BUILD", "true"
             buildConfigField "boolean", "OFFLINE_QA_PREVIEW", "false"
-            buildConfigField "boolean", "QA_PUSH_ENABLED", "true"
-            buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "true"
-            buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "true"
+            buildConfigField "boolean", "QA_PUSH_ENABLED", "false"
+            buildConfigField "boolean", "QA_ORDER_MUTATIONS_ENABLED", "false"
+            buildConfigField "boolean", "QA_PAYMENTS_ENABLED", "false"
             buildConfigField "String", "RESTAURANTS_SUPABASE_URL", "\"${qaValue('QA_RESTAURANTS_SUPABASE_URL')}\""
             buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", "\"${qaValue('QA_RESTAURANTS_SUPABASE_ANON_KEY') ?: qaValue('QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY')}\""
             buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", "\"${qaValue('QA_RESTAURANTS_WORKER_BASE_URL') ?: qaValue('QA_RESTAURANTS_IDENTITY_BRIDGE_URL')}\""

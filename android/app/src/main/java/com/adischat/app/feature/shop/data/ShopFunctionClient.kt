@@ -9,7 +9,8 @@ import java.util.concurrent.TimeUnit
 
 object ShopFunctionClient {
     private val publishableKey: String = BuildConfig.ADISHOP_SUPABASE_PUBLISHABLE_KEY
-    val isConfigured: Boolean = BuildConfig.ADISHOP_SUPABASE_URL.isNotBlank() && publishableKey.isNotBlank()
+    val isConfigured: Boolean = BuildConfig.ADISHOP_SUPABASE_URL.isNotBlank() && publishableKey.isNotBlank() &&
+        (!BuildConfig.QA_BUILD || ShopQaMutationGuard.stagingUrlValid(BuildConfig.ADISHOP_SUPABASE_URL))
 
     val api: ShopFunctionApi? by lazy {
         if (!isConfigured) return@lazy null
@@ -22,6 +23,7 @@ object ShopFunctionClient {
             )
         }
         val client = OkHttpClient.Builder()
+            .apply { if (BuildConfig.QA_BUILD) addInterceptor(ShopQaMutationGuard.interceptor()) }
             .addInterceptor(auth)
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)

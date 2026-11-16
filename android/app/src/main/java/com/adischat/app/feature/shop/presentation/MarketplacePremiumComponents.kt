@@ -99,12 +99,12 @@ internal fun PremiumEmptyState(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.Surface),
         border = BorderStroke(1.dp, AdisGebeyaColors.Border),
     ) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -151,7 +151,7 @@ internal fun PremiumErrorState(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.Surface),
         border = BorderStroke(1.dp, AdisGebeyaColors.Border),
     ) {
@@ -188,7 +188,7 @@ internal fun PremiumMetricCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.Surface),
         border = BorderStroke(1.dp, AdisGebeyaColors.Border),
     ) {
@@ -221,7 +221,7 @@ internal fun PremiumUnavailableModuleCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.Surface),
         border = BorderStroke(1.dp, AdisGebeyaColors.Border),
     ) {

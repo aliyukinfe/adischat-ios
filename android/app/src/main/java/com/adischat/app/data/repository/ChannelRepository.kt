@@ -21,33 +21,33 @@ import java.io.ByteArrayOutputStream
 class ChannelRepository(private val context: Context) {
 
     private val api       = CloudflareClient.walletApi
-    private val mainApi   = CloudflareClient.api          // uploadMedia lives here
+    private val mainApi   = CloudflareClient.api      // uploadMedia lives here
 
-    // ── Mapping ───────────────────────────────────────────────────────────────
+    // - Mapping -
 
     private fun ChannelPostResponse.toModel() = ChannelPost(
-        id             = id,
+        id      = id,
         channelId      = channelId,
         authorUid      = authorUid,
         authorName     = authorName,
         authorPhotoUrl = authorPhotoUrl,
-        title          = title,
-        body           = body,
+        title      = title,
+        body      = body,
         postType       = postType,
         mediaUrl       = mediaUrl,
         mediaMimeType  = mediaMimeType,
-        linkUrl        = linkUrl,
+        linkUrl      = linkUrl,
         linkTitle      = linkTitle,
         linkImage      = linkImage,
-        pinned         = pinned,
-        views          = views,
+        pinned      = pinned,
+        views      = views,
         reactions      = reactions,
         createdAt      = createdAt,
         updatedAt      = updatedAt,
-        deleted        = deleted,
+        deleted      = deleted,
     )
 
-    // ── Polling flow ──────────────────────────────────────────────────────────
+    // - Polling flow -
 
     /**
      * Emits a fresh page of posts every [pollMs] milliseconds.
@@ -58,21 +58,21 @@ class ChannelRepository(private val context: Context) {
         pollMs: Long = 10_000L,
     ): Flow<Result<ChannelPostsPage>> = flow {
         while (true) {
-            val result = runCatching {
-                val resp = api.getChannelPosts(channelId, before = null, limit = 50)
-                val models = resp.posts.map { it.toModel() }
-                val sorted = models.sortedWith(
-                    compareByDescending<ChannelPost> { it.pinned }
-                        .thenByDescending { it.createdAt }
-                )
-                ChannelPostsPage(
-                    posts      = sorted,
-                    hasMore    = resp.hasMore,
-                    nextCursor = resp.nextCursor,
-                )
-            }
-            emit(result)
-            delay(pollMs)
+        val result = runCatching {
+        val resp = api.getChannelPosts(channelId, before = null, limit = 50)
+        val models = resp.posts.map { it.toModel() }
+        val sorted = models.sortedWith(
+        compareByDescending<ChannelPost> { it.pinned }
+        .thenByDescending { it.createdAt }
+        )
+        ChannelPostsPage(
+        posts      = sorted,
+        hasMore    = resp.hasMore,
+        nextCursor = resp.nextCursor,
+        )
+        }
+        emit(result)
+        delay(pollMs)
         }
     }
 
@@ -81,15 +81,15 @@ class ChannelRepository(private val context: Context) {
      */
     suspend fun loadMorePosts(channelId: String, before: String): Result<ChannelPostsPage> =
         runCatching {
-            val resp = api.getChannelPosts(channelId, before = before, limit = 20)
-            ChannelPostsPage(
-                posts      = resp.posts.map { it.toModel() },
-                hasMore    = resp.hasMore,
-                nextCursor = resp.nextCursor,
-            )
+        val resp = api.getChannelPosts(channelId, before = before, limit = 20)
+        ChannelPostsPage(
+        posts      = resp.posts.map { it.toModel() },
+        hasMore    = resp.hasMore,
+        nextCursor = resp.nextCursor,
+        )
         }
 
-    // ── Admin CRUD ────────────────────────────────────────────────────────────
+    // - Admin CRUD -
 
     suspend fun createPost(
         channelId: String,
@@ -116,7 +116,7 @@ class ChannelRepository(private val context: Context) {
         Unit
     }
 
-    // ── Member actions ────────────────────────────────────────────────────────
+    // - Member actions -
 
     suspend fun react(
         channelId: String,
@@ -132,7 +132,7 @@ class ChannelRepository(private val context: Context) {
         Unit
     }
 
-    // ── Media upload ──────────────────────────────────────────────────────────
+    // - Media upload -
 
     /**
      * Compress an image URI to max 1024px, JPEG 85%, then upload via the
@@ -152,17 +152,17 @@ class ChannelRepository(private val context: Context) {
 
         val maxPx  = 1024
         val scaled = if (orig.width > maxPx || orig.height > maxPx) {
-            val ratio  = maxPx.toFloat() / maxOf(orig.width, orig.height)
-            Bitmap.createScaledBitmap(
-                orig,
-                (orig.width  * ratio).toInt(),
-                (orig.height * ratio).toInt(),
-                true,
-            )
+        val ratio  = maxPx.toFloat() / maxOf(orig.width, orig.height)
+        Bitmap.createScaledBitmap(
+        orig,
+        (orig.width  * ratio).toInt(),
+        (orig.height * ratio).toInt(),
+        true,
+        )
         } else orig
 
         ByteArrayOutputStream().also { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        scaled.compress(Bitmap.CompressFormat.JPEG, 85, out)
         }.toByteArray()
     }.getOrNull()
 }

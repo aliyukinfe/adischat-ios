@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050A07">
+  <title>Open in AdisChat</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050A07;
+      --card: rgba(255, 255, 255, 0.07);
+      --line: rgba(255, 255, 255, 0.10);
+      --text: #F7FFF9;
+      --muted: #9AA6A0;
+      --green: #22C55E;
+      --green-soft: rgba(34, 197, 94, 0.16);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 20% 12%, rgba(34, 197, 94, 0.18), transparent 34%),
+        linear-gradient(145deg, #050A07, #0B1710 48%, #050A07);
+      color: var(--text);
+    }
+    main {
+      width: min(440px, 100%);
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--card);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+      backdrop-filter: blur(18px);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+    .mark {
+      width: 48px;
+      height: 48px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: var(--green-soft);
+      border: 1px solid rgba(34, 197, 94, 0.32);
+      color: var(--green);
+      font-weight: 900;
+      font-size: 22px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .target {
+      margin: 22px 0;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid var(--line);
+      color: var(--text);
+      word-break: break-word;
+      font-size: 14px;
+      font-weight: 700;
+    }
+    a.button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 56px;
+      width: 100%;
+      border-radius: 18px;
+      text-decoration: none;
+      color: #041007;
+      background: var(--green);
+      font-weight: 900;
+      box-shadow: 0 12px 34px rgba(34, 197, 94, 0.28);
+    }
+    .hint {
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 14px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="brand">
+      <div class="mark">A</div>
+      <div>
+        <h1>Open in AdisChat</h1>
+    <p>This link opens a user, channel, or group directly in the app.</p>
+      </div>
+    </div>
+    <div class="target" id="target">Preparing link...</div>
+    <a class="button" id="open" href="#">Open AdisChat</a>
+    <p class="hint">If the app does not open, install or update AdisChat and try again.</p>
+  </main>
+  <script>
+    function parseTarget() {
+      const parts = location.pathname.split("/").filter(Boolean);
+      const first = (parts[0] || "").toLowerCase();
+      const second = parts[1] || "";
+      if (["channel", "c"].includes(first)) return { type: "channel", slug: second };
+      if (["group", "g"].includes(first)) return { type: "group", slug: second };
+      if (["user", "u"].includes(first)) return { type: "user", slug: second };
+      if (!first || first === "link.html") return { type: "home", slug: "" };
+      return { type: "user", slug: parts[0] || "" };
+    }
+
+    const target = parseTarget();
+    const slug = (target.slug || "").replace(/^@/, "");
+    const appUrl = target.type === "channel"
+      ? `adischat://link/channel/${encodeURIComponent(slug)}`
+      : target.type === "group"
+        ? `adischat://link/group/${encodeURIComponent(slug)}`
+        : target.type === "home"
+          ? "adischat://link"
+          : `adischat://link/user/${encodeURIComponent(slug)}`;
+
+    document.getElementById("target").textContent = target.type === "home"
+      ? "AdisChat"
+      : slug
+      ? `${target.type}: ${slug}`
+      : "Invalid AdisChat link";
+    document.getElementById("open").href = appUrl;
+
+    if (slug || target.type === "home") {
+      setTimeout(() => {
+        location.href = appUrl;
+      }, 350);
+    }
+  </script>
+</body>
+</html>

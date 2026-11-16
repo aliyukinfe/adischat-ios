@@ -1,6 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -11,8 +12,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Analytics
@@ -24,6 +29,7 @@ import androidx.compose.material.icons.filled.Reviews
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -35,10 +41,12 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -86,17 +94,37 @@ internal fun SellerBusinessSuite(
     business: ShopSellerBusinessDto?,
     busyIds: Set<String>,
     actions: SellerBusinessActions,
+    loading: Boolean = false,
+    hasError: Boolean = false,
 ) {
-    var selected by remember { mutableStateOf<SellerBusinessModule?>(null) }
+    var selected by rememberSaveable { mutableStateOf<SellerBusinessModule?>(null) }
+    var requestedStoreId by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedStoreId = business?.selectedStore?.id
+    LaunchedEffect(selectedStoreId) {
+        if (selectedStoreId == requestedStoreId) requestedStoreId = null
+    }
+    val switchingStore = requestedStoreId != null && selectedStoreId != requestedStoreId
+    val selectStore: (String) -> Unit = { storeId ->
+        if (storeId != selectedStoreId) {
+            requestedStoreId = storeId
+            actions.refresh(storeId)
+        }
+    }
+    BackHandler(enabled = selected != null) { selected = null }
     if (selected == null) {
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            SellerBusinessHeading("Seller tools", "All actions use your authenticated, server-owned store.")
-            SellerBusinessModule.entries.chunked(2).forEach { modules ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    modules.forEach { module ->
-                        SellerModuleCard(module, Modifier.weight(1f)) { selected = module }
+            SellerBusinessHeading("Seller tools", "Store-specific tools use your authenticated store.")
+            SellerStoreScopeControl(business, selectStore)
+            if (switchingStore) {
+                SellerStoreSwitchState(loading, hasError, { requestedStoreId?.let(actions.refresh) }) { requestedStoreId = null }
+            } else {
+                SellerBusinessModule.entries.chunked(2).forEach { modules ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        modules.forEach { module ->
+                            SellerModuleCard(module, Modifier.weight(1f)) { selected = module }
+                        }
+                        if (modules.size == 1) Spacer(Modifier.weight(1f))
                     }
-                    if (modules.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
         }
@@ -109,6 +137,11 @@ internal fun SellerBusinessSuite(
             Text(selected!!.label, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AdisGebeyaColors.PrimaryText)
             Spacer(Modifier.weight(1f))
             TextButton(onClick = { actions.refresh(business?.selectedStore?.id) }) { Text("Refresh") }
+        }
+        SellerStoreScopeControl(business, selectStore)
+        if (switchingStore) {
+            SellerStoreSwitchState(loading, hasError, { requestedStoreId?.let(actions.refresh) }) { requestedStoreId = null }
+            return@Column
         }
         if (business == null) {
             SellerInfoCard("Seller tools are loading. Tap Refresh if this takes longer than expected.")
@@ -125,6 +158,47 @@ internal fun SellerBusinessSuite(
             SellerBusinessModule.Finance -> SellerFinance(business)
             SellerBusinessModule.Settings -> SellerSettings(business, actions)
             null -> Unit
+        }
+    }
+}
+
+@Composable
+private fun SellerStoreScopeControl(business: ShopSellerBusinessDto?, onSelect: (String) -> Unit) {
+    val stores = business?.stores.orEmpty()
+    if (stores.size < 2) return
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    OutlinedButton(onClick = { showPicker = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+        Icon(Icons.Default.Storefront, contentDescription = null)
+        Spacer(Modifier.width(8.dp))
+        Text("Store tools: ${business?.selectedStore?.name ?: "Choose store"}", modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+    if (showPicker) {
+        AlertDialog(
+            onDismissRequest = { showPicker = false },
+            title = { Text("Choose store") },
+            text = {
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 360.dp)) {
+                    items(stores, key = { it.id }) { store ->
+                        TextButton(
+                            onClick = { showPicker = false; onSelect(store.id) },
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                        ) { Text(store.name, modifier = Modifier.fillMaxWidth(), maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Close") } },
+        )
+    }
+}
+
+@Composable
+private fun SellerStoreSwitchState(loading: Boolean, hasError: Boolean, onRetry: () -> Unit, onCancel: () -> Unit) {
+    SellerInfoCard(if (hasError && !loading) "Store tools could not load." else "Switching store...")
+    if (hasError && !loading) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TextButton(onClick = onRetry) { Text("Retry") }
+            TextButton(onClick = onCancel) { Text("Keep current store") }
         }
     }
 }

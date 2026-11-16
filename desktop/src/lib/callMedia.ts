@@ -26,6 +26,10 @@ export type DeviceLists = {
 
 const DEVICE_PREFS_KEY = "desktop:callDevices";
 
+function mediaLog(message: string, details: Record<string, unknown> = {}) {
+  console.info(`[desktop-media] ${message}`, details);
+}
+
 export function loadDevicePreferences(): DevicePreferences {
   return readCache<DevicePreferences>(DEVICE_PREFS_KEY, { microphoneId: "", cameraId: "", speakerId: "" });
 }
@@ -69,7 +73,13 @@ function classifyMediaError(error: unknown, video: boolean): { code: MediaErrorC
  * Falls back to default devices when a saved device id no longer exists.
  */
 export async function requestCallMedia(type: "voice" | "video", prefs?: DevicePreferences): Promise<MediaResult> {
+  mediaLog("media request starting", {
+    type,
+    hasMediaDevices: typeof navigator !== "undefined" && Boolean(navigator.mediaDevices),
+    hasGetUserMedia: typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia),
+  });
   if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    mediaLog("media request unavailable", { type });
     return { ok: false, code: "not-available", message: mediaErrorMessage("not-available", type === "video") };
   }
   const selected = prefs || loadDevicePreferences();
@@ -81,10 +91,27 @@ export async function requestCallMedia(type: "voice" | "video", prefs?: DevicePr
         ? { deviceId: { ideal: selected.cameraId }, width: { ideal: 1280 }, height: { ideal: 720 } }
         : { width: { ideal: 1280 }, height: { ideal: 720 } }
       : false;
+  mediaLog("getUserMedia requested", {
+    type,
+    audio: true,
+    video: Boolean(video),
+    hasPreferredMicrophone: Boolean(selected.microphoneId),
+    hasPreferredCamera: Boolean(selected.cameraId),
+  });
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio, video });
+    mediaLog("getUserMedia granted", {
+      type,
+      audioTracks: stream.getAudioTracks().length,
+      videoTracks: stream.getVideoTracks().length,
+    });
     return { ok: true, stream };
   } catch (error) {
+    mediaLog("getUserMedia failed", {
+      type,
+      errorName: error instanceof DOMException ? error.name : "unknown",
+      retryingWithDefaults: Boolean(selected.microphoneId || selected.cameraId),
+    });
     // A stale saved device id can produce OverconstrainedError — retry with defaults once.
     if (selected.microphoneId || selected.cameraId) {
       try {
@@ -92,8 +119,17 @@ export async function requestCallMedia(type: "voice" | "video", prefs?: DevicePr
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           video: type === "video" ? { width: { ideal: 1280 }, height: { ideal: 720 } } : false
         });
+        mediaLog("getUserMedia retry granted", {
+          type,
+          audioTracks: stream.getAudioTracks().length,
+          videoTracks: stream.getVideoTracks().length,
+        });
         return { ok: true, stream };
       } catch (retryError) {
+        mediaLog("getUserMedia retry failed", {
+          type,
+          errorName: retryError instanceof DOMException ? retryError.name : "unknown",
+        });
         return { ok: false, ...classifyMediaError(retryError, type === "video") };
       }
     }

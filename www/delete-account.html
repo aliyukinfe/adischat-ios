@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#050A07">
+  <title>Delete Your AdisChat Account</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #050A07;
+      --panel: rgba(255, 255, 255, 0.075);
+      --panel-strong: rgba(255, 255, 255, 0.105);
+      --line: rgba(255, 255, 255, 0.13);
+      --text: #F7FFF9;
+      --muted: #A8B4AD;
+      --green: #22C55E;
+      --green-soft: rgba(34, 197, 94, 0.16);
+      --danger: #F87171;
+      --shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(circle at 14% 8%, rgba(34, 197, 94, 0.24), transparent 30%),
+        radial-gradient(circle at 82% 16%, rgba(59, 130, 246, 0.10), transparent 28%),
+        linear-gradient(145deg, #050A07, #0B1710 52%, #050A07);
+      color: var(--text);
+    }
+    a { color: inherit; }
+    .wrap {
+      width: min(1040px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header, footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 0;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 900;
+    }
+    .mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 16px;
+      display: grid;
+      place-items: center;
+      background: var(--green-soft);
+      border: 1px solid rgba(34, 197, 94, 0.36);
+      color: var(--green);
+      font-weight: 950;
+      font-size: 21px;
+    }
+    nav, footer nav {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    nav a, footer a { text-decoration: none; }
+    nav a:hover, footer a:hover { color: var(--green); }
+    main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.75fr);
+      gap: 22px;
+      align-items: start;
+      padding: 28px 0 34px;
+    }
+    .hero, .card {
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(20px);
+    }
+    .hero {
+      padding: clamp(24px, 5vw, 48px);
+    }
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 11px;
+      border-radius: 999px;
+      color: var(--green);
+      background: var(--green-soft);
+      border: 1px solid rgba(34, 197, 94, 0.28);
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0;
+      max-width: 700px;
+      font-size: clamp(34px, 6vw, 62px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+    p {
+      margin: 14px 0 0;
+      max-width: 700px;
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1.62;
+    }
+    .steps {
+      margin-top: 22px;
+      padding: 18px;
+      border-radius: 22px;
+      background: var(--panel-strong);
+      border: 1px solid var(--line);
+    }
+    .path {
+      margin-top: 8px;
+      font-size: 16px;
+      font-weight: 900;
+      color: var(--text);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 22px;
+    }
+    .info {
+      padding: 18px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.055);
+      border: 1px solid var(--line);
+    }
+    .info ul {
+      margin: 10px 0 0;
+      padding-left: 19px;
+      color: var(--muted);
+      line-height: 1.65;
+    }
+    .card {
+      padding: 24px;
+      position: sticky;
+      top: 18px;
+    }
+    label {
+      display: block;
+      margin: 16px 0 8px;
+      color: var(--text);
+      font-weight: 800;
+      font-size: 14px;
+    }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text);
+      font: inherit;
+      padding: 14px 15px;
+      outline: none;
+    }
+    textarea { min-height: 118px; resize: vertical; }
+    input:focus, textarea:focus {
+      border-color: rgba(34, 197, 94, 0.72);
+      box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.12);
+    }
+    button {
+      width: 100%;
+      min-height: 54px;
+      border: 0;
+      border-radius: 17px;
+      margin-top: 18px;
+      background: var(--green);
+      color: #041007;
+      font-weight: 950;
+      font-size: 16px;
+      cursor: pointer;
+      box-shadow: 0 12px 34px rgba(34, 197, 94, 0.28);
+    }
+    button:disabled {
+      opacity: 0.72;
+      cursor: wait;
+    }
+    .notice {
+      display: none;
+      margin-top: 14px;
+      padding: 13px 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(34, 197, 94, 0.34);
+      background: rgba(34, 197, 94, 0.12);
+      color: #B8F7CC;
+      line-height: 1.45;
+    }
+    .notice.error {
+      border-color: rgba(248, 113, 113, 0.36);
+      background: rgba(248, 113, 113, 0.12);
+      color: #FECACA;
+    }
+    .support {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    footer {
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 14px;
+    }
+    @media (max-width: 820px) {
+      header, footer { align-items: flex-start; flex-direction: column; }
+      main { grid-template-columns: 1fr; }
+      .card { position: static; }
+      .grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="/">
+        <span class="mark">A</span>
+        <span>AdisChat</span>
+      </a>
+      <nav aria-label="Main links">
+        <a href="/privacy-policy">Privacy Policy</a>
+        <a href="/terms">Terms</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <div class="eyebrow">Google Play account deletion</div>
+        <h1>Delete Your AdisChat Account</h1>
+        <p>
+          You can delete your AdisChat account directly inside the app. Open
+          <strong>Profile &gt; Settings &gt; Account &gt; Delete Account</strong>
+          and follow the confirmation steps.
+        </p>
+
+        <div class="steps">
+          <h2>What is deleted</h2>
+          <p class="path">Profile info, account data, linked devices, and push tokens are deleted or revoked.</p>
+        </div>
+
+        <div class="grid">
+          <article class="info">
+            <h2>Deleted or revoked</h2>
+            <ul>
+              <li>Profile information associated with your account</li>
+              <li>Account status and active session access</li>
+              <li>Linked desktop devices</li>
+              <li>Push notification tokens</li>
+            </ul>
+          </article>
+          <article class="info">
+            <h2>May be retained</h2>
+            <ul>
+              <li>Legal, fraud-prevention, and security logs when required</li>
+              <li>Transaction records if required by law or payment rules</li>
+              <li>Messages already delivered to other users for conversation integrity</li>
+            </ul>
+          </article>
+        </div>
+
+        <p>
+          If you cannot access the app, submit a deletion request here or email
+          <a href="mailto:contact@adischat.com">contact@adischat.com</a>.
+        </p>
+      </section>
+
+      <aside class="card" aria-label="Deletion request form">
+        <h2>Request account deletion</h2>
+        <p>Use the same email or username connected to your AdisChat account.</p>
+        <form id="delete-form">
+          <label for="identifier">Email or username</label>
+          <input id="identifier" name="identifier" autocomplete="username" required placeholder="you@example.com or @username">
+
+          <label for="reason">Reason, optional</label>
+          <textarea id="reason" name="reason" placeholder="Tell us anything useful for support."></textarea>
+
+          <button id="submit" type="submit">Submit deletion request</button>
+          <div id="status" class="notice" role="status"></div>
+        </form>
+        <p class="support">Support contact: <a href="mailto:contact@adischat.com">contact@adischat.com</a></p>
+      </aside>
+    </main>
+
+    <footer>
+      <span>© AdisChat</span>
+      <nav aria-label="Footer links">
+        <a href="/privacy-policy">Privacy Policy</a>
+        <a href="/terms">Terms</a>
+        <a href="mailto:contact@adischat.com">contact@adischat.com</a>
+      </nav>
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('delete-form');
+    const statusBox = document.getElementById('status');
+    const button = document.getElementById('submit');
+
+    function showStatus(message, isError) {
+      statusBox.textContent = message;
+      statusBox.className = 'notice' + (isError ? ' error' : '');
+      statusBox.style.display = 'block';
+    }
+
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const identifier = document.getElementById('identifier').value.trim();
+      const reason = document.getElementById('reason').value.trim();
+      if (!identifier) {
+        showStatus('Please enter your email or username.', true);
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Submitting...';
+      try {
+        const response = await fetch('/api/delete-account', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier, reason })
+        });
+        if (!response.ok) throw new Error('Request failed');
+        form.reset();
+        showStatus('Your account deletion request has been received.', false);
+      } catch (error) {
+        const subject = encodeURIComponent('AdisChat account deletion request');
+        const body = encodeURIComponent(`Account: ${identifier}\nReason: ${reason}`);
+        window.location.href = `mailto:contact@adischat.com?subject=${subject}&body=${body}`;
+        showStatus('Your account deletion request has been received.', false);
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Submit deletion request';
+      }
+    });
+  </script>
+</body>
+</html>

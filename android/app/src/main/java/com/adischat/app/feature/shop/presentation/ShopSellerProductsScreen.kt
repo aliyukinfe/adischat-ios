@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assignment
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Checkroom
 import androidx.compose.material.icons.filled.Chair
 import androidx.compose.material.icons.filled.Close
@@ -127,6 +128,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.SaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -193,7 +196,11 @@ import com.adischat.app.feature.shop.data.ShopSellerApplicationRequest
 import com.adischat.app.feature.shop.data.ShopSellerRequestsDto
 import com.adischat.app.feature.shop.data.ShopSellerProductDraftPayload
 import com.adischat.app.feature.shop.data.ShopSellerProductDto
+import com.adischat.app.feature.shop.data.ShopSellerSpecificationInput
+import com.adischat.app.feature.shop.data.ShopSellerProductOptionInput
+import com.adischat.app.feature.shop.data.ShopSellerVariantInput
 import com.adischat.app.feature.shop.data.ShopStoreDto
+import com.adischat.app.feature.shop.data.ShopSellingUnitDto
 import com.adischat.app.ui.theme.AdisGebeyaColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -222,17 +229,34 @@ private val SellerProductOnColor = AdisGebeyaColors.OnColor
 @Composable
 internal fun SellerProductsPage(
     protectedState: ShopProtectedState,
+    editorStateHolder: SaveableStateHolder,
     categories: List<ShopCategoryDto>,
+    sellingUnits: List<ShopSellingUnitDto>,
     onCreateProduct: () -> Unit,
     onEditProduct: (String) -> Unit,
     onCloseEditor: () -> Unit,
     onSaveProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onSaveBeforeImagePick: (String, ShopSellerProductDraftPayload, () -> Unit) -> Unit,
+    onSaveAndSubmitProduct: (String, ShopSellerProductDraftPayload) -> Unit,
+    onLoadCategoryAttributes: (String) -> Unit,
     onSubmitProduct: (String) -> Unit,
-    onUploadProductMedia: (String, ByteArray, String, Int, Int, String) -> Unit,
+    onArchiveProduct: (String) -> Unit,
+    onUploadProductMedia: (String, List<Uri>, Context, String) -> Unit,
+    onRetryProductMedia: (String) -> Unit,
     onDeleteProductMedia: (String, String) -> Unit,
     onReorderProductMedia: (String, List<String>, String) -> Unit,
 ) {
-    val selected = protectedState.selectedSellerProduct
+    val selectedStoreId = protectedState.sellerBusiness?.selectedStore?.id
+    val productsReady = !selectedStoreId.isNullOrBlank() &&
+        protectedState.sellerProductsStoreId == selectedStoreId && protectedState.sellerProductsLoaded
+    val selected = protectedState.selectedSellerProduct?.takeIf { it.storeId == selectedStoreId && productsReady }
+    var productPendingRemoval by remember { mutableStateOf<ShopSellerProductDto?>(null) }
+    var searchQuery by rememberSaveable(selectedStoreId) { mutableStateOf("") }
+    var statusFilter by rememberSaveable(selectedStoreId) { mutableStateOf("All") }
+    val storeProducts = if (productsReady) com.adischat.app.feature.shop.data.ShopStateReducers.sellerProductsForStore(
+        protectedState.sellerProducts, selectedStoreId,
+    ) else emptyList()
+    val visibleProducts = filterSellerProducts(storeProducts, searchQuery, statusFilter)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Column {
@@ -241,7 +265,7 @@ internal fun SellerProductsPage(
             }
             Button(
                 onClick = onCreateProduct,
-                enabled = !protectedState.loading,
+                enabled = productsReady && !protectedState.loading,
                 colors = ButtonDefaults.buttonColors(containerColor = SellerProductGreen, contentColor = SellerProductOnColor),
                 shape = RoundedCornerShape(14.dp),
             ) {
@@ -252,31 +276,106 @@ internal fun SellerProductsPage(
         }
 
         selected?.let { product ->
-            SellerProductEditor(
-                product = product,
-                categories = categories,
-                busy = protectedState.busyIds.contains(product.id),
-                onClose = onCloseEditor,
-                onSave = { onSaveProduct(product.id, it) },
-                onSubmit = { onSubmitProduct(product.id) },
-                onUploadImage = { bytes, mime, width, height -> onUploadProductMedia(product.id, bytes, mime, width, height, product.title.ifBlank { "Product image" }) },
-                onDeleteImage = { imageId -> onDeleteProductMedia(product.id, imageId) },
-                onReorderImages = { imageIds, primaryId -> onReorderProductMedia(product.id, imageIds, primaryId) },
-            )
-        }
-
-        if (protectedState.sellerProducts.isEmpty()) {
-            EmptyCard("No seller products yet. Create your first draft product.")
-        } else {
-            protectedState.sellerProducts.forEach { product ->
-                SellerProductCard(product = product, busy = protectedState.busyIds.contains(product.id), onEdit = { onEditProduct(product.id) }, onSubmit = { onSubmitProduct(product.id) })
+            editorStateHolder.SaveableStateProvider(product.id) {
+                SellerProductEditor(
+                    product = product,
+                    categories = categories,
+                    sellingUnits = sellingUnits,
+                    busy = protectedState.busyIds.contains(product.id),
+                    mediaUpload = protectedState.sellerMediaUpload?.takeIf { it.productId == product.id },
+                    onClose = {
+                        onCloseEditor()
+                    },
+                    onSave = { onSaveProduct(product.id, it) },
+                    onSaveBeforeImagePick = { payload, onSaved -> onSaveBeforeImagePick(product.id, payload, onSaved) },
+                    onLoadCategoryAttributes = onLoadCategoryAttributes,
+                    categoryAttributes = protectedState.sellerCategoryAttributes,
+                    categoryLoadingIds = protectedState.sellerCategoryLoadingIds,
+                    categoryErrors = protectedState.sellerCategoryErrors,
+                    onSubmit = { payload -> onSaveAndSubmitProduct(product.id, payload) },
+                    onArchive = { productPendingRemoval = product },
+                    onUploadImages = { uris, context -> onUploadProductMedia(product.id, uris, context, product.title.ifBlank { "Product image" }) },
+                    onRetryUpload = { onRetryProductMedia(product.id) },
+                    onDeleteImage = { imageId -> onDeleteProductMedia(product.id, imageId) },
+                    onReorderImages = { imageIds, primaryId -> onReorderProductMedia(product.id, imageIds, primaryId) },
+                )
             }
         }
+
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            label = { Text("Search products or SKU") },
+            colors = shopOutlinedTextFieldColors(),
+        )
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(listOf("All", "Draft", "In review", "Approved", "Rejected")) { status ->
+                androidx.compose.material3.FilterChip(
+                    selected = statusFilter == status,
+                    onClick = { statusFilter = status },
+                    label = { Text(status) },
+                )
+            }
+        }
+        if (!productsReady) {
+            EmptyCard(if (protectedState.error != null) "Products for this store could not be loaded." else "Loading products for this store...")
+        } else if (storeProducts.isEmpty()) {
+            EmptyCard("No seller products yet. Create your first draft product.")
+        } else if (visibleProducts.isEmpty()) {
+            EmptyCard("No products match this search and status.")
+        } else {
+            visibleProducts.forEach { product ->
+                SellerProductCard(
+                    product = product,
+                    busy = protectedState.busyIds.contains(product.id),
+                    onEdit = { onEditProduct(product.id) },
+                    onSubmit = { onSubmitProduct(product.id) },
+                    onArchive = { productPendingRemoval = product },
+                )
+            }
+        }
+    }
+
+    productPendingRemoval?.let { product ->
+        AlertDialog(
+            onDismissRequest = { productPendingRemoval = null },
+            title = { Text("Remove product from store?") },
+            text = { Text("${product.title.ifBlank { "This product" }} will disappear from your store and AdisGebeya. Existing orders and history will be preserved.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        productPendingRemoval = null
+                        onArchiveProduct(product.id)
+                    },
+                ) { Text("Remove", color = SellerProductRed) }
+            },
+            dismissButton = { TextButton(onClick = { productPendingRemoval = null }) { Text("Keep product") } },
+        )
+    }
+}
+
+internal fun filterSellerProducts(products: List<ShopSellerProductDto>, query: String, status: String): List<ShopSellerProductDto> {
+    val term = query.trim()
+    return products.filter { product ->
+        val matchesQuery = term.isEmpty() || product.title.contains(term, ignoreCase = true) ||
+            product.sellerSku?.contains(term, ignoreCase = true) == true ||
+            product.variants.any { it.sku?.contains(term, ignoreCase = true) == true }
+        val matchesStatus = when (status) {
+            "Draft" -> product.status == "draft" && product.moderationStatus in setOf("pending", "draft")
+            "In review" -> product.moderationStatus in setOf("submitted", "under_review")
+            "Approved" -> product.moderationStatus == "approved"
+            "Rejected" -> product.moderationStatus in setOf("rejected", "changes_requested")
+            else -> true
+        }
+        matchesQuery && matchesStatus
     }
 }
 
 @Composable
-private fun SellerProductCard(product: ShopSellerProductDto, busy: Boolean, onEdit: () -> Unit, onSubmit: () -> Unit) {
+private fun SellerProductCard(product: ShopSellerProductDto, busy: Boolean, onEdit: () -> Unit, onSubmit: () -> Unit, onArchive: () -> Unit) {
     Card(
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(SellerProductSurface),
@@ -310,6 +409,9 @@ private fun SellerProductCard(product: ShopSellerProductDto, busy: Boolean, onEd
                     if (busy) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = SellerProductOnColor)
                     else Text("Submit")
                 }
+                IconButton(onClick = onArchive, enabled = !busy) {
+                    Icon(Icons.Default.Delete, contentDescription = "Remove product from store", tint = SellerProductRed)
+                }
             }
         }
     }
@@ -332,40 +434,70 @@ private fun StatusPill(status: String) {
 private fun SellerProductEditor(
     product: ShopSellerProductDto,
     categories: List<ShopCategoryDto>,
+    sellingUnits: List<ShopSellingUnitDto>,
     busy: Boolean,
+    mediaUpload: com.adischat.app.feature.shop.data.ShopSellerMediaUploadState?,
     onClose: () -> Unit,
     onSave: (ShopSellerProductDraftPayload) -> Unit,
-    onSubmit: () -> Unit,
-    onUploadImage: (ByteArray, String, Int, Int) -> Unit,
+    onSaveBeforeImagePick: (ShopSellerProductDraftPayload, () -> Unit) -> Unit,
+    onLoadCategoryAttributes: (String) -> Unit,
+    categoryAttributes: Map<String, List<com.adischat.app.feature.shop.data.ShopCategoryAttributeDto>>,
+    categoryLoadingIds: Set<String>,
+    categoryErrors: Map<String, String>,
+    onSubmit: (ShopSellerProductDraftPayload) -> Unit,
+    onArchive: () -> Unit,
+    onUploadImages: (List<Uri>, Context) -> Unit,
+    onRetryUpload: () -> Unit,
     onDeleteImage: (String) -> Unit,
     onReorderImages: (List<String>, String) -> Unit,
 ) {
     val context = LocalContext.current
-    var title by remember(product.id) { mutableStateOf(product.title.takeUnless { it == "Untitled product" }.orEmpty()) }
-    var brand by remember(product.id) { mutableStateOf(product.brand.orEmpty()) }
-    var selectedCategoryId by remember(product.id) { mutableStateOf(product.categoryId.orEmpty()) }
-    var shortDescription by remember(product.id) { mutableStateOf(product.shortDescription.orEmpty()) }
-    var description by remember(product.id) { mutableStateOf(product.description.orEmpty()) }
-    var price by remember(product.id) { mutableStateOf(if (product.priceMinor > 0) (product.priceMinor / 100).toString() else "") }
-    var stock by remember(product.id) { mutableStateOf(product.inventory.firstOrNull { it.variantId == null }?.quantityAvailable?.takeIf { it > 0 }?.toString().orEmpty()) }
-    var shipping by remember(product.id) { mutableStateOf(product.shippingDetails?.get("notes")?.toString().orEmpty()) }
-    var returns by remember(product.id) { mutableStateOf(product.returnPolicy?.get("notes")?.toString().orEmpty()) }
-    var specs by remember(product.id) { mutableStateOf(product.specifications?.entries?.joinToString("\n") { "${it.key}: ${it.value}" }.orEmpty()) }
-    var mediaMessage by remember(product.id) { mutableStateOf<String?>(null) }
+    val editorBusy = busy || mediaUpload?.uploading == true
+    var title by rememberSaveable(product.id) { mutableStateOf(product.title.takeUnless { it == "Untitled product" }.orEmpty()) }
+    var brand by rememberSaveable(product.id) { mutableStateOf(product.brand.orEmpty()) }
+    var selectedCategoryId by rememberSaveable(product.id) { mutableStateOf(product.categoryId.orEmpty()) }
+    var selectedSellingUnitCode by rememberSaveable(product.id) { mutableStateOf(product.sellingUnitCode) }
+    var minimumOrderQuantity by rememberSaveable(product.id) { mutableStateOf(product.minimumOrderQuantity.toString()) }
+    var productTypeDescription by rememberSaveable(product.id) { mutableStateOf(product.productTypeDescription.orEmpty()) }
+    var showCategoryPicker by rememberSaveable(product.id) { mutableStateOf(false) }
+    var pendingCategoryId by rememberSaveable(product.id) { mutableStateOf<String?>(null) }
+    var showUnitPicker by rememberSaveable(product.id) { mutableStateOf(false) }
+    var shortDescription by rememberSaveable(product.id) { mutableStateOf(product.shortDescription.orEmpty()) }
+    var description by rememberSaveable(product.id) { mutableStateOf(product.description.orEmpty()) }
+    var price by rememberSaveable(product.id) { mutableStateOf(if (product.priceMinor > 0) (product.priceMinor / 100).toString() else "") }
+    var stock by rememberSaveable(product.id) { mutableStateOf(product.inventory.firstOrNull { it.variantId == null }?.quantityAvailable?.takeIf { it > 0 }?.toString().orEmpty()) }
+    var shipping by rememberSaveable(product.id) { mutableStateOf(product.shippingDetails?.get("notes")?.toString().orEmpty()) }
+    var returns by rememberSaveable(product.id) { mutableStateOf(product.returnPolicy?.get("notes")?.toString().orEmpty()) }
+    var specs by rememberSaveable(product.id) { mutableStateOf(product.specifications?.entries?.joinToString("\n") { "${it.key}: ${it.value}" }.orEmpty()) }
+    var variantSnapshotsJson by rememberSaveable(product.id) { mutableStateOf("{}") }
+    var variantOutputsJson by rememberSaveable(product.id) { mutableStateOf("") }
+    var mediaMessage by rememberSaveable(product.id) { mutableStateOf<String?>(null) }
+    var specificationMessage by rememberSaveable(product.id) { mutableStateOf<String?>(null) }
+    fun specificationErrors(requireRequired: Boolean): List<String> {
+        val snapshot = decodeSellerVariantSnapshot(decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId])
+        val values = snapshot?.specificationText ?: product.specificationValues.associate { value ->
+            value.attributeCode to (value.valueText ?: value.valueNumber?.toString() ?: value.valueBoolean?.toString()).orEmpty()
+        }
+        return sellerSpecificationErrors(categoryAttributes[selectedCategoryId].orEmpty(), values, requireRequired)
+    }
+    fun currentPayload(): ShopSellerProductDraftPayload {
+        return sellerProductDraftPayload(SellerProductFormValues(
+            title, brand, selectedCategoryId, selectedSellingUnitCode, minimumOrderQuantity,
+            productTypeDescription, shortDescription, description, price, stock, shipping, returns,
+            specs, variantOutputsJson, product.images.map { it.id }.toSet(),
+        ))
+    }
     val uploadedImages = product.images
         .filter { it.imageUrl?.isNotBlank() == true }
         .sortedWith(compareByDescending<ShopProductImageDto> { it.isPrimary == true }.thenBy { it.displayOrder ?: 0 })
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         mediaMessage = null
-        val remaining = (10 - uploadedImages.size).coerceAtLeast(0)
-        uris.take(remaining).forEach { uri ->
-            val processed = runCatching { processSellerProductImage(context, uri) }.getOrElse { error ->
-                mediaMessage = error.message ?: "Image could not be prepared."
-                null
-            }
-            if (processed != null) onUploadImage(processed.bytes, processed.mimeType, processed.width, processed.height)
-        }
-        if (uris.size > remaining) mediaMessage = "A product can have up to 10 images."
+        val selected = eligibleSellerMediaSelection(uris, uploadedImages.size)
+        if (selected.isNotEmpty()) onUploadImages(selected, context.applicationContext)
+        if (selected.size < uris.distinct().size) mediaMessage = "A product can have up to 10 images."
+    }
+    LaunchedEffect(selectedCategoryId) {
+        if (selectedCategoryId.isNotBlank()) onLoadCategoryAttributes(selectedCategoryId)
     }
 
     Card(
@@ -379,32 +511,115 @@ private fun SellerProductEditor(
                     Text("Product draft", color = SellerProductText, fontWeight = FontWeight.Black, fontSize = 18.sp)
                     Text(productStatusLabel(product), color = SellerProductMuted, fontSize = 12.sp)
                 }
-                IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close product editor") }
+                Row {
+                    IconButton(onClick = onArchive, enabled = !editorBusy) {
+                        Icon(Icons.Default.Delete, contentDescription = "Remove product from store", tint = SellerProductRed)
+                    }
+                    IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close product editor") }
+                }
             }
             OutlinedTextField(title, { title = it }, label = { Text("Product name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
             OutlinedTextField(brand, { brand = it }, label = { Text("Brand optional") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
+            val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
+            val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
             Text("Category", color = SellerProductText, fontWeight = FontWeight.SemiBold)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(categories, key = { it.id }) { category ->
-                    val selected = selectedCategoryId == category.id
-                    OutlinedButton(
-                        onClick = { selectedCategoryId = category.id },
-                        shape = RoundedCornerShape(999.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = if (selected) SellerProductGreen else SellerProductText),
-                    ) { Text(category.name, maxLines = 1) }
-                }
+            OutlinedButton(onClick = { showCategoryPicker = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Text(
+                    selectedCategory?.let { categoryBreadcrumb(it, categories) } ?: "Choose the most specific category",
+                    modifier = Modifier.weight(1f),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+            if (showCategoryPicker) {
+                SellerCategoryPicker(
+                    categories = categories,
+                    selectedCategoryId = selectedCategoryId,
+                    onDismiss = { showCategoryPicker = false },
+                    onSelect = {
+                        showCategoryPicker = false
+                        if (selectedCategoryId != it.id) {
+                            val currentSnapshot = decodeSellerVariantSnapshot(
+                                decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId],
+                            )
+                            if (hasSellerCategoryDraft(variantOutputsJson, currentSnapshot)) pendingCategoryId = it.id
+                            else {
+                                selectedCategoryId = it.id
+                                variantOutputsJson = ""
+                            }
+                        }
+                    },
+                )
+            }
+            pendingCategoryId?.let { nextId ->
+                AlertDialog(
+                    onDismissRequest = { pendingCategoryId = null },
+                    title = { Text("Change category?") },
+                    text = { Text("Your current category details are kept if you switch back. Saving under the new category replaces incompatible details. Your product name and other basic fields stay unchanged.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            selectedCategoryId = nextId
+                            variantOutputsJson = ""
+                            pendingCategoryId = null
+                        }) { Text("Change category") }
+                    },
+                    dismissButton = { TextButton(onClick = { pendingCategoryId = null }) { Text("Keep editing") } },
+                )
+            }
+            Text("Selling unit", color = SellerProductText, fontWeight = FontWeight.SemiBold)
+            OutlinedButton(onClick = { showUnitPicker = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Text(selectedUnit?.let { "${it.name} (${it.symbol})" } ?: "Choose selling unit", modifier = Modifier.weight(1f))
+                Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+            if (showUnitPicker) {
+                SellingUnitPicker(
+                    units = sellingUnits,
+                    categoryId = selectedCategoryId,
+                    selectedCode = selectedSellingUnitCode,
+                    onDismiss = { showUnitPicker = false },
+                    onSelect = {
+                        selectedSellingUnitCode = it.code
+                        showUnitPicker = false
+                    },
+                )
+            }
+            OutlinedTextField(
+                minimumOrderQuantity,
+                { minimumOrderQuantity = it.filter(Char::isDigit) },
+                label = { Text("Minimum order (${selectedUnit?.symbol ?: "units"})") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            if (selectedCategory?.slug == "other-specialized-products") {
+                OutlinedTextField(
+                    productTypeDescription,
+                    { productTypeDescription = it },
+                    label = { Text("Product type description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    colors = shopOutlinedTextFieldColors(),
+                )
             }
             OutlinedTextField(shortDescription, { shortDescription = it }, label = { Text("Short description") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
             OutlinedTextField(description, { description = it }, label = { Text("Full description") }, modifier = Modifier.fillMaxWidth(), minLines = 4, colors = shopOutlinedTextFieldColors())
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(price, { price = it.filter { char -> char.isDigit() } }, label = { Text("Price ETB") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
-                OutlinedTextField(stock, { stock = it.filter { char -> char.isDigit() } }, label = { Text("Stock") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
+                OutlinedTextField(price, { price = it.filter { char -> char.isDigit() } }, label = { Text("Price ETB / ${selectedUnit?.symbol ?: "unit"}") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
+                OutlinedTextField(stock, { stock = it.filter { char -> char.isDigit() } }, label = { Text("Stock (${selectedUnit?.symbol ?: "units"})") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
             }
             SellerProductMediaSection(
                 images = uploadedImages,
-                busy = busy,
+                busy = editorBusy,
                 message = mediaMessage,
-                onAdd = { imagePicker.launch("image/*") },
+                upload = mediaUpload,
+                onAdd = {
+                    specificationMessage = specificationErrors(false).firstOrNull()
+                    if (specificationMessage == null) {
+                        onSaveBeforeImagePick(currentPayload()) { imagePicker.launch("image/*") }
+                    }
+                },
+                onRetry = onRetryUpload,
                 onDelete = onDeleteImage,
                 onSetPrimary = { image ->
                     val ids = uploadedImages.mapNotNull { it.id.takeIf { id -> id.isNotBlank() } }
@@ -423,39 +638,57 @@ private fun SellerProductEditor(
             OutlinedTextField(shipping, { shipping = it }, label = { Text("Shipping notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
             OutlinedTextField(returns, { returns = it }, label = { Text("Return policy") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
             OutlinedTextField(specs, { specs = it }, label = { Text("Specifications, one per line") }, modifier = Modifier.fillMaxWidth(), minLines = 3, colors = shopOutlinedTextFieldColors())
+            if (selectedCategoryId.isNotBlank()) {
+                val dynamicAttributes = categoryAttributes[selectedCategoryId].orEmpty()
+                when {
+                    selectedCategoryId in categoryLoadingIds -> Text("Loading category fields...", color = SellerProductMuted, fontSize = 13.sp)
+                    categoryErrors.containsKey(selectedCategoryId) -> {
+                        Text(categoryErrors.getValue(selectedCategoryId), color = SellerProductRed, fontSize = 13.sp)
+                        OutlinedButton(onClick = { onLoadCategoryAttributes(selectedCategoryId) }) { Text("Retry category fields") }
+                    }
+                    !categoryAttributes.containsKey(selectedCategoryId) -> Text("Preparing category fields...", color = SellerProductMuted, fontSize = 13.sp)
+                    dynamicAttributes.isEmpty() -> Text("No additional fields for this category.", color = SellerProductMuted, fontSize = 13.sp)
+                    else -> SellerVariantCatalogEditor(
+                            product = product,
+                            categoryId = selectedCategoryId,
+                            attributes = dynamicAttributes,
+                            productImages = uploadedImages,
+                            baseStock = stock.toIntOrNull() ?: 0,
+                            savedSnapshot = decodeSellerVariantSnapshot(decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId]),
+                            onSnapshotChanged = { snapshot ->
+                                variantSnapshotsJson = putSellerVariantSnapshot(variantSnapshotsJson, selectedCategoryId, snapshot)
+                            },
+                            onChanged = { nextSpecifications, nextOptions, nextVariants ->
+                                variantOutputsJson = encodeSellerVariantOutputs(
+                                    SellerVariantOutputs(nextSpecifications, nextOptions, nextVariants),
+                                )
+                            },
+                        )
+                }
+            }
             if (product.validationErrors.isNotEmpty()) ErrorCardMessage(product.validationErrors.joinToString("\n"))
+            specificationMessage?.let { ErrorCardMessage(it) }
+            if (com.adischat.app.feature.shop.data.ShopBenefitFlags.managementEnabled) {
+                SellerBenefitClaimsPanel(product.storeId, product.id)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onClose, modifier = Modifier.weight(.8f), shape = RoundedCornerShape(14.dp)) { Text("Close") }
                 Button(
                     onClick = {
-                        onSave(
-                            ShopSellerProductDraftPayload(
-                                title = title.trim(),
-                                brand = brand.trim().takeIf { it.isNotBlank() },
-                                categoryId = selectedCategoryId.takeIf { it.isNotBlank() },
-                                shortDescription = shortDescription.trim(),
-                                description = description.trim(),
-                                priceMinor = (price.toIntOrNull() ?: 0) * 100,
-                                stockQuantity = stock.toIntOrNull() ?: 0,
-                                images = null,
-                                variants = null,
-                                shippingDetails = mapOf("notes" to shipping.trim()),
-                                returnPolicy = mapOf("notes" to returns.trim()),
-                                specifications = specs.lines().mapNotNull { line ->
-                                    val parts = line.split(":", limit = 2)
-                                    if (parts.size == 2 && parts[0].isNotBlank()) parts[0].trim() to parts[1].trim() else null
-                                }.toMap(),
-                            )
-                        )
+                        specificationMessage = specificationErrors(false).firstOrNull()
+                        if (specificationMessage == null) onSave(currentPayload())
                     },
-                    enabled = !busy,
+                    enabled = !editorBusy,
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SellerProductGreen, contentColor = SellerProductOnColor),
                 ) { Text("Save") }
                 Button(
-                    onClick = onSubmit,
-                    enabled = !busy && uploadedImages.isNotEmpty(),
+                    onClick = {
+                        specificationMessage = specificationErrors(true).firstOrNull()
+                        if (specificationMessage == null) onSubmit(currentPayload())
+                    },
+                    enabled = !editorBusy && uploadedImages.isNotEmpty(),
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SellerProductOrange, contentColor = SellerProductOnColor),
@@ -482,7 +715,9 @@ private fun SellerProductMediaSection(
     images: List<ShopProductImageDto>,
     busy: Boolean,
     message: String?,
+    upload: com.adischat.app.feature.shop.data.ShopSellerMediaUploadState?,
     onAdd: () -> Unit,
+    onRetry: () -> Unit,
     onDelete: (String) -> Unit,
     onSetPrimary: (ShopProductImageDto) -> Unit,
     onMove: (Int, Int) -> Unit,
@@ -503,6 +738,20 @@ private fun SellerProductMediaSection(
             }
         }
         if (message != null) Text(message, color = SellerProductRed, fontSize = 12.sp)
+        upload?.let { progress ->
+            if (progress.uploading) {
+                Text("Uploading ${progress.completed + progress.failed + 1} of ${progress.total} images...", color = SellerProductMuted, fontSize = 12.sp)
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress = { (progress.completed + progress.failed).toFloat() / progress.total.coerceAtLeast(1) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            } else if (progress.failed > 0) {
+                Text(progress.message ?: "${progress.failed} image uploads failed. Saved product details are unchanged.", color = SellerProductRed, fontSize = 12.sp)
+                OutlinedButton(onClick = onRetry) { Text("Retry failed images") }
+            } else {
+                Text("${progress.completed} images uploaded.", color = SellerProductGreen, fontSize = 12.sp)
+            }
+        }
         if (images.isEmpty()) {
             Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(SellerProductSoft), border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductLine)) {
                 Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {

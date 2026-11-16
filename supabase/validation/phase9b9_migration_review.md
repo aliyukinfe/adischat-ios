@@ -1,0 +1,21 @@
+# Phase 9B.9 migration review (local only)
+
+## Confirmed Android query inventory
+
+`ShopSupabaseApi.kt` has three `rest/v1/shop_products` calls: Home (100, newest), discovery/filter (100, dynamic category/price/rating/stock/discount/order), and paginated search (dynamic text/combined/category/order/limit/offset). All explicitly select `id,title,slug,brand,created_at,category_id,category_slug,short_description,selling_unit_code,minimum_order_quantity,price_minor,price_max_minor,has_variants,aggregate_available_quantity,compare_at_price_minor,discount_percent,rating_average,rating_count,completed_sales_count,stock_status`, plus images `id,image_url,is_primary,display_order,alt_text` and store `id,name,slug,description,logo_url,cover_url,category,city,approval_status,status,average_store_rating,total_sales,created_at`. Filters also require `status`, `moderation_status`, `deleted_at`, `category_slug`, and sort keys. Store rail uses `rest/v1/shop_stores` with the corresponding store fields. Product Details uses `rpc/adishop_product_catalog_payload(p_product_id)` and expects description, specifications, options, variants, images, and store data. One historical repository snapshot (`1935887`, 2026-07-24) likewise used an explicit product select, not `*`. Released APK query shapes and other external clients are **unknown**; the repository is not release telemetry.
+
+## Staged architecture
+
+1. Stage A draft: `phase9b9_public_catalog_candidate.sql` creates a private source/review store, restricted from anon/authenticated. Raw seller/admin values remain preserved. This additive draft alone does not protect current public tables.
+2. Build an authorized, version-checked review RPC and append-only audit. Explicitly allowlist buyer-facing product/store/image/variant fields, inspect media filenames/URLs, and classify all current approved listings. Require reviewer identity and a source revision covering each relevant entity. Never derive approval from seller claims or regex alone.
+3. Backfill reviewed public copy under a separately approved migration, without deleting source content. Unreviewed or stale-revision entities must fail closed: no public row/detail response until reviewed. Catalog, image/store joins, and detail RPC must use the same reviewed revision. Historical order/cart snapshots need a separate privacy inventory and handling plan.
+4. Stage B draft: `phase9b9_public_grant_cutover_candidate.sql` removes broad public table/view SELECT and grants only known buyer query columns. It is **not deployable now**: its still-readable title/summary/store/image fields must first contain reviewed copy, and the detail RPC must be replaced by a buyer-safe projection. Check indirect views/functions and public Storage URLs. Test all currently supported Android versions through actual PostgREST/Auth before cutover.
+5. Publish a new Android client with an explicit safe catalog route and update-required handling. An old client using `select=*` or raw columns will get a permission error after cutover. A server can reject unsupported versions where version information is trustworthy, but an already installed client cannot be forced to render a friendly update screen; app-store minimum-version policy and a separate announcement are needed. Do not retain raw grants to avoid this break.
+
+## Focused isolated results
+
+Disposable PostgreSQL 17 loopback fixture only: 12/12 column/grant checks passed; one known buyer SQL join returned reviewed fields; direct `seller_sku` and `select *` as anon each failed with permission denied as expected. Cluster was stopped. These are SQL role checks, **not** PostgREST/Auth/RLS/deployed-schema or historical-data validation. No Android or metadata tests were repeated.
+
+## Blocking gaps
+
+No executable public-copy backfill, authorized review RPC, source-revision invalidation, reviewed-row RLS, safe detail RPC, variant/store/image URL policy, historical snapshot disposition, or verified older-release inventory exists yet. The Stage B draft preserves the known query columns but cannot prove query/join compatibility without HTTP tests. Do not deploy either SQL draft in isolation or claim the privacy bypass closed. The Phase 9B.4/9B.6 candidates remain local and insufficient on their own.

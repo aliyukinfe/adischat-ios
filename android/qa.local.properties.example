@@ -1,0 +1,11 @@
+# Copy to qa.local.properties only after all QA services exist. Never commit real keys.
+QA_ALLOWED_HOSTS=
+QA_ADISCHAT_API_URL=https://qa-main.example.invalid/
+QA_WALLET_API_URL=https://qa-wallet.example.invalid/
+QA_SHOP_SUPABASE_URL=https://opkqyvttbyezjbqwkvho.supabase.co/
+QA_SHOP_PROJECT_REF=opkqyvttbyezjbqwkvho
+QA_SHOP_SUPABASE_PUBLISHABLE_KEY=
+QA_IDENTITY_BRIDGE_URL=https://adischat-qa-shop-issuer.adischat.workers.dev/
+QA_SHOP_ASSERTION_ISSUER=adischat-staging-opkqyvttbyezjbqwkvho
+QA_SHOP_ASSERTION_AUDIENCE=adishop-staging-edge
+QA_MEDIA_BASE_URL=https://qa-media.example.invalid/media/

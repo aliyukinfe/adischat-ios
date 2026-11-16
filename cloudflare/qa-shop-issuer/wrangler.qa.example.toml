@@ -1,0 +1,22 @@
+# TEMPLATE ONLY: issuer has no D1 binding; private reader owns the query.
+name = "adischat-qa-shop-issuer"
+main = "src/index.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "adischat-qa"
+ADISHOP_ASSERTION_ISSUER = "adischat-staging-opkqyvttbyezjbqwkvho"
+ADISHOP_ASSERTION_AUDIENCE = "adishop-staging-edge"
+
+[[services]]
+binding = "QA_ALLOWLIST_READER"
+service = "adischat-qa-allowlist-reader"
+
+[[ratelimits]]
+name = "QA_RATE_LIMITER"
+namespace_id = "REPLACE_WITH_APPROVED_QA_ISSUER_RATE_NAMESPACE"
+
+[ratelimits.simple]
+limit = 60
+period = 60

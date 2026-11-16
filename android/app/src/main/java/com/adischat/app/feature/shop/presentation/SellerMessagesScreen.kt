@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.material.icons.filled.Archive
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.NotificationsOff
@@ -39,6 +42,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Unarchive
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -47,6 +51,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -64,6 +70,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -73,6 +80,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.adischat.app.feature.shop.data.ShopConversationDto
 import com.adischat.app.feature.shop.data.ShopMessageDto
+import com.adischat.app.feature.shop.data.ShopProductContextDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.BuildConfig
 import com.adischat.app.ui.theme.AdisGebeyaColors
@@ -94,6 +102,7 @@ internal data class SellerMessageActions(
     val upload: (String, ByteArray, String, String) -> Unit,
     val update: (String, String) -> Unit,
     val typing: (String, Boolean) -> Unit,
+    val openProduct: (String) -> Unit,
 )
 
 @Composable
@@ -107,6 +116,7 @@ internal fun SellerMessagesPage(
     onUpload: (String, ByteArray, String, String) -> Unit,
     onAction: (String, String) -> Unit,
     onTyping: (String, Boolean) -> Unit,
+    onOpenProduct: (String) -> Unit,
 ) {
     val selected = state.selectedConversation
     if (selected != null) {
@@ -122,6 +132,7 @@ internal fun SellerMessagesPage(
             onUpload = { bytes, mimeType, fileName -> onUpload(selected.id, bytes, mimeType, fileName) },
             onAction = { onAction(selected.id, it) },
             onTyping = { typing -> onTyping(selected.id, typing) },
+            onOpenProduct = onOpenProduct,
         )
         return
     }
@@ -218,7 +229,7 @@ private fun SellerConversationRow(conversation: ShopConversationDto, onOpen: () 
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(customerName, color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.SemiBold)
-                    Text(contextLabel, color = AdisGebeyaColors.Primary, fontSize = 11.sp)
+                    Text(formatMarketplaceRelativeTime(conversation.lastMessageAt), color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp)
                 }
                 Text(
                     conversation.lastMessagePreview ?: "Conversation started",
@@ -227,6 +238,7 @@ private fun SellerConversationRow(conversation: ShopConversationDto, onOpen: () 
                     overflow = TextOverflow.Ellipsis,
                     fontSize = 13.sp,
                 )
+                Text(contextLabel, color = AdisGebeyaColors.Primary, fontSize = 11.sp)
             }
             if (conversation.unreadCount > 0) {
                 Spacer(Modifier.width(8.dp))
@@ -247,6 +259,7 @@ internal fun BuyerConversationPage(
     onUpload: (String, ByteArray, String, String) -> Unit,
     onAction: (String, String) -> Unit,
     onTyping: (String, Boolean) -> Unit,
+    onOpenProduct: (String) -> Unit,
 ) {
     val conversation: ShopConversationDto? = state.selectedConversation
     if (conversation == null) {
@@ -266,6 +279,7 @@ internal fun BuyerConversationPage(
             onUpload = onUpload,
             onAction = onAction,
             onTyping = onTyping,
+            onOpenProduct = onOpenProduct,
         )
     }
 }
@@ -300,6 +314,7 @@ private fun BuyerConversationLoaded(
     onUpload: (String, ByteArray, String, String) -> Unit,
     onAction: (String, String) -> Unit,
     onTyping: (String, Boolean) -> Unit,
+    onOpenProduct: (String) -> Unit,
 ) {
     val conversationId: String = conversation.id
     Box(Modifier.fillMaxSize().background(AdisGebeyaColors.Background).statusBarsPadding().padding(16.dp)) {
@@ -319,6 +334,7 @@ private fun BuyerConversationLoaded(
                 if (action == "archive" || action == "delete") onBack()
             },
             onTyping = { typing: Boolean -> onTyping(conversationId, typing) },
+            onOpenProduct = onOpenProduct,
         )
     }
 }
@@ -335,11 +351,15 @@ private fun ShopConversationDetail(
     onUpload: (ByteArray, String, String) -> Unit,
     onAction: (String) -> Unit,
     onTyping: (Boolean) -> Unit,
+    onOpenProduct: ((String) -> Unit)? = null,
 ) {
     var showDeleteConfirmation by remember(conversation.id) { mutableStateOf(false) }
+    var showOverflow by remember(conversation.id) { mutableStateOf(false) }
     val muted = conversation.participantState?.mutedUntil != null
     val archived = conversation.participantState?.archivedAt != null
     val lifecycleOwner = LocalLifecycleOwner.current
+    val listState = rememberLazyListState()
+    var positionedConversationId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(conversation.id, lifecycleOwner) {
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             onRefresh()
@@ -349,18 +369,39 @@ private fun ShopConversationDetail(
             }
         }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LaunchedEffect(messages.lastOrNull()?.id) {
+        if (messages.isNotEmpty()) {
+            val initialPosition = positionedConversationId != conversation.id
+            val layout = listState.layoutInfo
+            val lastVisibleIndex = layout.visibleItemsInfo.lastOrNull()?.index ?: -1
+            val wasNearBottom = layout.totalItemsCount == 0 || lastVisibleIndex >= layout.totalItemsCount - 3
+            delay(1)
+            val lastItem = listState.layoutInfo.totalItemsCount - 1
+            if (lastItem >= 0 && (initialPosition || wasNearBottom)) {
+                listState.scrollToItem(lastItem)
+                positionedConversationId = conversation.id
+            }
+        }
+    }
+    Column(
+        Modifier.fillMaxSize().background(Color.White).imePadding(),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back to conversations")
             }
+            val peerName = if (sellerView) conversation.customer?.displayName ?: "Customer" else conversation.store?.name ?: "Seller"
+            Box(
+                Modifier.size(42.dp).clip(CircleShape).background(Color(0xFFE9E7FF)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(peerName.take(1).uppercase(), color = Color(0xFF1E1B4B), fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    if (sellerView) {
-                        conversation.customer?.displayName ?: "Customer"
-                    } else {
-                        conversation.store?.name ?: "Seller"
-                    },
+                    peerName,
                     color = AdisGebeyaColors.PrimaryText,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -377,33 +418,48 @@ private fun ShopConversationDetail(
                     fontSize = 12.sp,
                 )
             }
-            IconButton(onClick = onRefresh) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh messages")
-            }
-            IconButton(onClick = { onAction(if (muted) "unmute" else "mute") }) {
-                Icon(
-                    if (muted) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                    contentDescription = if (muted) "Unmute conversation" else "Mute conversation",
-                )
-            }
-            IconButton(onClick = { onAction(if (archived) "unarchive" else "archive") }) {
-                Icon(
-                    if (archived) Icons.Default.Unarchive else Icons.Default.Archive,
-                    contentDescription = if (archived) "Move conversation to inbox" else "Archive conversation",
-                )
-            }
-            IconButton(onClick = { showDeleteConfirmation = true }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete conversation", tint = AdisGebeyaColors.Error)
+            Box {
+                IconButton(onClick = { showOverflow = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Conversation options")
+                }
+                DropdownMenu(expanded = showOverflow, onDismissRequest = { showOverflow = false }) {
+                    DropdownMenuItem(
+                        text = { Text(if (muted) "Unmute notifications" else "Mute notifications") },
+                        onClick = {
+                            showOverflow = false
+                            onAction(if (muted) "unmute" else "mute")
+                        },
+                        leadingIcon = { Icon(if (muted) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff, null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text(if (archived) "Move to inbox" else "Archive") },
+                        onClick = {
+                            showOverflow = false
+                            onAction(if (archived) "unarchive" else "archive")
+                        },
+                        leadingIcon = { Icon(if (archived) Icons.Default.Unarchive else Icons.Default.Archive, null) },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Delete conversation", color = AdisGebeyaColors.Error) },
+                        onClick = {
+                            showOverflow = false
+                            showDeleteConfirmation = true
+                        },
+                        leadingIcon = { Icon(Icons.Default.Delete, null, tint = AdisGebeyaColors.Error) },
+                    )
+                }
             }
         }
+        conversation.productContext?.let { context ->
+            ProductConversationContextCard(
+                context = context,
+                onOpenProduct = onOpenProduct,
+            )
+        }
         LazyColumn(
-            Modifier.fillMaxWidth()
-                .heightIn(min = 220.dp, max = 440.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(AdisGebeyaColors.SecondarySurface)
-                .border(1.dp, AdisGebeyaColors.Border, RoundedCornerShape(18.dp))
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            state = listState,
+            modifier = Modifier.fillMaxWidth().weight(1f).padding(horizontal = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (messages.isEmpty()) {
                 item {
@@ -414,15 +470,37 @@ private fun ShopConversationDetail(
                     )
                 }
             } else {
-                items(messages.takeLast(50), key = { it.id }) { message ->
-                    SellerMessageBubble(
-                        message = message,
-                        mine = if (sellerView) {
-                            message.senderProfileId != conversation.customerProfileId
-                        } else {
-                            message.senderProfileId == conversation.customerProfileId
-                        },
-                    )
+                val visibleMessages = messages.takeLast(50)
+                visibleMessages.forEachIndexed { index, message ->
+                    val previous = visibleMessages.getOrNull(index - 1)
+                    if (shouldShowMarketplaceDateSeparator(previous?.createdAt, message.createdAt)) {
+                        item(key = "date-${message.id}") {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(Modifier.weight(1f).height(1.dp).background(AdisGebeyaColors.Divider))
+                                Text(
+                                    formatMarketplaceDateSeparator(message.createdAt),
+                                    color = Color(0xFF4C4878),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                )
+                                Box(Modifier.weight(1f).height(1.dp).background(AdisGebeyaColors.Divider))
+                            }
+                        }
+                    }
+                    item(key = message.id) {
+                        SellerMessageBubble(
+                            message = message,
+                            mine = if (sellerView) {
+                                message.senderProfileId != conversation.customerProfileId
+                            } else {
+                                message.senderProfileId == conversation.customerProfileId
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -452,6 +530,88 @@ private fun ShopConversationDetail(
             },
         )
     }
+}
+
+@Composable
+private fun ProductConversationContextCard(
+    context: ShopProductContextDto,
+    onOpenProduct: ((String) -> Unit)?,
+) {
+    val available = context.canOpen && context.availability != "unavailable"
+    val clickable = available && onOpenProduct != null && context.productId.isNotBlank()
+    val title = context.title?.takeIf(String::isNotBlank) ?: "Product unavailable"
+    val options = context.selectedOptions
+        .mapNotNull { option ->
+            val name = option.name.trim()
+            val value = option.value.trim()
+            when {
+                value.isBlank() -> null
+                name.isBlank() -> value
+                else -> "$name: $value"
+            }
+        }
+        .joinToString("  |  ")
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(enabled = clickable) {
+            onOpenProduct?.invoke(context.productId)
+        },
+        colors = CardDefaults.cardColors(AdisGebeyaColors.Surface),
+        shape = RoundedCornerShape(14.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, AdisGebeyaColors.Border),
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                Modifier.size(58.dp).clip(RoundedCornerShape(10.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                ShopAssetImage(context.imageUrl, title, Modifier.fillMaxSize(), iconSize = 24.dp)
+            }
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    title,
+                    color = AdisGebeyaColors.PrimaryText,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                if (available && context.priceMinor != null) {
+                    Text(
+                        formatProductContextPrice(context.priceMinor, context.currency, context.sellingUnitCode),
+                        color = AdisGebeyaColors.Primary,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                    )
+                } else {
+                    Text("Product unavailable", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+                }
+                if (options.isNotBlank()) {
+                    Text(options, color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            if (clickable) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("View", color = AdisGebeyaColors.Primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.ArrowForward, contentDescription = null, tint = AdisGebeyaColors.Primary, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+internal fun formatProductContextPrice(priceMinor: Int, currency: String?, sellingUnitCode: String? = null): String {
+    val code = currency?.trim()?.uppercase()?.takeIf(String::isNotBlank) ?: "ETB"
+    val unit = when (sellingUnitCode?.trim()?.uppercase()) {
+        "KILOGRAM" -> " / kg"
+        "METER" -> " / m"
+        "PIECE" -> " / piece"
+        else -> ""
+    }
+    return "$code ${"%,d".format(priceMinor.coerceAtLeast(0) / 100)}$unit"
 }
 
 internal object ShopMessageRefreshPolicy {
@@ -586,18 +746,15 @@ private fun SellerMessageBubble(message: ShopMessageDto, mine: Boolean) {
         horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
     ) {
         Column(
-            Modifier.fillMaxWidth(.82f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(if (mine) AdisGebeyaColors.Primary else AdisGebeyaColors.Surface)
-                .padding(horizontal = 12.dp, vertical = 9.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
+            Modifier.fillMaxWidth(.82f).padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
         ) {
             val attachmentUrl = message.attachmentUrl
             if (!attachmentUrl.isNullOrBlank() && message.messageType == "image") {
                 AsyncImage(
                     model = attachmentUrl,
                     contentDescription = message.attachmentName ?: "Message image",
-                    modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).clip(RoundedCornerShape(14.dp)),
                 )
             } else if (!attachmentUrl.isNullOrBlank()) {
                 Row(
@@ -627,12 +784,12 @@ private fun SellerMessageBubble(message: ShopMessageDto, mine: Boolean) {
                     Icon(
                         Icons.Default.InsertDriveFile,
                         contentDescription = "Open attachment",
-                        tint = if (mine) AdisGebeyaColors.OnColor else AdisGebeyaColors.Primary,
+                        tint = AdisGebeyaColors.Primary,
                     )
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (openingAttachment) "Opening attachment..." else message.attachmentName ?: "Attachment",
-                        color = if (mine) AdisGebeyaColors.OnColor else AdisGebeyaColors.PrimaryText,
+                        color = AdisGebeyaColors.PrimaryText,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
@@ -645,14 +802,23 @@ private fun SellerMessageBubble(message: ShopMessageDto, mine: Boolean) {
             if (!message.body.isNullOrBlank()) {
                 Text(
                     message.body,
-                    color = if (mine) AdisGebeyaColors.OnColor else AdisGebeyaColors.PrimaryText,
-                    fontSize = 14.sp,
-                    lineHeight = 19.sp,
+                    color = AdisGebeyaColors.PrimaryText,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
                 )
             }
+            Text(
+                formatMarketplaceTime(message.createdAt),
+                color = AdisGebeyaColors.SecondaryText,
+                fontSize = 11.sp,
+                modifier = Modifier.align(Alignment.End),
+            )
         }
     }
 }
+
+internal fun shouldShowMarketplaceDateSeparator(previous: String?, current: String?): Boolean =
+    marketplaceLocalDate(previous) != marketplaceLocalDate(current)
 
 private suspend fun cacheShopAttachment(context: Context, message: ShopMessageDto): File = withContext(Dispatchers.IO) {
     val attachmentUrl = message.attachmentUrl ?: error("Attachment unavailable")

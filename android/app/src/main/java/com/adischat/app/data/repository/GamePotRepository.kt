@@ -17,7 +17,7 @@ class GamePotRepository {
     private val api = CloudflareClient.gamePotApi
     private val walletApi = CloudflareClient.walletApi
 
-    // ── Polling flows ─────────────────────────────────────────────────────────
+    // - Polling flows -
 
     /**
      * Emits the active game snapshot for a channel every 3 seconds.
@@ -25,11 +25,11 @@ class GamePotRepository {
      */
     fun activeGameFlow(channelId: String): Flow<GameSnapshot?> = flow {
         while (true) {
-            val snapshot = runCatching { api.getActiveGame(channelId) }
-                .getOrNull()
-                ?.toGameSnapshot()
-            emit(snapshot)
-            delay(3_000)
+        val snapshot = runCatching { api.getActiveGame(channelId) }
+        .getOrNull()
+        ?.toGameSnapshotOrNull()
+        emit(snapshot)
+        delay(3_000)
         }
     }
 
@@ -38,11 +38,11 @@ class GamePotRepository {
      */
     fun gameDetailFlow(gameId: String): Flow<GameSnapshot?> = flow {
         while (true) {
-            val snapshot = runCatching { api.getGameDetail(gameId) }
-                .getOrNull()
-                ?.toGameSnapshot()
-            emit(snapshot)
-            delay(3_000)
+        val snapshot = runCatching { api.getGameDetail(gameId) }
+        .getOrNull()
+        ?.toGameSnapshotOrNull()
+        emit(snapshot)
+        delay(3_000)
         }
     }
 
@@ -51,11 +51,11 @@ class GamePotRepository {
      */
     fun ticketsFlow(gameId: String): Flow<List<GameTicket>> = flow {
         while (true) {
-            val tickets = runCatching { api.getGameTickets(gameId) }
-                .getOrDefault(emptyList())
-                .map { it.toGameTicket() }
-            emit(tickets)
-            delay(3_000)
+        val tickets = runCatching { api.getGameTickets(gameId) }
+        .getOrDefault(emptyList())
+        .map { it.toGameTicket() }
+        emit(tickets)
+        delay(3_000)
         }
     }
 
@@ -64,15 +64,15 @@ class GamePotRepository {
      */
     fun participantsFlow(gameId: String): Flow<List<GameParticipant>> = flow {
         while (true) {
-            val participants = runCatching { api.getParticipants(gameId) }
-                .getOrDefault(emptyList())
-                .map { it.toGameParticipant() }
-            emit(participants)
-            delay(5_000)
+        val participants = runCatching { api.getParticipants(gameId) }
+        .getOrDefault(emptyList())
+        .map { it.toGameParticipant() }
+        emit(participants)
+        delay(5_000)
         }
     }
 
-    // ── One-shot suspend functions ────────────────────────────────────────────
+    // - One-shot suspend functions -
 
     suspend fun getApproval(channelId: String): Result<GameApprovalResponse> = gameResult {
         walletApi.getGameApproval(channelId)
@@ -92,15 +92,15 @@ class GamePotRepository {
         durationSeconds: Long,
     ): Result<GameSnapshot> = gameResult {
         api.createGame(
-            channelId = channelId,
-            body = CreateGameBody(
-                title              = title,
-                totalTickets       = totalTickets,
-                pricePerTicket     = pricePerTicket,
-                adminCommissionPct = adminCommissionPct,
-                maxTicketsPerUser  = maxTicketsPerUser,
-                durationSeconds    = durationSeconds,
-            )
+        channelId = channelId,
+        body = CreateGameBody(
+        title      = title,
+        totalTickets       = totalTickets,
+        pricePerTicket     = pricePerTicket,
+        adminCommissionPct = adminCommissionPct,
+        maxTicketsPerUser  = maxTicketsPerUser,
+        durationSeconds    = durationSeconds,
+        )
         ).toGameSnapshot()
     }
 
@@ -114,14 +114,14 @@ class GamePotRepository {
         walletPin: String,
     ): Result<TicketPurchaseResult> = gameResult {
         val resp = api.buyTickets(
-            gameId = gameId,
-            body   = BuyTicketsBody(ticketNumbers = ticketNumbers, walletPin = walletPin),
+        gameId = gameId,
+        body   = BuyTicketsBody(ticketNumbers = ticketNumbers, walletPin = walletPin),
         )
         TicketPurchaseResult(
-            game      = resp.game.toChannelGame(),
-            myTickets = resp.myTickets,
-            reference = resp.reference,
-            cost      = resp.cost,
+        game      = resp.game.toChannelGame(),
+        myTickets = resp.myTickets,
+        reference = resp.reference,
+        cost      = resp.cost,
         )
     }
 
@@ -130,17 +130,17 @@ class GamePotRepository {
         // Worker returns: { game, winnerTicketNumber, winnerName, payoutAmount, commissionAmount, seed }
         val g = resp.game
         GameWinner(
-            id              = "",
-            gameId          = gameId,
-            channelId       = g.channelId,
-            winnerUid       = g.winnerUid ?: "",
-            winnerName      = resp.winnerName ?: g.winnerName ?: "",
-            ticketNumber    = resp.winnerTicketNumber ?: g.winnerTicketNumber ?: 0,
-            jackpotAmount   = g.jackpotAmount,
-            adminCommission = resp.commissionAmount,
-            payoutAmount    = resp.payoutAmount,
-            payoutReference = "",
-            drawnAt         = System.currentTimeMillis(),
+        id      = "",
+        gameId      = gameId,
+        channelId       = g.channelId,
+        winnerUid       = g.winnerUid ?: "",
+        winnerName      = resp.winnerName ?: g.winnerName ?: "",
+        ticketNumber    = resp.winnerTicketNumber ?: g.winnerTicketNumber ?: 0,
+        jackpotAmount   = g.jackpotAmount,
+        adminCommission = resp.commissionAmount,
+        payoutAmount    = resp.payoutAmount,
+        payoutReference = "",
+        drawnAt      = System.currentTimeMillis(),
         )
     }
 
@@ -167,48 +167,53 @@ private fun gameErrorMessage(error: Throwable): String {
         val parsed = runCatching { JSONObject(body).optString("error") }.getOrNull().orEmpty()
         if (parsed.isNotBlank()) return parsed
         return when (error.code()) {
-            400 -> "Check the game details and try again"
-            401 -> "Please sign in again"
-            403 -> "You do not have permission for this game"
-            404 -> "Game not found"
-            423 -> "Wallet is locked"
-            else -> "Game request failed (${error.code()})"
+        400 -> "Check the game details and try again"
+        401 -> "Please sign in again"
+        403 -> "You do not have permission for this game"
+        404 -> "Game not found"
+        423 -> "Wallet is locked"
+        else -> "Game request failed (${error.code()})"
         }
     }
     return CloudflareClient.friendlyErrorMessage(error, "Game request failed")
 }
 
-// ── Response → Domain mappers ─────────────────────────────────────────────────
+// - Response - Domain mappers -
 
-private fun com.adischat.app.network.GameSnapshotResponse.toGameSnapshot() = GameSnapshot(
-    // game is nullable in the DTO (server may omit it on 404); !! throws → caught by runCatching
-    game      = game!!.toChannelGame(),
-    myTickets = myTickets,
-)
+private fun com.adischat.app.network.GameSnapshotResponse.toGameSnapshot(): GameSnapshot =
+    toGameSnapshotOrNull() ?: error("Game not found")
+
+private fun com.adischat.app.network.GameSnapshotResponse.toGameSnapshotOrNull(): GameSnapshot? {
+    val activeGame = game ?: return null
+    return GameSnapshot(
+        game = activeGame.toChannelGame(),
+        myTickets = myTickets,
+    )
+}
 
 private fun com.adischat.app.network.GameResponse.toChannelGame() = ChannelGame(
-    id                    = id,
-    channelId             = channelId,
-    creatorUid            = creatorUid,
-    title                 = title,
-    totalTickets          = totalTickets,
-    pricePerTicket        = pricePerTicket,
+    id      = id,
+    channelId      = channelId,
+    creatorUid      = creatorUid,
+    title      = title,
+    totalTickets      = totalTickets,
+    pricePerTicket      = pricePerTicket,
     adminCommissionPct    = adminCommissionPct,
     maxTicketsPerUser     = maxTicketsPerUser,
     durationSeconds       = durationSeconds,
-    startsAt              = startsAt,
-    endsAt                = endsAt,
-    status                = status,
-    jackpotAmount         = jackpotAmount,
-    ticketsSold           = ticketsSold,
+    startsAt      = startsAt,
+    endsAt      = endsAt,
+    status      = status,
+    jackpotAmount      = jackpotAmount,
+    ticketsSold      = ticketsSold,
     totalTicketCount      = totalTickets,
     winnerTicketNumber    = winnerTicketNumber,
-    winnerUid             = winnerUid,
-    winnerName            = winnerName,
-    winnerPayout          = winnerPayout,
+    winnerUid      = winnerUid,
+    winnerName      = winnerName,
+    winnerPayout      = winnerPayout,
     adminCommissionAmount = adminCommissionAmount,
-    createdAt             = createdAt,
-    updatedAt             = updatedAt,
+    createdAt      = createdAt,
+    updatedAt      = updatedAt,
 )
 
 private fun com.adischat.app.network.GameTicketResponse.toGameTicket() = GameTicket(
@@ -221,8 +226,8 @@ private fun com.adischat.app.network.GameTicketResponse.toGameTicket() = GameTic
 )
 
 private fun com.adischat.app.network.ParticipantResponse.toGameParticipant() = GameParticipant(
-    uid          = uid,
-    name         = name,
+    uid      = uid,
+    name      = name,
     photoUrl     = photoUrl,
     ticketsCount = ticketsCount,
     totalSpent   = totalSpent,

@@ -6,12 +6,14 @@ import {
   type DevicePreferences,
   type MediaErrorCode
 } from "./callMedia";
+import { VIDEO_CALLS_ENABLED } from "./featureFlags";
 import type { CallSession, IceServer } from "./types";
 
 const RING_TIMEOUT_MS = 45_000;
 const SIGNAL_POLL_MS = 800;
 const STATUS_POLL_MS = 2_000;
-const INCOMING_POLL_MS = 3_000;
+const INCOMING_POLL_VISIBLE_MS = 8_000;
+const INCOMING_POLL_HIDDEN_MS = 40_000;
 const AUTO_DISMISS_MS = 1_800;
 
 export type CallPhase =
@@ -73,6 +75,15 @@ function isTerminal(phase: CallPhase) {
   return TERMINAL.includes(phase);
 }
 
+function callLog(message: string, details: Record<string, unknown> = {}) {
+  console.info(`[desktop-call] ${message}`, details);
+}
+
+function candidateType(candidate: string) {
+  const match = candidate.match(/\btyp\s+(\w+)/);
+  return match?.[1] || "unknown";
+}
+
 /** Synthesized ring tones so the desktop needs no audio assets. */
 class ToneRinger {
   private context: AudioContext | null = null;
@@ -114,6 +125,7 @@ class ToneRinger {
         : (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!Ctor) return;
     this.context = new Ctor();
+    callLog(`${kind} started`);
     if (kind === "ringtone") {
       const ring = () => {
         this.burst([880, 1100], 350);
@@ -129,6 +141,7 @@ class ToneRinger {
   }
 
   stop() {
+    if (this.interval || this.context || this.stopFns.length) callLog("call sound stopped");
     if (this.interval) window.clearInterval(this.interval);
     this.interval = 0;
     this.stopFns.forEach((fn) => fn());
@@ -155,6 +168,9 @@ export class DesktopCallEngine {
   private ringTimer = 0;
   private dismissTimer = 0;
   private incomingTimer = 0;
+  private incomingVisibilityListener?: () => void;
+  private incomingPollRunning = false;
+  private pendingPollRequests: number[] = [];
   private incomingFailures = 0;
   private lastIncomingId = "";
   private ringer = new ToneRinger();
@@ -170,13 +186,23 @@ export class DesktopCallEngine {
   startIncomingWatcher(myUid: string) {
     this.myUid = myUid;
     this.stopIncomingWatcher();
-    const poll = async () => {
-      if (this.state) return;
+    const intervalMs = () => (document.hidden ? INCOMING_POLL_HIDDEN_MS : INCOMING_POLL_VISIBLE_MS);
+    const poll = async (source: string) => {
+      if (this.state || this.incomingPollRunning) return;
+      this.incomingPollRunning = true;
+      this.recordPendingPoll(source);
+      callLog("pending-call poll started", { intervalMs: intervalMs(), hidden: document.hidden });
       try {
-        const call = await api.getActiveCall();
+        const call = await api.getPendingCall();
+        callLog("pending call poll result", { hasCall: Boolean(call?.id || call?.callId), status: call?.status || "" });
         this.incomingFailures = 0;
-        if (!call || !call.id || call.status !== "ringing") return;
-        if (call.receiverUid !== this.myUid) return;
+        if (!call || !call.id || !["delivering", "ringing"].includes(call.status || "")) return;
+        callLog("incoming call event received", { callId: call.id, receiverUid: call.receiverUid, currentUserId: this.myUid });
+        if (call.receiverUid !== this.myUid) {
+          callLog("incoming call receiver mismatch", { callId: call.id, receiverUid: call.receiverUid, currentUserId: this.myUid });
+          return;
+        }
+        callLog("incoming call receiver verified", { callId: call.id, receiverUid: call.receiverUid, currentUserId: this.myUid });
         if (call.id === this.lastIncomingId) return; // already handled (declined/missed) — wait for backend to catch up
         this.onIncoming(call);
       } catch {
@@ -184,20 +210,47 @@ export class DesktopCallEngine {
         this.incomingFailures += 1;
         if (this.incomingFailures >= 3) {
           this.stopIncomingWatcher();
-          this.incomingTimer = window.setInterval(() => void poll(), INCOMING_POLL_MS * 10);
+          this.incomingTimer = window.setInterval(() => void poll("backoff"), INCOMING_POLL_HIDDEN_MS);
         }
+      } finally {
+        this.incomingPollRunning = false;
       }
     };
-    this.incomingTimer = window.setInterval(() => void poll(), INCOMING_POLL_MS);
-    void poll();
+    const schedule = () => {
+      if (this.incomingTimer) window.clearInterval(this.incomingTimer);
+      const ms = intervalMs();
+      callLog("pending-call polling interval", { intervalMs: ms, hidden: document.hidden });
+      this.incomingTimer = window.setInterval(() => void poll("interval"), ms);
+    };
+    this.incomingVisibilityListener = schedule;
+    document.addEventListener("visibilitychange", schedule);
+    schedule();
+    void poll("resume");
   }
 
   stopIncomingWatcher() {
     if (this.incomingTimer) window.clearInterval(this.incomingTimer);
     this.incomingTimer = 0;
+    if (this.incomingVisibilityListener) {
+      document.removeEventListener("visibilitychange", this.incomingVisibilityListener);
+      this.incomingVisibilityListener = undefined;
+    }
+    this.incomingPollRunning = false;
+  }
+
+  private recordPendingPoll(source: string) {
+    const now = Date.now();
+    this.pendingPollRequests = this.pendingPollRequests.filter((time) => now - time < 60_000);
+    this.pendingPollRequests.push(now);
+    const rpm = this.pendingPollRequests.length;
+    callLog("pending-call polling rate", { source, requestsPerMinute: rpm, activeJobs: this.incomingPollRunning ? 1 : 0 });
+    if (rpm > 10) {
+      console.warn("[desktop-call] pending-call polling exceeds target", { source, requestsPerMinute: rpm });
+    }
   }
 
   destroy() {
+    callLog("engine destroy cleanup");
     this.stopped = true;
     this.stopIncomingWatcher();
     this.cleanup();
@@ -208,14 +261,38 @@ export class DesktopCallEngine {
   // ── Outgoing ───────────────────────────────────────────────────────────────
 
   async startOutgoing(peer: { uid: string; name: string; photoUrl?: string }, type: "voice" | "video") {
+    if (type === "video" && !VIDEO_CALLS_ENABLED) {
+      callLog("video call start blocked: feature disabled", { receiverUid: peer.uid });
+      this.setState({
+        callId: "",
+        type,
+        isCaller: true,
+        phase: "failed",
+        statusText: "Video calls are paused for this stability release",
+        peerUid: peer.uid,
+        peerName: peer.name,
+        peerPhotoUrl: peer.photoUrl || "",
+        muted: false,
+        cameraEnabled: false,
+        speakerId: loadDevicePreferences().speakerId,
+        connectedAt: 0,
+        endReason: "Video calls are paused",
+        quality: "",
+        latencyMs: 0,
+        participantCount: 1
+      });
+      this.autoDismiss();
+      return;
+    }
     if (this.state && !isTerminal(this.state.phase)) return;
     this.cleanup();
+    callLog("call button clicked", { receiverUid: peer.uid, type });
     this.setState({
       callId: "",
       type,
       isCaller: true,
-      phase: "permissions",
-      statusText: type === "video" ? "Camera and microphone access is needed" : "Microphone access is needed",
+      phase: "calling",
+      statusText: "Calling...",
       peerUid: peer.uid,
       peerName: peer.name,
       peerPhotoUrl: peer.photoUrl || "",
@@ -228,18 +305,7 @@ export class DesktopCallEngine {
       latencyMs: 0,
       participantCount: 1
     });
-
-    const media = await requestCallMedia(type);
-    if (!media.ok) {
-      this.update({ phase: "permission-error", statusText: media.message, permissionError: { code: media.code, message: media.message } });
-      return;
-    }
-    if (!this.state || this.state.phase !== "permissions") {
-      stopStream(media.stream);
-      return;
-    }
-    this.localStream = media.stream;
-    this.handlers.onLocalStream(media.stream);
+    callLog("outgoing modal shown", { receiverUid: peer.uid, type });
 
     // Offline receivers never ring: check presence first and close cleanly.
     let online = true;
@@ -250,23 +316,41 @@ export class DesktopCallEngine {
       online = true; // presence unavailable — attempt the call anyway
     }
     if (!online) {
+      callLog("call failed", { receiverUid: peer.uid, reason: "receiver_offline" });
       this.update({ phase: "offline", statusText: "User is not online", endReason: "User is not online" });
       this.releaseMedia();
       this.autoDismiss();
       return;
     }
 
-    this.update({ phase: "calling", statusText: "Calling..." });
+    window.setTimeout(() => {
+      if (this.state?.phase === "calling" && this.soundEnabled()) this.ringer.start("ringback");
+    }, 0);
     try {
       const call = await api.startCall(peer.uid, type);
       const callId = call.id || call.callId || "";
       if (!callId) throw new Error("Call could not be created");
+      callLog("call record created", { callId, receiverUid: peer.uid, type });
       if (!this.state || isTerminal(this.state.phase)) {
         void api.cancelCall(callId).catch(() => api.endCall(callId, "cancelled"));
         return;
       }
-      this.update({ callId, phase: "ringing", statusText: "Ringing...", participantCount: 1 });
-      if (this.soundEnabled()) this.ringer.start("ringback");
+      this.update({ callId, phase: "calling", statusText: "Calling...", participantCount: 1 });
+      callLog("outgoing modal shown", { callId, phase: "calling" });
+      const media = await requestCallMedia(type);
+      if (!media.ok) {
+        callLog("call failed", { callId, reason: "permission_error", code: media.code });
+        this.ringer.stop();
+        this.update({ phase: "permission-error", statusText: media.message, permissionError: { code: media.code, message: media.message } });
+        void api.endCall(callId, "permission_error").catch(() => undefined);
+        return;
+      }
+      if (!this.state || isTerminal(this.state.phase)) {
+        stopStream(media.stream);
+        return;
+      }
+      this.localStream = media.stream;
+      this.handlers.onLocalStream(media.stream);
       await this.setupPeer(callId, type);
       await this.createOffer(callId);
       this.startSignalLoop(callId);
@@ -302,6 +386,10 @@ export class DesktopCallEngine {
       latencyMs: 0,
       participantCount: 1
     });
+    callLog("call modal shown", { callId, direction: "incoming", type: call.type });
+    void api.ringingAck(callId)
+      .then(() => callLog("ringing_ack sent", { callId }))
+      .catch((error) => callLog("ringing_ack failed", { callId, error: String(error) }));
     if (this.soundEnabled()) this.ringer.start("ringtone");
     this.startStatusLoop(callId); // a caller cancel must close this screen immediately
     this.armRingTimeout(callId, "missed");
@@ -320,6 +408,7 @@ export class DesktopCallEngine {
   async accept() {
     const current = this.state;
     if (!current || current.phase !== "incoming") return;
+    callLog("call answered", { callId: current.callId });
     this.ringer.stop();
     if (this.ringTimer) window.clearTimeout(this.ringTimer);
     this.update({ phase: "permissions", statusText: current.type === "video" ? "Camera and microphone access is needed" : "Microphone access is needed" });
@@ -345,6 +434,7 @@ export class DesktopCallEngine {
   decline() {
     const current = this.state;
     if (!current) return;
+    callLog("call declined", { callId: current.callId });
     if (current.callId) void api.rejectCall(current.callId).catch(() => undefined);
     this.terminate("rejected", "Call declined");
   }
@@ -359,6 +449,7 @@ export class DesktopCallEngine {
       return;
     }
     if (current.isCaller && current.connectedAt === 0) {
+      callLog("call ended", { callId: current.callId, reason: "cancelled" });
       if (current.callId) {
         void api.cancelCall(current.callId).catch(() => api.endCall(current.callId, "cancelled").catch(() => undefined));
       }
@@ -366,12 +457,30 @@ export class DesktopCallEngine {
       return;
     }
     const reason = current.isCaller ? "ended_by_caller" : "ended_by_receiver";
+    callLog("call ended", { callId: current.callId, reason });
     if (current.callId) void api.endCall(current.callId, reason).catch(() => undefined);
     const duration = this.durationLabel(current.connectedAt);
     this.terminate("ended", duration ? `Call ended - ${duration}` : "Call ended");
   }
 
   dismiss() {
+    if (this.dismissTimer) window.clearTimeout(this.dismissTimer);
+    this.dismissTimer = 0;
+    this.cleanup();
+    this.state = null;
+    this.emit();
+  }
+
+  emergencyCleanup(reason = "emergency_cleanup") {
+    const current = this.state;
+    callLog("emergency cleanup requested", { callId: current?.callId || "", reason });
+    if (current && !isTerminal(current.phase) && current.callId) {
+      if (current.isCaller && current.connectedAt === 0) {
+        void api.cancelCall(current.callId).catch(() => api.endCall(current.callId, reason).catch(() => undefined));
+      } else {
+        void api.endCall(current.callId, reason).catch(() => undefined);
+      }
+    }
     if (this.dismissTimer) window.clearTimeout(this.dismissTimer);
     this.dismissTimer = 0;
     this.cleanup();
@@ -476,6 +585,13 @@ export class DesktopCallEngine {
     } catch {
       // STUN fallback already set
     }
+    const iceUrls = iceServers.flatMap((server) => Array.isArray(server.urls) ? server.urls : [server.urls]);
+    callLog("ICE config loaded", {
+      callId,
+      hasStun: iceUrls.some((url) => String(url).toLowerCase().startsWith("stun:")),
+      hasTurn: iceUrls.some((url) => String(url).toLowerCase().startsWith("turn:") || String(url).toLowerCase().startsWith("turns:")),
+      serverCount: iceServers.length,
+    });
 
     const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy: "all", iceCandidatePoolSize: 4 });
     this.peer = pc;
@@ -491,6 +607,7 @@ export class DesktopCallEngine {
 
     pc.onicecandidate = (event) => {
       if (!event.candidate) return;
+      callLog("ICE candidate gathered", { callId, type: candidateType(event.candidate.candidate) });
       const payload = JSON.stringify({
         candidate: event.candidate.candidate,
         sdpMid: event.candidate.sdpMid,
@@ -500,6 +617,7 @@ export class DesktopCallEngine {
     };
 
     pc.ontrack = (event) => {
+      callLog("remote track received", { callId, kind: event.track.kind, streams: event.streams.length });
       if (!this.remoteStream) {
         this.remoteStream = new MediaStream();
         this.handlers.onRemoteStream(this.remoteStream);
@@ -669,6 +787,7 @@ export class DesktopCallEngine {
       const current = this.state;
       if (!current) return;
       if (current.phase === "ringing" || current.phase === "calling" || current.phase === "incoming") {
+        callLog("missed call created", { callId, mode });
         void api.endCall(callId, "missed_timeout").catch(() => undefined);
         this.terminate("missed", mode === "no-answer" ? "No answer" : "Missed call");
       }
@@ -681,6 +800,9 @@ export class DesktopCallEngine {
     if (!current || isTerminal(current.phase)) return;
     switch (status) {
       case "ringing":
+        if (current.isCaller && current.phase === "calling") {
+          this.update({ phase: "ringing", statusText: "Ringing..." });
+        }
         break;
       case "accepted":
         if (current.phase === "ringing" || current.phase === "calling") {
@@ -704,10 +826,14 @@ export class DesktopCallEngine {
         this.terminate("rejected", "Call declined");
         break;
       case "missed":
+        callLog("missed call created", { callId: current.callId, source: "remote_status" });
         this.terminate("missed", current.isCaller ? "No answer" : "Missed call");
         break;
       case "failed":
         this.terminate("failed", "Connection failed");
+        break;
+      case "unreachable":
+        this.terminate("failed", "User not reachable");
         break;
       default:
         break;
@@ -720,6 +846,7 @@ export class DesktopCallEngine {
     const current = this.state;
     if (!current || isTerminal(current.phase)) return;
     const durationSeconds = current.connectedAt > 0 ? Math.max(0, Math.round((Date.now() - current.connectedAt) / 1000)) : 0;
+    callLog("call state terminal", { callId: current.callId, phase, reason });
     this.update({ phase, statusText: reason, endReason: reason });
     this.handlers.onFinished?.({
       peerUid: current.peerUid,
@@ -738,6 +865,7 @@ export class DesktopCallEngine {
 
   private fail(message: string) {
     const current = this.state;
+    callLog("call failed", { callId: current?.callId || "", reason: message });
     if (current?.callId) void api.endCall(current.callId, "network_error").catch(() => undefined);
     this.terminate("failed", message);
   }
@@ -765,15 +893,18 @@ export class DesktopCallEngine {
   }
 
   private cleanup() {
+    callLog("emergency cleanup");
     this.ringer.stop();
     if (this.signalTimer) window.clearInterval(this.signalTimer);
     if (this.statusTimer) window.clearInterval(this.statusTimer);
     if (this.statsTimer) window.clearInterval(this.statsTimer);
     if (this.ringTimer) window.clearTimeout(this.ringTimer);
+    if (this.dismissTimer) window.clearTimeout(this.dismissTimer);
     this.signalTimer = 0;
     this.statusTimer = 0;
     this.statsTimer = 0;
     this.ringTimer = 0;
+    this.dismissTimer = 0;
     this.lastSeq = 0;
     this.remoteDescriptionSet = false;
     this.pendingRemoteIce = [];

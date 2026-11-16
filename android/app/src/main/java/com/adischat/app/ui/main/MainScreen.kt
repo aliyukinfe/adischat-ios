@@ -23,16 +23,26 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.adischat.app.FeatureFlags
 import com.adischat.app.data.model.AdisLinkTarget
 import com.adischat.app.data.preferences.AppPreferences
+import com.adischat.app.feature.restaurants.presentation.RestaurantCenterPlaceholderScreen
+import com.adischat.app.feature.restaurants.presentation.RestaurantsCustomerRootScreen
+import com.adischat.app.feature.restaurants.qa.RestaurantsQaHost
+import com.adischat.app.feature.restaurants.qa.RestaurantsQaRoute
 import com.adischat.app.ui.UserViewModel
 import com.adischat.app.ui.admin.AdminScreen
 import com.adischat.app.ui.chat.ChatScreen
 import com.adischat.app.ui.discover.DiscoverScreen
 import com.adischat.app.feature.shop.presentation.SellerAccountRootScreen
+import com.adischat.app.feature.shop.presentation.AdisChatAccountIdentity
 import com.adischat.app.feature.shop.presentation.ShopRootScreen
 import com.adischat.app.feature.shop.presentation.ShopRoute
+import com.adischat.app.feature.shop.presentation.ShopNotificationRouteEffect
 import com.adischat.app.ui.home.HomeScreen
+import com.adischat.app.ui.browser.InAppBrowserScreen
+import com.adischat.app.feature.restaurants.data.RestaurantsRepository
+import com.adischat.app.feature.restaurants.data.RestaurantsConfig
 import com.adischat.app.ui.localization.AdisLocalizer
 import com.adischat.app.ui.localization.tr
 import com.adischat.app.ui.profile.ProfileScreen
@@ -88,12 +98,20 @@ fun MainScreen(
     onAdisLinkConsumed: () -> Unit = {},
     pendingNotificationConversationId: String? = null,
     onNotificationConversationConsumed: () -> Unit = {},
+    pendingShopConversationId: String? = null,
+    onShopConversationConsumed: () -> Unit = {},
+    pendingShopNotificationContext: String? = null,
+    pendingShopNotificationStoreId: String? = null,
+    onShopNotificationConsumed: () -> Unit = {},
+    initialRestaurantQrToken: String? = null,
+    onRestaurantQrTokenConsumed: () -> Unit = {},
     onOpenUrl: (String) -> Unit,
     onSignOut: () -> Unit,
 ) {
     // Shared user VM - same instance as HomeScreen uses
     val userVm: UserViewModel = viewModel()
     val currentUser by userVm.user.collectAsStateWithLifecycle()
+    val marketplaceLanguage by prefs.languageFlow.collectAsStateWithLifecycle(initialValue = "en")
     AdisLocalizer.language = "en"
     val isAdmin     = currentUser?.role == "admin"
 
@@ -109,6 +127,37 @@ fun MainScreen(
     var selected by remember { mutableIntStateOf(0) }
     var shopRoute by remember { mutableStateOf<ShopRoute?>(null) }
     var sellerAccountOpen by remember { mutableStateOf(false) }
+    var sellerNotificationsRequested by remember { mutableStateOf(false) }
+    var sellerNotificationStoreId by remember { mutableStateOf<String?>(null) }
+    var restaurantsCustomerOpen by remember { mutableStateOf(false) }
+    var pendingRestaurantQrToken by remember { mutableStateOf<String?>(null) }
+    var restaurantCenterPlaceholderOpen by remember { mutableStateOf(false) }
+    var restaurantCenterWebViewOpen by remember { mutableStateOf(false) }
+    var restaurantCenterWebUrl by remember { mutableStateOf("") }
+    var restaurantCenterHandoffData by remember { mutableStateOf<ByteArray?>(null) }
+    var restaurantsQaRoute by remember { mutableStateOf<RestaurantsQaRoute?>(null) }
+
+    var lastUid by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(currentUser?.uid) {
+        val uid = currentUser?.uid
+        if (lastUid != null && lastUid != uid) {
+            restaurantsCustomerOpen = false
+            pendingRestaurantQrToken = null
+            restaurantCenterPlaceholderOpen = false
+            restaurantCenterWebViewOpen = false
+            restaurantCenterHandoffData = null
+        }
+        lastUid = uid
+    }
+
+    LaunchedEffect(initialRestaurantQrToken, currentUser?.uid) {
+        val token = initialRestaurantQrToken
+        if (!token.isNullOrBlank() && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+            pendingRestaurantQrToken = token
+            restaurantsCustomerOpen = true
+            onRestaurantQrTokenConsumed()
+        }
+    }
 
     LaunchedEffect(pendingAdisLink?.slug, pendingAdisLink?.type) {
         if (pendingAdisLink != null) selected = 3
@@ -116,6 +165,29 @@ fun MainScreen(
 
     LaunchedEffect(pendingNotificationConversationId) {
         if (!pendingNotificationConversationId.isNullOrBlank()) selected = 3
+    }
+
+    ShopNotificationRouteEffect(
+        conversationId = pendingShopConversationId,
+        onOpen = { route ->
+            sellerAccountOpen = false
+            sellerNotificationsRequested = false
+            sellerNotificationStoreId = null
+            shopRoute = route
+        },
+        onConsumed = onShopConversationConsumed,
+    )
+    LaunchedEffect(pendingShopNotificationContext) {
+        when (pendingShopNotificationContext) {
+            "buyer" -> { sellerAccountOpen = false; shopRoute = ShopRoute.Notifications; onShopNotificationConsumed() }
+            "seller" -> {
+                shopRoute = null
+                sellerNotificationStoreId = pendingShopNotificationStoreId
+                sellerNotificationsRequested = true
+                sellerAccountOpen = true
+                onShopNotificationConsumed()
+            }
+        }
     }
 
     // If admin tab disappears (e.g. role changed), snap back to Home
@@ -139,7 +211,16 @@ fun MainScreen(
     var lastBackTime      by remember { mutableLongStateOf(0L) }
 
     BackHandler {
-        if (sellerAccountOpen) {
+        if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+            restaurantCenterWebViewOpen = false
+            restaurantCenterHandoffData = null
+        } else if (restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+        restaurantsQaRoute = null
+        } else if (restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+        restaurantsCustomerOpen = false
+        } else if (restaurantCenterPlaceholderOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+        restaurantCenterPlaceholderOpen = false
+        } else if (sellerAccountOpen) {
         sellerAccountOpen = false
         } else if (shopRoute != null) {
         shopRoute = null
@@ -165,7 +246,10 @@ fun MainScreen(
         snackbarHost   = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-        if (!keyboardOpen && !isChatSelected && shopRoute == null && !sellerAccountOpen) {
+        val qaOpen = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
+        val restaurantsOpen = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
+        val centerOpen = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
+        if (!keyboardOpen && !isChatSelected && shopRoute == null && !sellerAccountOpen && !qaOpen && !restaurantsOpen && !centerOpen) {
         Box(
         modifier = Modifier
         .fillMaxWidth()
@@ -240,12 +324,74 @@ fun MainScreen(
         }
         }
     ) { padding ->
-        Box(if (isChatSelected || shopRoute != null || sellerAccountOpen) Modifier.fillMaxSize() else Modifier.padding(padding)) {
+        val qaOverlayActive = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
+        val restaurantsOverlayActive = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
+        val centerOverlayActive = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
+        Box(
+            if (isChatSelected || shopRoute != null || sellerAccountOpen || qaOverlayActive || restaurantsOverlayActive || centerOverlayActive) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.padding(padding)
+            },
+        ) {
         val activeShopRoute = shopRoute
-        if (sellerAccountOpen) {
-        SellerAccountRootScreen(onBackToHome = { sellerAccountOpen = false })
+        val activeQaRoute = restaurantsQaRoute
+        if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+            InAppBrowserScreen(
+                url = restaurantCenterWebUrl,
+                postData = restaurantCenterHandoffData,
+                onClose = {
+                    restaurantCenterWebViewOpen = false
+                    restaurantCenterHandoffData = null
+                },
+            )
+        } else if (activeQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+        RestaurantsQaHost(
+            initialRoute = activeQaRoute,
+            onClose = { restaurantsQaRoute = null },
+        )
+        } else if (restaurantsOverlayActive) {
+        RestaurantsCustomerRootScreen(
+            initialQrToken = pendingRestaurantQrToken,
+            onInitialQrTokenConsumed = { pendingRestaurantQrToken = null },
+            onBackToHome = {
+                pendingRestaurantQrToken = null
+                restaurantsCustomerOpen = false
+            },
+            onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                {
+                    restaurantsCustomerOpen = false
+                    restaurantsQaRoute = RestaurantsQaRoute.HUB
+                }
+            } else {
+                null
+            },
+        )
+        } else if (centerOverlayActive) {
+        RestaurantCenterPlaceholderScreen(
+            onBackToProfile = { restaurantCenterPlaceholderOpen = false },
+        )
+        } else if (sellerAccountOpen) {
+        SellerAccountRootScreen(
+            onBackToHome = { sellerAccountOpen = false; sellerNotificationsRequested = false; sellerNotificationStoreId = null },
+            openNotificationsInitially = sellerNotificationsRequested,
+            initialStoreId = sellerNotificationStoreId,
+        )
         } else if (activeShopRoute != null) {
-        ShopRootScreen(initialRoute = activeShopRoute, onBackToHome = { shopRoute = null })
+        ShopRootScreen(
+        initialRoute = activeShopRoute,
+        onBackToHome = { shopRoute = null },
+        marketplaceLanguage = marketplaceLanguage,
+        onMarketplaceLanguageChange = { language -> scope.launch { prefs.setLanguage(language) } },
+        accountIdentity = AdisChatAccountIdentity(
+        displayName = currentUser?.name.orEmpty(),
+        photoUrl = currentUser?.photoUrl.orEmpty(),
+        ),
+        onOpenAdisChatProfile = {
+        shopRoute = null
+        selected = 4
+        },
+        )
         } else {
         when (selected) {
         0 -> HomeScreen(
@@ -256,9 +402,47 @@ fun MainScreen(
         onGoWallet = { },
         onGoDiscover = { selected = 1 },
         onOpenSellerAccount = { sellerAccountOpen = true },
+        onOpenRestaurants = {
+            if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                restaurantsCustomerOpen = true
+            }
+        },
+        onOpenRestaurantsQa = {
+            if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                restaurantsQaRoute = RestaurantsQaRoute.HUB
+            }
+        },
+        onOpenRestaurantCenter = {
+            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                scope.launch {
+                    val repo = RestaurantsRepository()
+                    repo.createRestaurantCenterHandoffTicket()
+                        .onSuccess { ticketRes ->
+                            val ticket = ticketRes.ticket
+                            if (!ticket.isNullOrBlank()) {
+                                val env = RestaurantsConfig.currentEnvironment
+                                val handoffUrl = env.handoffAuthUrl()
+                                val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
+                                restaurantCenterHandoffData = postBody
+                                restaurantCenterWebUrl = handoffUrl
+                                restaurantCenterWebViewOpen = true
+                            }
+                        }
+                }
+            }
+        },
         )
         1 -> DiscoverScreen(onOpenUrl = onOpenUrl)
-        2 -> ScanScreen(prefs = prefs, onOpenUrl = onOpenUrl)
+        2 -> ScanScreen(
+            prefs = prefs,
+            onOpenUrl = onOpenUrl,
+            onOpenRestaurantQr = { token ->
+                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                    pendingRestaurantQrToken = token
+                    restaurantsCustomerOpen = true
+                }
+            },
+        )
         3 -> ChatScreen(
         pendingAdisLink = pendingAdisLink,
         onAdisLinkConsumed = onAdisLinkConsumed,
@@ -272,6 +456,16 @@ fun MainScreen(
         onGoScan = { selected = 2 },
         onOpenUrl = onOpenUrl,
         onOpenShopRoute = { route -> shopRoute = route },
+        onOpenRestaurantCenter = {
+            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                restaurantCenterPlaceholderOpen = true
+            }
+        },
+        onOpenRestaurantsQa = {
+            if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                restaurantsQaRoute = RestaurantsQaRoute.HUB
+            }
+        },
         )
         5 -> AdminScreen()
         }

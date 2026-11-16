@@ -49,7 +49,7 @@ export function ProfilePanel({
   onClose: () => void;
   onMessage: (uid: string) => Promise<void> | void;
   onVoiceCall: (user: { uid: string; name: string; photoUrl?: string }) => void;
-  onVideoCall: (user: { uid: string; name: string; photoUrl?: string }) => void;
+  onVideoCall?: (user: { uid: string; name: string; photoUrl?: string }) => void;
   onEditOwnProfile: () => void;
   onOpenImage: (url: string) => void;
   onToast: (message: string) => void;
@@ -209,7 +209,7 @@ export function ProfilePanel({
                   Message
                 </button>
                 <button className="profile-action" onClick={() => onVoiceCall(callUser)}>Voice call</button>
-                <button className="profile-action" onClick={() => onVideoCall(callUser)}>Video call</button>
+                {onVideoCall ? <button className="profile-action" onClick={() => onVideoCall(callUser)}>Video call</button> : null}
               </div>
             )}
 

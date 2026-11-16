@@ -289,6 +289,7 @@ export function CallLayer({ engine, state, localStream, remoteStream }: {
 
   const isVideo = state.type === "video";
   const inActiveCall = state.phase === "connected" || state.phase === "reconnecting" || state.phase === "connecting";
+  const endLabel = state.isCaller && !state.connectedAt && (state.phase === "calling" || state.phase === "ringing") ? "Cancel" : "End";
 
   // Voice calls: remote audio element (video calls play audio through the video element).
   useEffect(() => {
@@ -456,6 +457,10 @@ export function CallLayer({ engine, state, localStream, remoteStream }: {
       <section className={`voice-card ${terminal ? "terminal" : ""}`}>
         <CallAvatar name={state.peerName} photoUrl={state.peerPhotoUrl} large />
         <h2>{state.peerName}</h2>
+        <p className="incoming-type">
+          <CallIcon name={isVideo ? "video" : "phone"} />
+          {isVideo ? "Video call" : "Voice call"}
+        </p>
         <p className="voice-status">
           {state.phase === "connected" ? duration : statusLine}
           {state.phase === "connected" && state.quality === "poor" ? <span className="quality-inline">Poor connection</span> : null}
@@ -483,9 +488,9 @@ export function CallLayer({ engine, state, localStream, remoteStream }: {
                 </button>
               </>
             ) : null}
-            <button className="control end" onClick={() => engine.end()} aria-label="End call">
+            <button className="control end" onClick={() => engine.end()} aria-label={`${endLabel} call`}>
               <CallIcon name="end" />
-              <small>End</small>
+              <small>{endLabel}</small>
             </button>
           </div>
         )}

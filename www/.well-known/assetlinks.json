@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.adischat.app",
+      "sha256_cert_fingerprints": [
+        "81:0A:9F:57:3D:65:60:DB:05:30:26:63:29:A9:1B:0F:D2:CB:B7:3E:2E:0C:D2:3A:9F:81:3B:CB:03:8A:B1:08",
+        "AF:79:C2:47:0D:38:99:98:54:C3:2C:68:A0:62:14:78:81:5E:47:93:72:20:B2:5F:DD:9A:84:C0:97:FE:3E:22"
+      ]
+    }
+  }
+]
+

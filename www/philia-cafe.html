@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <title>Philia Cafe Menu</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --ink: #0b0b0d;
+      --muted: #62646b;
+      --line: #e8e8ec;
+      --soft: #f6f6f7;
+      --soft-2: #f0f0f2;
+      --accent: #111111;
+      --radius: 24px;
+      --shadow: 0 24px 70px rgba(15, 15, 18, 0.08);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+    }
+
+    a { color: inherit; }
+
+    .page {
+      width: min(1180px, 100%);
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      min-height: 430px;
+      border: 1px solid var(--line);
+      border-radius: 34px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      background: #fff;
+    }
+
+    .hero-copy {
+      padding: clamp(28px, 5vw, 64px);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .eyebrow {
+      width: fit-content;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      background: var(--soft);
+    }
+
+    h1 {
+      margin: 20px 0 14px;
+      font-size: clamp(48px, 8vw, 96px);
+      line-height: 0.9;
+      letter-spacing: 0;
+      font-weight: 950;
+    }
+
+    .hero-copy p {
+      max-width: 560px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(16px, 2vw, 20px);
+      line-height: 1.55;
+    }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 28px;
+    }
+
+    .button {
+      min-height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 20px;
+      border-radius: 999px;
+      border: 1px solid var(--ink);
+      text-decoration: none;
+      font-weight: 850;
+    }
+
+    .button.primary {
+      background: var(--ink);
+      color: #fff;
+    }
+
+    .hero-visual {
+      position: relative;
+      min-height: 360px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0)),
+        url("https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=88") center/cover;
+    }
+
+    .hero-card {
+      position: absolute;
+      left: 24px;
+      right: 24px;
+      bottom: 24px;
+      padding: 18px;
+      border: 1px solid rgba(255,255,255,0.36);
+      border-radius: 24px;
+      background: rgba(255,255,255,0.88);
+      backdrop-filter: blur(18px);
+      display: grid;
+      gap: 4px;
+      box-shadow: 0 18px 48px rgba(0,0,0,0.16);
+    }
+
+    .hero-card strong { font-size: 20px; }
+    .hero-card span { color: var(--muted); font-size: 14px; }
+
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      margin: 20px 0 26px;
+      padding: 10px;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(18px);
+    }
+
+    nav a {
+      flex: 0 0 auto;
+      padding: 10px 14px;
+      border-radius: 999px;
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    nav a:hover,
+    nav a:focus {
+      background: var(--ink);
+      color: #fff;
+      outline: none;
+    }
+
+    .section {
+      margin: 28px 0;
+      padding: clamp(20px, 4vw, 34px);
+      border: 1px solid var(--line);
+      border-radius: 30px;
+      background: #fff;
+      box-shadow: 0 12px 36px rgba(15, 15, 18, 0.045);
+    }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: clamp(28px, 4vw, 44px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .section-note {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .item {
+      min-height: 100%;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--soft);
+    }
+
+    .item-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .item h3 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.25;
+      letter-spacing: 0;
+    }
+
+    .price {
+      flex: 0 0 auto;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: #fff;
+      border: 1px solid var(--line);
+      font-weight: 900;
+      font-size: 14px;
+    }
+
+    .item p {
+      margin: 10px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .category-title {
+      grid-column: 1 / -1;
+      margin: 12px 0 0;
+      padding: 12px 2px 4px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 950;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      border-top: 1px solid var(--line);
+    }
+
+    footer {
+      padding: 34px 8px 12px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 860px) {
+      header { grid-template-columns: 1fr; }
+      .hero-visual { min-height: 280px; }
+      .grid { grid-template-columns: 1fr; }
+      .page { padding: 14px; }
+      nav { border-radius: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <section class="hero-copy">
+        <div class="eyebrow">Menu now available</div>
+        <h1>Philia Cafe</h1>
+        <p>Fresh juices, rich coffee, burgers, sandwiches, pizza, and wraps served with a clean cafe experience.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="#burgers">View Food Menu</a>
+          <a class="button" href="#drinks">View Drinks</a>
+        </div>
+      </section>
+      <section class="hero-visual" aria-label="Philia Cafe food and drinks">
+        <div class="hero-card">
+          <strong>Modern cafe menu</strong>
+          <span>White space, black typography, and easy category scanning.</span>
+        </div>
+      </section>
+    </header>
+
+    <nav aria-label="Menu categories">
+      <a href="#drinks">Drinks</a>
+      <a href="#burgers">Burgers & Sandwiches</a>
+      <a href="#pizza">Pizza & Wraps</a>
+    </nav>
+
+    <section id="drinks" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Drinks</h2>
+          <p class="section-note">Juice, shakes, iced drinks, and hot drinks.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="category-title">Juice</div>
+        <article class="item"><div class="item-top"><h3>Philia Special Juice</h3><span class="price">280 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Mango Juice</h3><span class="price">230 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Orange Juice</h3><span class="price">230 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Pineapple Juice</h3><span class="price">230 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Avocado Juice</h3><span class="price">230 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Item to Confirm</h3><span class="price">200 br</span></div><p>Name needs confirmation from the source menu.</p></article>
+        <article class="item"><div class="item-top"><h3>Item to Confirm</h3><span class="price">250 br</span></div><p>Name needs confirmation from the source menu.</p></article>
+
+        <div class="category-title">Shake</div>
+        <article class="item"><div class="item-top"><h3>Philia Special Shake</h3><span class="price">350 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Strawberry Shake</h3><span class="price">300 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Banana Shake</h3><span class="price">250 br</span></div></article>
+
+        <div class="category-title">Iced Drinks</div>
+        <article class="item"><div class="item-top"><h3>Philia Iced Latte</h3><span class="price">350 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Strawberry Shake</h3><span class="price">300 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Banana Shake</h3><span class="price">250 br</span></div></article>
+
+        <div class="category-title">Hot Drinks</div>
+        <article class="item"><div class="item-top"><h3>Machiato</h3><span class="price">90 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Fasting Macchiato with Peanut Butter</h3><span class="price">150 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Fasting Macchiato</h3><span class="price">80 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Item to Confirm</h3><span class="price">30 br</span></div><p>Name needs confirmation from the source menu.</p></article>
+        <article class="item"><div class="item-top"><h3>Coffee</h3><span class="price">80 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Tea</h3><span class="price">40 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Tea with Peanut Butter</h3><span class="price">70 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Special Tea</h3><span class="price">130 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Cappuccino</h3><span class="price">150 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Espresso</h3><span class="price">90 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Milk</h3><span class="price">100 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Vanilla Latte</h3><span class="price">150 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Ginger Tea</h3><span class="price">60 br</span></div></article>
+        <article class="item"><div class="item-top"><h3>Ginger Tea with Honey</h3><span class="price">80 br</span></div></article>
+      </div>
+    </section>
+
+    <section id="burgers" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Burgers & Sandwiches</h2>
+          <p class="section-note">Served with French fries and ketchup where listed.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="category-title">Burger</div>
+        <article class="item"><div class="item-top"><h3>Philia Supreme</h3><span class="price">850 br</span></div><p>Double beef, chicken, cheese, lettuce, tomato, onion, chef's sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Classic</h3><span class="price">550 br</span></div><p>Beef, cheese, lettuce, tomato, onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Chicken Burger</h3><span class="price">800 br</span></div><p>Chicken breast, chicken mortadella, cheese, caramelized onion, chef's sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Deluxe Fish Burger</h3><span class="price">600 br</span></div><p>Fish, cheese, lettuce, tomato, onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia BBQ Sauce Burger</h3><span class="price">680 br</span></div><p>Beef, cheese, lettuce, tomato, onion, BBQ sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Smashed Burger</h3><span class="price">650 br</span></div><p>Smashed beef, cheese, lettuce, tomato, onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Smashed Chicken Burger</h3><span class="price">700 br</span></div><p>Smashed chicken breast, chicken mortadella, cheese, chef's sauce, French fries, ketchup.</p></article>
+
+        <div class="category-title">Sandwich</div>
+        <article class="item"><div class="item-top"><h3>Chicken Sandwich</h3><span class="price">680 br</span></div><p>Chicken, cheese, onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Tuna Sandwich</h3><span class="price">500 br</span></div><p>Tuna, chopped onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Steak Sandwich</h3><span class="price">800 br</span></div><p>Steak, cheese, lettuce, tomato, onion, sauce, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Club Sandwich</h3><span class="price">650 br</span></div><p>Ground meat, beef mortadella, tuna, boiled egg, mayonnaise, lettuce, tomato, onion, French fries, ketchup.</p></article>
+        <article class="item"><div class="item-top"><h3>Egg Sandwich</h3><span class="price">400 br</span></div><p>Egg, cheese, avocado, mayonnaise, lettuce, tomato, onion.</p></article>
+      </div>
+    </section>
+
+    <section id="pizza" class="section">
+      <div class="section-head">
+        <div>
+          <h2>Pizza & Wraps</h2>
+          <p class="section-note">Philia cafe favorites for sharing or quick meals.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="category-title">Pizza</div>
+        <article class="item"><div class="item-top"><h3>Philia Supreme</h3><span class="price">850 br</span></div><p>Chicken, beef mortadella, tuna, olives, cheese, boiled egg, Philia sauce, tomato sauce.</p></article>
+        <article class="item"><div class="item-top"><h3>Philia Classic</h3><span class="price">700 br</span></div><p>Beef mortadella, tuna, olives, cheese, boiled egg, Philia sauce, tomato sauce.</p></article>
+        <article class="item"><div class="item-top"><h3>Margarita Pizza</h3><span class="price">600 br</span></div><p>Cheese, Philia sauce, tomato sauce.</p></article>
+        <article class="item"><div class="item-top"><h3>Chicken Pizza</h3><span class="price">600 br</span></div><p>Chicken, chicken mortadella, olives, cheese, Philia sauce, tomato sauce.</p></article>
+        <article class="item"><div class="item-top"><h3>Tuna Pizza</h3><span class="price">680 br</span></div><p>Tuna, cheese, lettuce, tomato, onion, olives.</p></article>
+
+        <div class="category-title">Wrap</div>
+        <article class="item"><div class="item-top"><h3>Beef Wrap</h3><span class="price">550 br</span></div><p>Beef, cheese, vegetables (carrot, broccoli, zucchini), sauce, wrapped with pita.</p></article>
+        <article class="item"><div class="item-top"><h3>Chicken Wrap</h3><span class="price">680 br</span></div><p>Sliced chicken, cheese, vegetables (carrot, broccoli, zucchini), sauce, wrapped with pita.</p></article>
+        <article class="item"><div class="item-top"><h3>Steak Wrap</h3><span class="price">700 br</span></div><p>Sliced beef, cheese, vegetables (carrot, broccoli, zucchini), sauce, wrapped with pita.</p></article>
+        <article class="item"><div class="item-top"><h3>Tuna Wrap</h3><span class="price">500 br</span></div><p>Tuna, cheese, vegetables (carrot, broccoli, zucchini), sauce, wrapped with pita.</p></article>
+        <article class="item"><div class="item-top"><h3>Combo Wrap</h3><span class="price">750 br</span></div><p>Sliced beef, sliced chicken, tuna, cheese, vegetables (carrot, broccoli, zucchini), sauce, wrapped with pita.</p></article>
+      </div>
+    </section>
+
+    <footer>
+      Philia Cafe menu on AdisChat. Prices are shown in birr and may change.
+    </footer>
+  </div>
+</body>
+</html>

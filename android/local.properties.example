@@ -1,0 +1,4 @@
+# Copy to android/local.properties on developer machines.
+# Do not commit android/local.properties.
+ADISHOP_SUPABASE_URL=https://mcewjfnkrtiiolzibsuh.supabase.co
+ADISHOP_SUPABASE_PUBLISHABLE_KEY=PASTE_SUPABASE_PUBLISHABLE_KEY_HERE

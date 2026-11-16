@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "AdisChat Desktop",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "identifier": "com.adischat.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",

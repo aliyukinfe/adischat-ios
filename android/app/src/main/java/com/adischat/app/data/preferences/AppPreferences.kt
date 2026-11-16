@@ -13,18 +13,22 @@ import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "adischat_prefs")
 
+const val ADISCHAT_LOCALE_PREFS = "adischat_locale"
+const val ADISCHAT_LANGUAGE_PREF = "language"
+
 class AppPreferences(private val context: Context) {
 
     companion object {
-        private val THEME_KEY        = stringPreferencesKey("theme")
+        private val THEME_KEY      = stringPreferencesKey("theme")
         private val SCAN_HISTORY_KEY = stringPreferencesKey("scan_history")
         private val WALLET_STATE_KEY = stringPreferencesKey("wallet_state")
         private val FATHER_NAME_KEY  = stringPreferencesKey("father_name")
+        private val LANGUAGE_KEY     = stringPreferencesKey("language")
         private val WALLET_FINGERPRINT_KEY = booleanPreferencesKey("wallet_fingerprint_enabled")
         // Set of hostnames that have been granted permission to read the AdisChat
         // user identity inside the in-app browser bridge.
         private val WEB_BRIDGE_GRANTS_KEY  = stringSetPreferencesKey("web_bridge_grants")
-        private val gson             = Gson()
+        private val gson      = Gson()
     }
 
     /** "light" | "dark" | "system" */
@@ -33,15 +37,23 @@ class AppPreferences(private val context: Context) {
 
     val scanHistoryFlow: Flow<List<ScanEntry>> = context.dataStore.data
         .map { prefs ->
-            val json = prefs[SCAN_HISTORY_KEY] ?: "[]"
-            try {
-                val type = object : TypeToken<List<ScanEntry>>() {}.type
-                gson.fromJson<List<ScanEntry>>(json, type) ?: emptyList()
-            } catch (e: Exception) { emptyList() }
+        val json = prefs[SCAN_HISTORY_KEY] ?: "[]"
+        try {
+        val type = object : TypeToken<List<ScanEntry>>() {}.type
+        gson.fromJson<List<ScanEntry>>(json, type) ?: emptyList()
+        } catch (e: Exception) { emptyList() }
         }
 
     val fatherNameFlow: Flow<String> = context.dataStore.data
         .map { it[FATHER_NAME_KEY] ?: "" }
+
+    val languageFlow: Flow<String> = context.dataStore.data
+        .map { preferences ->
+        val saved = preferences[LANGUAGE_KEY]
+        ?: context.getSharedPreferences(ADISCHAT_LOCALE_PREFS, Context.MODE_PRIVATE)
+        .getString(ADISCHAT_LANGUAGE_PREF, "en")
+        if (saved == "am") "am" else "en"
+        }
 
     val walletFingerprintFlow: Flow<Boolean> = context.dataStore.data
         .map { it[WALLET_FINGERPRINT_KEY] ?: false }
@@ -53,26 +65,26 @@ class AppPreferences(private val context: Context) {
     suspend fun isWebBridgeGranted(host: String): Boolean {
         if (host.isBlank()) return false
         val set = context.dataStore.data
-            .map { it[WEB_BRIDGE_GRANTS_KEY] ?: emptySet() }
-            .first()
+        .map { it[WEB_BRIDGE_GRANTS_KEY] ?: emptySet() }
+        .first()
         return host in set
     }
 
     suspend fun setWebBridgeGranted(host: String, granted: Boolean) {
         if (host.isBlank()) return
         context.dataStore.edit { prefs ->
-            val current = prefs[WEB_BRIDGE_GRANTS_KEY] ?: emptySet()
-            prefs[WEB_BRIDGE_GRANTS_KEY] = if (granted) current + host else current - host
+        val current = prefs[WEB_BRIDGE_GRANTS_KEY] ?: emptySet()
+        prefs[WEB_BRIDGE_GRANTS_KEY] = if (granted) current + host else current - host
         }
     }
 
     val walletStateFlow: Flow<WalletState> = context.dataStore.data
         .map { prefs ->
-            try {
-                gson.fromJson(prefs[WALLET_STATE_KEY] ?: "", WalletState::class.java) ?: WalletState()
-            } catch (e: Exception) {
-                WalletState()
-            }
+        try {
+        gson.fromJson(prefs[WALLET_STATE_KEY] ?: "", WalletState::class.java) ?: WalletState()
+        } catch (e: Exception) {
+        WalletState()
+        }
         }
 
     suspend fun setTheme(theme: String) {
@@ -83,18 +95,27 @@ class AppPreferences(private val context: Context) {
         context.dataStore.edit { it[FATHER_NAME_KEY] = name.trim() }
     }
 
+    suspend fun setLanguage(language: String) {
+        val normalized = if (language.lowercase() == "am") "am" else "en"
+        context.getSharedPreferences(ADISCHAT_LOCALE_PREFS, Context.MODE_PRIVATE)
+        .edit()
+        .putString(ADISCHAT_LANGUAGE_PREF, normalized)
+        .apply()
+        context.dataStore.edit { it[LANGUAGE_KEY] = normalized }
+    }
+
     suspend fun setWalletFingerprintEnabled(enabled: Boolean) {
         context.dataStore.edit { it[WALLET_FINGERPRINT_KEY] = enabled }
     }
 
     suspend fun addScanEntry(entry: ScanEntry) {
         context.dataStore.edit { prefs ->
-            val current: List<ScanEntry> = try {
-                val type = object : TypeToken<List<ScanEntry>>() {}.type
-                gson.fromJson(prefs[SCAN_HISTORY_KEY] ?: "[]", type) ?: emptyList()
-            } catch (e: Exception) { emptyList() }
-            val updated = (listOf(entry) + current).take(30)
-            prefs[SCAN_HISTORY_KEY] = gson.toJson(updated)
+        val current: List<ScanEntry> = try {
+        val type = object : TypeToken<List<ScanEntry>>() {}.type
+        gson.fromJson(prefs[SCAN_HISTORY_KEY] ?: "[]", type) ?: emptyList()
+        } catch (e: Exception) { emptyList() }
+        val updated = (listOf(entry) + current).take(30)
+        prefs[SCAN_HISTORY_KEY] = gson.toJson(updated)
         }
     }
 

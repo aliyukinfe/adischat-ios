@@ -1,0 +1,17 @@
+name = "adischat-qa-shop-issuer"
+main = "src/index.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "adischat-qa"
+ADISHOP_ASSERTION_ISSUER = "adischat-staging-opkqyvttbyezjbqwkvho"
+ADISHOP_ASSERTION_AUDIENCE = "adishop-staging-edge"
+
+[[ratelimits]]
+name = "QA_RATE_LIMITER"
+namespace_id = "903031"
+
+[ratelimits.simple]
+limit = 60
+period = 60

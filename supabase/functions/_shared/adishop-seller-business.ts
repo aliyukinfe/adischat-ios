@@ -1,4 +1,5 @@
 import { audit, currentSession, jsonBody, Json, response, safeError } from "./adishop.ts";
+import { sellerBenefitAction, sellerBenefitEvidence } from "./adishop-benefits.ts";
 
 type Client = Awaited<ReturnType<typeof currentSession>>["client"];
 
@@ -353,6 +354,8 @@ export async function handleSellerBusiness(request: Request): Promise<Response> 
     const { client, profileId } = await currentSession(request);
     const url = new URL(request.url);
     const action = url.searchParams.get("action") || "dashboard";
+    if (action === "benefit-evidence") return await sellerBenefitEvidence(request, client, profileId);
+    if (action.startsWith("benefit-")) return await sellerBenefitAction(request, client, profileId);
     if (request.method === "GET" && action === "dashboard") {
       const sellerBusiness = await businessSnapshot(client, profileId, url.searchParams.get("storeId"), url.searchParams.get("start"), url.searchParams.get("end"));
       return response({ ok: true, sellerBusiness: sellerBusiness as unknown as Json });

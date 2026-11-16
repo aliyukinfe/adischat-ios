@@ -26,6 +26,14 @@ export type User = {
   status?: string;
   verified?: boolean;
   verificationLevel?: number;
+  lastSeenVisibility?: "public" | "private";
+  onlineStatusVisibility?: "same_as_last_seen" | "public" | "private";
+  profilePhotoVisibility?: "everyone" | "contacts" | "nobody";
+  phoneNumberVisibility?: "everyone" | "contacts" | "nobody";
+  readReceiptsEnabled?: boolean;
+  whoCanMessageMe?: "everyone" | "contacts" | "nobody";
+  whoCanCallMe?: "everyone" | "contacts" | "nobody";
+  whoCanAddMeToGroups?: "everyone" | "contacts" | "nobody";
 };
 
 /**
@@ -81,6 +89,22 @@ export type RawUser = {
   isVerified?: boolean;
   verificationLevel?: number;
   verification_level?: number;
+  lastSeenVisibility?: "public" | "private";
+  last_seen_visibility?: "public" | "private";
+  onlineStatusVisibility?: "same_as_last_seen" | "public" | "private";
+  online_status_visibility?: "same_as_last_seen" | "public" | "private";
+  profilePhotoVisibility?: "everyone" | "contacts" | "nobody";
+  profile_photo_visibility?: "everyone" | "contacts" | "nobody";
+  phoneNumberVisibility?: "everyone" | "contacts" | "nobody";
+  phone_number_visibility?: "everyone" | "contacts" | "nobody";
+  readReceiptsEnabled?: boolean;
+  read_receipts_enabled?: boolean | number;
+  whoCanMessageMe?: "everyone" | "contacts" | "nobody";
+  who_can_message_me?: "everyone" | "contacts" | "nobody";
+  whoCanCallMe?: "everyone" | "contacts" | "nobody";
+  who_can_call_me?: "everyone" | "contacts" | "nobody";
+  whoCanAddMeToGroups?: "everyone" | "contacts" | "nobody";
+  who_can_add_me_to_groups?: "everyone" | "contacts" | "nobody";
   user?: RawUser;
   profile?: RawUser;
   data?: RawUser;
@@ -107,7 +131,10 @@ export type DesktopPreferences = {
   language: "en" | "am";
   lastSeenVisibility: "everyone" | "contacts" | "nobody";
   profilePhotoVisibility: "everyone" | "contacts" | "nobody";
-  whoCanMessageMe: "everyone" | "contacts";
+  phoneNumberVisibility?: "everyone" | "contacts" | "nobody";
+  whoCanMessageMe: "everyone" | "contacts" | "nobody";
+  whoCanCallMe?: "everyone" | "contacts" | "nobody";
+  whoCanAddMeToGroups?: "everyone" | "contacts" | "nobody";
   readReceipts: boolean;
   connectionIndicatorStyle?: "dots" | "orbit" | "bubble";
 };
@@ -126,6 +153,14 @@ export type Conversation = {
   archived?: boolean;
   otherUserVerified?: boolean;
   otherUserVerificationLevel?: number;
+};
+
+export type ConversationUpdate = {
+  id: string;
+  type?: string;
+  lastMessage?: string;
+  lastMessageAt?: number;
+  unreadCount?: number;
 };
 
 export type CommunityRoom = {

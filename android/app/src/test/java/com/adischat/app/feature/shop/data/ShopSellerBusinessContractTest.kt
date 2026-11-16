@@ -14,6 +14,7 @@ class ShopSellerBusinessContractTest {
             """{
               "ok": true,
               "sellerBusiness": {
+                "stores": [{"id":"store-1","name":"Hulu Store"},{"id":"store-2","name":"Second Store"}],
                 "selectedStore": {"id":"store-1","name":"Hulu Store","approval_status":"approved","contact_phone":"0911000000","customer_service_policy_text":"Contact support","updated_at":"2026-08-05T15:00:00Z"},
                 "products": [{"id":"product-1","store_id":"store-1","title":"Test product","inventory":[{"id":"inventory-1","product_id":"product-1","quantity_available":8,"quantity_reserved":2,"low_stock_threshold":3}]}],
                 "analytics": {"revenueMinor":12500,"orderCount":2,"deliveredOrderCount":1,"productsSold":3,"refundRate":0.0,"averageOrderValueMinor":6250,"topProducts":[{"title":"Test product","quantity":3,"revenueMinor":12500}]},
@@ -27,6 +28,7 @@ class ShopSellerBusinessContractTest {
         ) as ShopEnvelope<*>
 
         val business = requireNotNull(envelope.sellerBusiness)
+        assertEquals(listOf("store-1", "store-2"), business.stores.map { it.id })
         assertEquals("Hulu Store", business.selectedStore?.name)
         assertEquals("0911000000", business.selectedStore?.contactPhone)
         assertEquals("Contact support", business.selectedStore?.supportContact)
@@ -81,5 +83,24 @@ class ShopSellerBusinessContractTest {
 
         assertTrue(json.contains("\"expectedVersion\":7"))
         assertTrue(json.contains("\"idempotencyKey\":\"android-seller-refund-request-123-v7\""))
+    }
+
+    @Test
+    fun sellerOrderActionsAndResponsesCarrySelectedStore() {
+        val action = Gson().toJson(ShopSellerOrderActionRequest(orderGroupId = "group-1", storeId = "store-a"))
+        val delivery = Gson().toJson(ShopSellerDeliveryCodeRequest("group-1", "123456", "store-a"))
+        val response = Gson().toJson(ShopSellerRequestResponseRequest("request-1", "A valid reply", "request-key", 1, "store-a"))
+        assertTrue(action.contains("\"storeId\":\"store-a\""))
+        assertTrue(delivery.contains("\"storeId\":\"store-a\""))
+        assertTrue(response.contains("\"storeId\":\"store-a\""))
+    }
+
+    @Test
+    fun sellerOrderScopeEchoMapsFromServer() {
+        val envelope = Gson().fromJson(
+            """{"ok":true,"sellerOrderStoreId":"store-a","sellerOrderGroups":[]}""",
+            ShopEnvelope::class.java,
+        ) as ShopEnvelope<*>
+        assertEquals("store-a", envelope.sellerOrderStoreId)
     }
 }

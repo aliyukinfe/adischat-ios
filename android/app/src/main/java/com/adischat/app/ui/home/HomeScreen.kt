@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ShoppingBag
@@ -57,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,6 +89,9 @@ import com.adischat.app.ui.UserViewModel
 import com.adischat.app.ui.localization.tr
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.adischat.app.feature.restaurants.data.RestaurantsRepository
 import java.util.Calendar
 
 private val AppBg = Color(0xFF0B0D12)
@@ -123,7 +128,7 @@ private data class RestaurantItem(
     val logoRes: Int? = null,
 )
 
-private enum class ServiceAction { None, Scan, Wallet, Chat, Pay, Discover, Shop, Seller }
+private enum class ServiceAction { None, Scan, Wallet, Chat, Pay, Discover, Shop, Seller, Restaurants, RestaurantsQa, RestaurantCenter }
 
 private const val AMROGN_CHICKEN_ORDER_URL = "https://www.adischat.com/amrognchicken"
 private const val DRAGON_BURGER_URL = "https://www.adischat.com/dragonburger"
@@ -151,6 +156,9 @@ fun HomeScreen(
     onGoWallet: () -> Unit,
     onGoDiscover: () -> Unit = {},
     onOpenSellerAccount: () -> Unit = {},
+    onOpenRestaurants: () -> Unit = {},
+    onOpenRestaurantsQa: () -> Unit = {},
+    onOpenRestaurantCenter: () -> Unit = {},
 ) {
     val vm: UserViewModel = viewModel()
     val scope = rememberCoroutineScope()
@@ -158,6 +166,24 @@ fun HomeScreen(
     val totalUnread by com.adischat.app.notifications.UnreadCenter.total.collectAsStateWithLifecycle()
     var refreshing by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
+    var isRestaurantCenterEligible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(appUser?.uid) {
+        val uid = appUser?.uid
+        if (com.adischat.app.FeatureFlags.RESTAURANT_CENTER_ENABLED && !uid.isNullOrBlank()) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    RestaurantsRepository().checkRestaurantCenterEligibility()
+                }.getOrNull()?.onSuccess { eligibility ->
+                    isRestaurantCenterEligible = eligibility.isEligible
+                }?.onFailure {
+                    isRestaurantCenterEligible = false
+                }
+            }
+        } else {
+            isRestaurantCenterEligible = false
+        }
+    }
 
     val firstName = appUser?.name?.split(" ")?.firstOrNull()?.takeIf { it.isNotBlank() } ?: "akab"
     val displayName = firstName.replaceFirstChar { it.uppercase() }
@@ -167,19 +193,22 @@ fun HomeScreen(
         else -> "Good evening"
     }
 
-    val services = remember {
+    val services = remember(isRestaurantCenterEligible) {
         listOfNotNull(
-        ServiceItem("Delivery", Icons.Default.DeliveryDining, Mint, ServiceAction.Discover),
-        ServiceItem("Pickup", Icons.Default.ShoppingBag, Blue, ServiceAction.Discover),
-        ServiceItem("Offers", Icons.Default.LocalOffer, Orange, ServiceAction.Discover),
-        ServiceItem("Scan QR", Icons.Default.QrCodeScanner, Purple, ServiceAction.Scan),
-        // Wallet / Pay hidden while the wallet feature is paused (FeatureFlags.WALLET_ENABLED).
-        if (com.adischat.app.FeatureFlags.WALLET_ENABLED) ServiceItem("Wallet", Icons.Default.AccountBalanceWallet, Mint, ServiceAction.Wallet) else null,
-        if (com.adischat.app.FeatureFlags.WALLET_ENABLED) ServiceItem("Pay", Icons.Default.CreditCard, Purple, ServiceAction.Pay) else null,
-        ServiceItem("Chat", Icons.Default.Chat, Blue, ServiceAction.Chat),
-        ServiceItem("AdisGebeya", Icons.Default.Storefront, Mint, ServiceAction.Shop, R.drawable.adisgebeya_logo),
-        ServiceItem("Seller Account", Icons.Default.Storefront, Orange, ServiceAction.Seller),
-        ServiceItem("More", Icons.Default.MoreHoriz, LabelGrey, ServiceAction.Discover),
+            ServiceItem("Delivery", Icons.Default.DeliveryDining, Mint, ServiceAction.Discover),
+            ServiceItem("Pickup", Icons.Default.ShoppingBag, Blue, ServiceAction.Discover),
+            ServiceItem("Offers", Icons.Default.LocalOffer, Orange, ServiceAction.Discover),
+            ServiceItem("Scan QR", Icons.Default.QrCodeScanner, Purple, ServiceAction.Scan),
+            // Wallet / Pay hidden while the wallet feature is paused (FeatureFlags.WALLET_ENABLED).
+            if (com.adischat.app.FeatureFlags.WALLET_ENABLED) ServiceItem("Wallet", Icons.Default.AccountBalanceWallet, Mint, ServiceAction.Wallet) else null,
+            if (com.adischat.app.FeatureFlags.WALLET_ENABLED) ServiceItem("Pay", Icons.Default.CreditCard, Purple, ServiceAction.Pay) else null,
+            ServiceItem("Chat", Icons.Default.Chat, Blue, ServiceAction.Chat),
+            ServiceItem("AdisGebeya", Icons.Default.Storefront, Mint, ServiceAction.Shop, R.drawable.adisgebeya_loader_buyer),
+            ServiceItem("Seller Account", Icons.Default.Storefront, Orange, ServiceAction.Seller),
+            if (isRestaurantCenterEligible) ServiceItem("Restaurant Center", Icons.Default.Storefront, Mint, ServiceAction.RestaurantCenter) else null,
+            if (com.adischat.app.FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) ServiceItem("Restaurants", Icons.Default.Restaurant, Mint, ServiceAction.Restaurants) else null,
+            if (com.adischat.app.FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) ServiceItem("Dining QA", Icons.Default.Restaurant, Orange, ServiceAction.RestaurantsQa) else null,
+            ServiceItem("More", Icons.Default.MoreHoriz, LabelGrey, ServiceAction.Discover),
         )
     }
 
@@ -276,6 +305,9 @@ fun HomeScreen(
         ServiceAction.Chat -> onGoChat()
         ServiceAction.Shop -> onOpenShop()
         ServiceAction.Seller -> onOpenSellerAccount()
+        ServiceAction.Restaurants -> onOpenRestaurants()
+        ServiceAction.RestaurantsQa -> onOpenRestaurantsQa()
+        ServiceAction.RestaurantCenter -> onOpenRestaurantCenter()
         ServiceAction.Discover -> onGoDiscover()
         ServiceAction.None -> Unit
         }
@@ -305,7 +337,7 @@ private fun AdisGebeyaCard(onClick: () -> Unit) {
             ) {
                 Box(Modifier.size(50.dp).clip(RoundedCornerShape(18.dp)).background(Color.White.copy(alpha = .16f)), contentAlignment = Alignment.Center) {
                     Image(
-                        painter = painterResource(R.drawable.adisgebeya_logo),
+                        painter = painterResource(R.drawable.adisgebeya_loader_buyer),
                         contentDescription = "AdisGebeya",
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.size(38.dp),

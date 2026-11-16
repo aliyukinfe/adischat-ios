@@ -13,6 +13,79 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class ShopStateReducersTest {
     @Test
+    fun adminWorkspaceIsClearedBeforeAccessIsRechecked() {
+        val state = ShopProtectedState(
+            ownerUid = "current-user",
+            adminSession = ShopAdminSessionDto(primaryRole = "shop_admin"),
+            adminDashboard = ShopAdminDashboardDto(productsAwaitingReview = 7),
+            adminProducts = listOf(ShopAdminProductDto(id = "pending-product")),
+            selectedAdminProduct = ShopAdminProductDetailDto(),
+            adminOrders = listOf(ShopAdminOrderDto(id = "order")),
+        )
+
+        val cleared = ShopStateReducers.clearAdminWorkspace(state)
+
+        assertEquals("current-user", cleared.ownerUid)
+        assertEquals(null, cleared.adminSession)
+        assertEquals(null, cleared.adminDashboard)
+        assertTrue(cleared.adminProducts.isEmpty())
+        assertEquals(null, cleared.selectedAdminProduct)
+        assertTrue(cleared.adminOrders.isEmpty())
+    }
+
+    @Test
+    fun sellerProductsNeverCrossSelectedStore() {
+        val products = listOf(
+            ShopSellerProductDto(id = "a", storeId = "store-a"),
+            ShopSellerProductDto(id = "b", storeId = "store-b"),
+        )
+
+        assertEquals(listOf("b"), ShopStateReducers.sellerProductsForStore(products, "store-b").map { it.id })
+        assertTrue(ShopStateReducers.sellerProductsForStore(products, null).isEmpty())
+        assertFalse(ShopStateReducers.sellerProductResponseMatchesStore("store-b", "store-b", products))
+        assertFalse(ShopStateReducers.sellerProductResponseMatchesStore("store-b", null, emptyList()))
+        assertTrue(ShopStateReducers.sellerProductResponseMatchesStore("store-b", "store-b", products.takeLast(1)))
+    }
+
+    @Test
+    fun sellerRequestsHideOtherStoresAndUnknownGroups() {
+        val groups = listOf(
+            ShopOrderGroupDto(id = "group-a", storeId = "store-a"),
+            ShopOrderGroupDto(id = "group-b", storeId = "store-b"),
+        )
+        val requests = ShopSellerRequestsDto(
+            refundRequests = listOf(
+                ShopRefundRequestDto(id = "refund-a", orderGroupId = "group-a"),
+                ShopRefundRequestDto(id = "refund-b", orderGroupId = "group-b"),
+                ShopRefundRequestDto(id = "refund-unknown"),
+            ),
+            exchangeRequests = listOf(
+                ShopExchangeRequestDto(id = "exchange-a", orderGroupId = "group-a"),
+                ShopExchangeRequestDto(id = "exchange-b", orderGroupId = "group-b"),
+            ),
+        )
+
+        val scoped = ShopStateReducers.sellerRequestsForStore(requests, groups, "store-b")
+        assertEquals(listOf("refund-b"), scoped.refundRequests.map { it.id })
+        assertEquals(listOf("exchange-b"), scoped.exchangeRequests.map { it.id })
+        assertTrue(ShopStateReducers.sellerRequestsForStore(requests, groups, null).refundRequests.isEmpty())
+    }
+
+    @Test
+    fun sellerRequestsStayEmptyForEachSelectedStore() {
+        val empty = ShopSellerRequestsDto()
+        val groups = listOf(
+            ShopOrderGroupDto(id = "group-a", storeId = "store-a"),
+            ShopOrderGroupDto(id = "group-b", storeId = "store-b"),
+        )
+        for (storeId in listOf("store-a", "store-b")) {
+            val scoped = ShopStateReducers.sellerRequestsForStore(empty, groups, storeId)
+            assertTrue(scoped.refundRequests.isEmpty())
+            assertTrue(scoped.exchangeRequests.isEmpty())
+        }
+    }
+
+    @Test
     fun cartItemCountSumsPositiveQuantities() {
         val cart = ShopCartDto(items = listOf(
             ShopCartItemDto(quantity = 2),
@@ -21,6 +94,29 @@ class ShopStateReducersTest {
         ))
 
         assertEquals(5, ShopStateReducers.cartItemCount(cart))
+    }
+
+    @Test
+    fun cartKeepsDifferentVariantsAsSeparateLines() {
+        val cart = ShopCartDto(items = listOf(
+            ShopCartItemDto(id = "line-black-m", productId = "shirt", variantId = "black-m", quantity = 2),
+            ShopCartItemDto(id = "line-black-l", productId = "shirt", variantId = "black-l", quantity = 1),
+            ShopCartItemDto(id = "line-white-m", productId = "shirt", variantId = "white-m", quantity = 1),
+        ))
+
+        assertEquals(3, cart.items.map { it.productId to it.variantId }.distinct().size)
+        assertEquals(4, ShopStateReducers.cartItemCount(cart))
+    }
+
+    @Test
+    fun orderVariantSnapshotSurvivesLiveVariantChanges() {
+        val snapshot = mapOf("id" to "variant-old", "title" to "Black / M", "options" to mapOf("COLOR" to "Black", "SIZE" to "M"))
+        val serialized = Gson().toJson(snapshot)
+        val changedLiveVariant = ShopPublicVariantDto(id = "variant-old", title = "Midnight / Medium", options = mapOf("COLOR" to "Midnight", "SIZE" to "Medium"))
+
+        assertTrue(serialized.contains("Black"))
+        assertTrue(serialized.contains("M"))
+        assertFalse(serialized.contains(changedLiveVariant.title))
     }
 
     @Test
@@ -44,7 +140,9 @@ class ShopStateReducersTest {
 
     @Test
     fun shopSessionMemoryClearsProtectedIdentityState() {
-        ShopSessionMemory.update(
+        ShopSessionMemory.clear()
+        ShopSessionMemory.updateIfCurrent(
+            ShopSessionMemory.generation(),
             ShopSessionDto(accessToken = "token", refreshToken = "refresh", expiresAt = 90_000),
             ShopProfileDto(id = "profile-a", displayName = "Account A"),
         )
@@ -73,6 +171,13 @@ class ShopStateReducersTest {
             ownerUid = "buyer-a",
             error = "old error",
             orders = listOf(ShopOrderDto(id = "order-a")),
+            notifications = listOf(ShopNotificationDto(id = "notification-a")),
+            selectedOrder = ShopOrderDto(id = "selected-order-a"),
+            selectedConversation = ShopConversationDto(id = "conversation-a"),
+            conversationMessages = listOf(ShopMessageDto(id = "message-a")),
+            sellerProducts = listOf(ShopSellerProductDto(id = "product-a", storeId = "store-a")),
+            sellerProductsStoreId = "store-a",
+            sellerProductsLoaded = true,
             sellerStatus = "approved",
             adminSession = ShopAdminSessionDto(primaryRole = "super_admin"),
         )
@@ -81,9 +186,37 @@ class ShopStateReducersTest {
 
         assertEquals("buyer-b", accountB.ownerUid)
         assertTrue(accountB.orders.isEmpty())
+        assertTrue(accountB.notifications.isEmpty())
+        assertEquals(null, accountB.selectedOrder)
+        assertEquals(null, accountB.selectedConversation)
+        assertTrue(accountB.conversationMessages.isEmpty())
+        assertTrue(accountB.sellerProducts.isEmpty())
+        assertEquals(null, accountB.sellerProductsStoreId)
+        assertFalse(accountB.sellerProductsLoaded)
         assertEquals("not_started", accountB.sellerStatus)
         assertEquals(null, accountB.adminSession)
         assertEquals(null, accountB.error)
+    }
+
+    @Test
+    fun notificationReadReducersUseServerUnreadCountAndPreserveExistingReadTime() {
+        val state = ShopProtectedState(
+            notificationUnreadCount = 2,
+            notifications = listOf(
+                ShopNotificationDto(id = "one"),
+                ShopNotificationDto(id = "two", readAt = "existing"),
+            ),
+        )
+
+        val oneRead = ShopStateReducers.notificationMarkedRead(state, "one", 1, "now")
+        assertEquals(1, oneRead.notificationUnreadCount)
+        assertEquals("now", oneRead.notifications.first().readAt)
+        assertEquals("existing", oneRead.notifications.last().readAt)
+
+        val allRead = ShopStateReducers.allNotificationsMarkedRead(oneRead, 0, "later")
+        assertEquals(0, allRead.notificationUnreadCount)
+        assertTrue(allRead.notifications.all { !it.readAt.isNullOrBlank() })
+        assertEquals("existing", allRead.notifications.last().readAt)
     }
 
     @Test
@@ -223,6 +356,7 @@ class ShopStateReducersTest {
     @Test
     fun sellerProductUpdatePayloadOmitsNullMediaCollections() {
         val request = ShopSellerProductUpdateRequest(
+            storeId = "store-a",
             productId = "product-a",
             requestId = "request-a",
             product = ShopSellerProductDraftPayload(
@@ -232,7 +366,7 @@ class ShopStateReducersTest {
                 priceMinor = 1_299_00,
                 stockQuantity = 12,
                 images = null,
-                variants = null,
+                variantCatalog = null,
             ),
         )
 

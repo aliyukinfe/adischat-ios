@@ -43,16 +43,16 @@ class AdminRepository {
 
     suspend fun addWalletMoney(uid: String, amount: Double, reason: String): Result<Unit> = runCatching {
         walletApi.adminAdjustWallet(
-            uid,
-            WalletAmountBody(
-                amount = amount,
-                note = reason.ifBlank { "Admin wallet top-up" },
-            )
+        uid,
+        WalletAmountBody(
+        amount = amount,
+        note = reason.ifBlank { "Admin wallet top-up" },
+        )
         )
         Unit
     }
 
-    // ── Channel verification (blue badge) — same worker as channel posts ────────
+    // - Channel verification (blue badge) - same worker as channel posts -
     suspend fun getChannelVerifications(status: String = "pending"): Result<List<com.adischat.app.network.ChannelVerificationResponse>> =
         runCatching { walletApi.getChannelVerificationRequests(status) }
 

@@ -28,6 +28,54 @@
       "destination": "/download.html"
     },
     {
+      "source": "/delete-account",
+      "destination": "/delete-account.html"
+    },
+    {
+      "source": "/account-deletion",
+      "destination": "/delete-account.html"
+    },
+    {
+      "source": "/deleteaccount",
+      "destination": "/delete-account.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/privacy-policy",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/privacy.html",
+      "destination": "/privacy-policy.html"
+    },
+    {
+      "source": "/terms",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/terms-of-service",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/terms.html",
+      "destination": "/terms.html"
+    },
+    {
+      "source": "/amrognchicken",
+      "destination": "/philia-cafe.html"
+    },
+    {
+      "source": "/philiacafe",
+      "destination": "/philia-cafe.html"
+    },
+    {
+      "source": "/philia-cafe",
+      "destination": "/philia-cafe.html"
+    },
+    {
       "source": "/channel/:slug",
       "destination": "/link.html"
     },

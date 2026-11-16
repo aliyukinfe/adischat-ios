@@ -1,0 +1,39 @@
+# TEMPLATE ONLY: not deployable until separate approval and exact QA resource review.
+name = "adischat-qa-shop-revoker"
+main = "src/delivery.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = false
+
+[vars]
+QA_FIREBASE_PROJECT_ID = "adischat-qa"
+QA_SHOP_URL = "https://opkqyvttbyezjbqwkvho.supabase.co"
+
+[[d1_databases]]
+binding = "QA_STATE_DB"
+database_name = "adischat-qa-identity-state"
+database_id = "REPLACE_WITH_APPROVED_QA_D1_ID"
+
+[[queues.producers]]
+binding = "QA_REVOCATION_QUEUE"
+queue = "adischat-qa-shop-revocations"
+
+[[queues.producers]]
+binding = "QA_INVALID_QUEUE"
+queue = "adischat-qa-shop-revocation-invalid"
+
+[[queues.consumers]]
+queue = "adischat-qa-shop-revocations"
+max_batch_size = 1
+max_retries = 3
+dead_letter_queue = "adischat-qa-shop-revocation-dlq"
+
+[[ratelimits]]
+name = "QA_ADMIN_RATE_LIMITER"
+namespace_id = "REPLACE_WITH_APPROVED_QA_RATE_NAMESPACE"
+
+[ratelimits.simple]
+limit = 10
+period = 60
+
+[triggers]
+crons = ["* * * * *"]

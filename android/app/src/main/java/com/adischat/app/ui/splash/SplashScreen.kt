@@ -57,8 +57,6 @@ fun SplashScreen(onComplete: () -> Unit) {
     val iconScale = remember { Animatable(0.35f) }
     val iconAlpha = remember { Animatable(0f) }
     val iconRotation = remember { Animatable(-12f) }
-    val subtitleAlpha = remember { Animatable(0f) }
-    val subtitleOffset = remember { Animatable(18f) }
     val progress = remember { Animatable(0f) }
     val footerAlpha = remember { Animatable(0f) }
     val letters = remember { "ADISCHAT".map { Animatable(0f) } }
@@ -93,27 +91,25 @@ fun SplashScreen(onComplete: () -> Unit) {
         delay(120)
         launch { iconAlpha.animateTo(1f, tween(280)) }
         launch {
-            iconScale.animateTo(
-                1f,
-                spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
-            )
+        iconScale.animateTo(
+        1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow)
+        )
         }
         launch { iconRotation.animateTo(0f, tween(760, easing = FastOutSlowInEasing)) }
 
         delay(360)
         letters.forEachIndexed { index, anim ->
-            launch {
-                delay(index * 62L)
-                anim.animateTo(
-                    1f,
-                    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
-                )
-            }
+        launch {
+        delay(index * 62L)
+        anim.animateTo(
+        1f,
+        spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium)
+        )
+        }
         }
 
         delay(680)
-        launch { subtitleAlpha.animateTo(1f, tween(460)) }
-        launch { subtitleOffset.animateTo(0f, tween(520, easing = FastOutSlowInEasing)) }
         launch { footerAlpha.animateTo(1f, tween(520)) }
         progress.animateTo(1f, tween(1650, easing = FastOutSlowInEasing))
         delay(1250)
@@ -122,160 +118,147 @@ fun SplashScreen(onComplete: () -> Unit) {
 
     Box(
         modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.linearGradient(
-                    listOf(
-                        Color(0xFFF2FFF7),
-                        Color(0xFFE9FFF2),
-                        Color(0xFFF8FAFC),
-                        Color(0xFFEFFAF6)
-                    )
-                )
-            )
+        .fillMaxSize()
+        .background(
+        Brush.linearGradient(
+        listOf(
+        Color(0xFFF2FFF7),
+        Color(0xFFE9FFF2),
+        Color(0xFFF8FAFC),
+        Color(0xFFEFFAF6)
+        )
+        )
+        )
     ) {
         SoftBackground()
 
         Column(
-            modifier = Modifier.align(Alignment.Center),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.align(Alignment.Center),
+        horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                PulseRing(scale = pulse, alpha = iconAlpha.value * 0.28f)
-                PulseRing(scale = pulse * 1.18f, alpha = iconAlpha.value * 0.14f)
-                Box(
-                    Modifier
-                        .size(154.dp)
-                        .graphicsLayer { rotationZ = glowRotation }
-                        .clip(RoundedCornerShape(42.dp))
-                        .background(
-                            Brush.sweepGradient(
-                                listOf(
-                                    Color.Transparent,
-                                    Primary.copy(alpha = 0.28f),
-                                    Color.Transparent,
-                                    Color(0xFF86EFAC).copy(alpha = 0.26f),
-                                    Color.Transparent
-                                )
-                            )
-                        )
-                        .alpha(iconAlpha.value * 0.72f)
-                )
-                Image(
-                    painter = painterResource(R.drawable.logo),
-                    contentDescription = "AdisChat",
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .size(132.dp)
-                        .scale(iconScale.value)
-                        .alpha(iconAlpha.value)
-                        .graphicsLayer { rotationZ = iconRotation.value }
-                        .clip(RoundedCornerShape(36.dp)),
-                )
-            }
+        Box(contentAlignment = Alignment.Center) {
+        PulseRing(scale = pulse, alpha = iconAlpha.value * 0.28f)
+        PulseRing(scale = pulse * 1.18f, alpha = iconAlpha.value * 0.14f)
+        Box(
+        Modifier
+        .size(154.dp)
+        .graphicsLayer { rotationZ = glowRotation }
+        .clip(RoundedCornerShape(42.dp))
+        .background(
+        Brush.sweepGradient(
+        listOf(
+        Color.Transparent,
+        Primary.copy(alpha = 0.28f),
+        Color.Transparent,
+        Color(0xFF86EFAC).copy(alpha = 0.26f),
+        Color.Transparent
+        )
+        )
+        )
+        .alpha(iconAlpha.value * 0.72f)
+        )
+        Image(
+        painter = painterResource(R.drawable.logo),
+        contentDescription = "AdisChat",
+        contentScale = ContentScale.Fit,
+        modifier = Modifier
+        .size(132.dp)
+        .scale(iconScale.value)
+        .alpha(iconAlpha.value)
+        .graphicsLayer { rotationZ = iconRotation.value }
+        .clip(RoundedCornerShape(36.dp)),
+        )
+        }
 
-            Spacer(Modifier.height(30.dp))
+        Spacer(Modifier.height(30.dp))
 
-            Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
-                "ADISCHAT".forEachIndexed { index, char ->
-                    val value = letters[index].value
-                    Text(
-                        text = char.toString(),
-                        fontSize = 43.sp,
-                        lineHeight = 46.sp,
-                        fontWeight = FontWeight.Black,
-                        fontFamily = FontFamily.SansSerif,
-                        color = if (index >= 4) Primary else Color(0xFF071526),
-                        letterSpacing = 0.sp,
-                        modifier = Modifier
-                            .alpha(value)
-                            .offset(y = ((1f - value) * 26f).dp)
-                            .graphicsLayer {
-                                scaleX = 0.82f + (value * 0.18f)
-                                scaleY = 0.82f + (value * 0.18f)
-                            }
-                    )
-                }
-            }
+        Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+        "ADISCHAT".forEachIndexed { index, char ->
+        val value = letters[index].value
+        Text(
+        text = char.toString(),
+        fontSize = 43.sp,
+        lineHeight = 46.sp,
+        fontWeight = FontWeight.Black,
+        fontFamily = FontFamily.SansSerif,
+        color = if (index >= 4) Primary else Color(0xFF071526),
+        letterSpacing = 0.sp,
+        modifier = Modifier
+        .alpha(value)
+        .offset(y = ((1f - value) * 26f).dp)
+        .graphicsLayer {
+        scaleX = 0.82f + (value * 0.18f)
+        scaleY = 0.82f + (value * 0.18f)
+        }
+        )
+        }
+        }
 
-            Box(
-                Modifier
-                    .padding(top = 8.dp)
-                    .width(88.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Brush.horizontalGradient(listOf(Primary, Color(0xFF86EFAC))))
-                    .alpha(letters.last().value)
-            )
+        Box(
+        Modifier
+        .padding(top = 8.dp)
+        .width(88.dp)
+        .height(4.dp)
+        .clip(RoundedCornerShape(999.dp))
+        .background(Brush.horizontalGradient(listOf(Primary, Color(0xFF86EFAC))))
+        .alpha(letters.last().value)
+        )
 
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                text = "ቤታችሁ !!!",
-                fontSize = 18.sp,
-                lineHeight = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = PrimaryDk,
-                letterSpacing = 1.2.sp,
-                modifier = Modifier
-                    .alpha(subtitleAlpha.value)
-                    .offset(y = subtitleOffset.value.dp)
-            )
         }
 
         Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 72.dp)
-                .alpha(footerAlpha.value),
-            horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+        .align(Alignment.BottomCenter)
+        .padding(bottom = 72.dp)
+        .alpha(footerAlpha.value),
+        horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Box(
-                Modifier
-                    .width(224.dp)
-                    .height(6.dp)
-                    .clip(RoundedCornerShape(999.dp))
-                    .background(Primary.copy(alpha = 0.10f))
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .fillMaxWidth(progress.value)
-                        .clip(RoundedCornerShape(999.dp))
-                        .background(
-                            Brush.horizontalGradient(
-                                colorStops = arrayOf(
-                                    0f to Primary,
-                                    shimmer.coerceIn(0f, 1f) to Color(0xFFA7F3D0),
-                                    1f to Primary
-                                )
-                            )
-                        )
-                )
-            }
+        Box(
+        Modifier
+        .width(224.dp)
+        .height(6.dp)
+        .clip(RoundedCornerShape(999.dp))
+        .background(Primary.copy(alpha = 0.10f))
+        ) {
+        Box(
+        Modifier
+        .fillMaxHeight()
+        .fillMaxWidth(progress.value)
+        .clip(RoundedCornerShape(999.dp))
+        .background(
+        Brush.horizontalGradient(
+        colorStops = arrayOf(
+        0f to Primary,
+        shimmer.coerceIn(0f, 1f) to Color(0xFFA7F3D0),
+        1f to Primary
+        )
+        )
+        )
+        )
+        }
 
-            Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                Text(
-                    text = "LOADING",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = PrimaryDk,
-                    letterSpacing = 2.sp,
-                )
-                Spacer(Modifier.width(8.dp))
-                repeat(3) { index ->
-                    val active = ((dotPhase + index.toFloat()) % 3f) < 1.2f
-                    Box(
-                        Modifier
-                            .padding(horizontal = 2.dp)
-                            .size(if (active) 7.dp else 5.dp)
-                            .clip(CircleShape)
-                            .background(Primary.copy(alpha = if (active) 1f else 0.32f))
-                    )
-                }
-            }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+        Text(
+        text = "LOADING",
+        fontSize = 12.sp,
+        fontWeight = FontWeight.ExtraBold,
+        color = PrimaryDk,
+        letterSpacing = 2.sp,
+        )
+        Spacer(Modifier.width(8.dp))
+        repeat(3) { index ->
+        val active = ((dotPhase + index.toFloat()) % 3f) < 1.2f
+        Box(
+        Modifier
+        .padding(horizontal = 2.dp)
+        .size(if (active) 7.dp else 5.dp)
+        .clip(CircleShape)
+        .background(Primary.copy(alpha = if (active) 1f else 0.32f))
+        )
+        }
+        }
         }
 
     }
@@ -285,28 +268,28 @@ fun SplashScreen(onComplete: () -> Unit) {
 private fun SoftBackground() {
     Box(Modifier.fillMaxSize()) {
         Box(
-            Modifier
-                .size(320.dp)
-                .align(Alignment.TopEnd)
-                .offset(x = 96.dp, y = (-92).dp)
-                .clip(CircleShape)
-                .background(Primary.copy(alpha = 0.08f))
+        Modifier
+        .size(320.dp)
+        .align(Alignment.TopEnd)
+        .offset(x = 96.dp, y = (-92).dp)
+        .clip(CircleShape)
+        .background(Primary.copy(alpha = 0.08f))
         )
         Box(
-            Modifier
-                .size(250.dp)
-                .align(Alignment.BottomStart)
-                .offset(x = (-78).dp, y = 52.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF22C55E).copy(alpha = 0.06f))
+        Modifier
+        .size(250.dp)
+        .align(Alignment.BottomStart)
+        .offset(x = (-78).dp, y = 52.dp)
+        .clip(CircleShape)
+        .background(Color(0xFF22C55E).copy(alpha = 0.06f))
         )
         Box(
-            Modifier
-                .size(160.dp)
-                .align(Alignment.CenterStart)
-                .offset(x = (-64).dp, y = (-42).dp)
-                .clip(CircleShape)
-                .background(PrimaryDk.copy(alpha = 0.045f))
+        Modifier
+        .size(160.dp)
+        .align(Alignment.CenterStart)
+        .offset(x = (-64).dp, y = (-42).dp)
+        .clip(CircleShape)
+        .background(PrimaryDk.copy(alpha = 0.045f))
         )
     }
 }
@@ -315,9 +298,9 @@ private fun SoftBackground() {
 private fun PulseRing(scale: Float, alpha: Float) {
     Box(
         Modifier
-            .size(142.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(42.dp))
-            .background(Primary.copy(alpha = alpha))
+        .size(142.dp)
+        .scale(scale)
+        .clip(RoundedCornerShape(42.dp))
+        .background(Primary.copy(alpha = alpha))
     )
 }

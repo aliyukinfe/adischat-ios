@@ -93,6 +93,7 @@ import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Policy
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.RateReview
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Security
@@ -299,6 +300,8 @@ fun ProfileScreen(
     onGoScan: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
     onOpenShopRoute: (ShopRoute) -> Unit = {},
+    onOpenRestaurantCenter: () -> Unit = {},
+    onOpenRestaurantsQa: () -> Unit = {},
 ) {
     val vm: ProfileViewModel = viewModel()
     val user      by vm.user.collectAsStateWithLifecycle()
@@ -575,6 +578,8 @@ fun ProfileScreen(
         onWallet = { if (walletEnabled) showWalletPage = true },
         onOpenPage = { selectedAccountPage = it },
         onOpenShopRoute = onOpenShopRoute,
+        onOpenRestaurantCenter = onOpenRestaurantCenter,
+        onOpenRestaurantsQa = onOpenRestaurantsQa,
         )
         } else {
         AccountCategoryPage(
@@ -1211,6 +1216,8 @@ private fun AccountCenterContent(
     onWallet: () -> Unit,
     onOpenPage: (AccountCenterPage) -> Unit,
     onOpenShopRoute: (ShopRoute) -> Unit,
+    onOpenRestaurantCenter: () -> Unit = {},
+    onOpenRestaurantsQa: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxWidth()) {
         AccountProfileHeader(
@@ -1231,7 +1238,9 @@ private fun AccountCenterContent(
         state = state,
         balance = balance,
         onWallet = onWallet,
-        onOpenPage = onOpenPage
+        onOpenPage = onOpenPage,
+        onOpenRestaurantCenter = onOpenRestaurantCenter,
+        onOpenRestaurantsQa = onOpenRestaurantsQa
         )
         Spacer(Modifier.height(8.dp))
     }
@@ -1281,11 +1290,19 @@ private fun AccountHubTable(
     balance: Double,
     onWallet: () -> Unit,
     onOpenPage: (AccountCenterPage) -> Unit,
+    onOpenRestaurantCenter: () -> Unit = {},
+    onOpenRestaurantsQa: () -> Unit = {},
 ) {
     val menu = listOfNotNull(
         // Wallet hidden while the wallet feature is paused (FeatureFlags.WALLET_ENABLED).
         if (com.adischat.app.FeatureFlags.WALLET_ENABLED)
         HubItem("Wallet", "ETB ${"%,.2f".format(balance)}", Icons.Default.AccountBalanceWallet, ProfileGreen, onWallet)
+        else null,
+        if (com.adischat.app.FeatureFlags.RESTAURANT_CENTER_ENABLED)
+        HubItem("Restaurant Center", "Manage branch setup, menus & orders", Icons.Default.Storefront, ProfileGreen, onOpenRestaurantCenter)
+        else null,
+        if (com.adischat.app.FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED)
+        HubItem("Restaurants QA", "Customer, Center, Upload & Admin preview", Icons.Default.Restaurant, Amber, onOpenRestaurantsQa)
         else null,
         HubItem(AccountCenterPage.SECURITY.title, AccountCenterPage.SECURITY.subtitle, AccountCenterPage.SECURITY.icon, Amber) { onOpenPage(AccountCenterPage.SECURITY) },
         HubItem(AccountCenterPage.PRIVACY.title, AccountCenterPage.PRIVACY.subtitle, AccountCenterPage.PRIVACY.icon, Cyan) { onOpenPage(AccountCenterPage.PRIVACY) },

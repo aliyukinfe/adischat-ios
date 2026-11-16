@@ -285,6 +285,7 @@ class ShopIdentityRepository(
     private val cloudflareApi: com.adischat.app.network.CloudflareApi = CloudflareClient.api,
     private val functionApi: ShopFunctionApi? = ShopFunctionClient.api,
     private val auth: FirebaseAuth = FirebaseAuth.getInstance(),
+    private val assertionApi: com.adischat.app.network.CloudflareApi = if (BuildConfig.QA_BUILD) CloudflareClient.shopAssertionApi else cloudflareApi,
 ) {
     private val authRetryCoordinator = ShopAuthRetryCoordinator { error ->
         error is HttpException && error.code() == 401
@@ -367,7 +368,7 @@ class ShopIdentityRepository(
         ShopSessionMemory.clear()
         val generation = ShopSessionMemory.generation()
         val service = functionApi ?: throw ShopSessionExpiredException()
-        val assertion = cloudflareApi.requestShopSessionAssertion().assertion
+        val assertion = assertionApi.requestShopSessionAssertion().assertion
         if (assertion.isBlank()) throw ShopSessionExpiredException()
         val exchange = service.exchange(ShopSessionExchangeRequest(assertion))
         val session = exchange.session ?: throw ShopSessionExpiredException()
@@ -392,7 +393,7 @@ class ShopIdentityRepository(
 
     suspend fun revokeCurrentAccountSessions(): Boolean = runCatching {
         if (activeUserId().isBlank()) return@runCatching false
-        val assertion = cloudflareApi.requestShopSessionAssertion().assertion
+        val assertion = assertionApi.requestShopSessionAssertion().assertion
         if (assertion.isBlank()) return@runCatching false
         functionApi?.revokeAll(ShopRevokeAllRequest(assertion))?.ok == true
     }.getOrDefault(false)

@@ -1,0 +1,20 @@
+name = "adischat-api"
+main = "src/index.mjs"
+compatibility_date = "2026-06-07"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "adischat-f4a77"
+CORS_ORIGIN = "*"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "adischat-db"
+database_id = "d283703d-0396-441e-a7a7-7ededf3cde17"
+
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "adischat-media"
+
+[ai]
+binding = "AI"
