@@ -137,6 +137,14 @@ fun RestaurantCenterScreen(
                     cardCount = 3,
                     modifier = Modifier.widthIn(max = RestaurantsUiDefaults.MaxReadableContentWidth),
                 )
+            } else if (state.loadState is RestaurantsLoadState.Error || state.activeRole == null) {
+                RestaurantsStateMessageCard(
+                    icon = Icons.Rounded.ErrorOutline,
+                    title = "Access unavailable",
+                    message = state.errorBanner ?: "Restaurant membership could not be verified.",
+                    isError = true,
+                    modifier = Modifier.widthIn(max = RestaurantsUiDefaults.MaxReadableContentWidth),
+                )
             } else {
                 Column(
                     modifier = Modifier
@@ -229,7 +237,7 @@ fun RestaurantCenterScreen(
 
                     item {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(RestaurantCenterTab.entries, key = { it.name }) { tab ->
+                            items(RestaurantRolePermissions.visibleTabs(state.activeRole), key = { it.name }) { tab ->
                                 FilterChip(
                                     selected = state.selectedTab == tab,
                                     onClick = { onTabSelected(tab) },

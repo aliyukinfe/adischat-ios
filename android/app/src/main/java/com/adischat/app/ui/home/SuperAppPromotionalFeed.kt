@@ -25,9 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -55,7 +53,7 @@ import coil.compose.AsyncImage
 
 /**
  * Premium Promotional Feed for the Super App Home screen.
- * Displays curated hero promotions, deals, and quick action banners.
+ * Displays curated hero promotions, deals, and service highlights with responsive layouts.
  */
 @Composable
 fun SuperAppPromotionalFeed(
@@ -74,13 +72,14 @@ fun SuperAppPromotionalFeed(
     val mintAccent = Color(0xFF34D399)
 
     var selectedCategory by remember { mutableStateOf("All") }
-    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Channels", "Seller Center", "Deals") }
+    // Clean categories reflecting the approved 5 services without duplicate Channels/Seller Center
+    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Deals") }
 
     val filteredPromotions = remember(selectedCategory, promotions) {
         if (selectedCategory == "All") promotions
         else promotions.filter {
             it.categoryTag.equals(selectedCategory, ignoreCase = true) ||
-                (selectedCategory == "Deals" && it.originalPriceLabel != null)
+                (selectedCategory == "Deals" && (it.originalPriceLabel != null || it.categoryTag == "Promotions"))
         }
     }
 
@@ -88,9 +87,9 @@ fun SuperAppPromotionalFeed(
         modifier = modifier
             .fillMaxSize()
             .background(bgColor)
-            .padding(horizontal = 12.dp),
-        contentPadding = PaddingValues(top = 12.dp, bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(horizontal = 10.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // 1. User Header & Welcome
         item {
@@ -104,51 +103,52 @@ fun SuperAppPromotionalFeed(
                         color = mintAccent,
                     ),
                 )
-                Spacer(Modifier.height(2.dp))
                 Text(
-                    text = "Welcome, $userName 👋",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold,
+                    text = "Welcome, ${userName.ifBlank { "Akab" }} \uD83D\uDC4B",
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
                         color = textColor,
                     ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
 
-        // 2. QA Demo Notice Banner
+        // 2. QA Notice Banner
         item {
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFFEF3C7).copy(alpha = if (isLight) 0.9f else 0.15f),
-                border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF064E3B).copy(alpha = if (isLight) 0.12f else 0.25f),
+                border = BorderStroke(1.dp, mintAccent.copy(alpha = 0.25f)),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     Icon(
                         imageVector = Icons.Default.Info,
                         contentDescription = "QA Info",
-                        tint = Color(0xFFD97706),
-                        modifier = Modifier.size(16.dp),
+                        tint = mintAccent,
+                        modifier = Modifier.size(14.dp),
                     )
                     Text(
                         text = "QA DEMO FEED • Previewing unified promotional feed. Zero charges.",
-                        color = if (isLight) Color(0xFF92400E) else Color(0xFFFCD34D),
-                        fontSize = 10.sp,
+                        color = if (isLight) Color(0xFF047857) else mintAccent,
+                        fontSize = 9.5.sp,
                         fontWeight = FontWeight.Medium,
                     )
                 }
             }
         }
 
-        // 3. Search Bar Shortcut
+        // 3. Search Bar
         item {
             Surface(
-                shape = RoundedCornerShape(14.dp),
+                shape = RoundedCornerShape(12.dp),
                 color = cardBg,
                 border = BorderStroke(1.dp, cardBorder),
                 modifier = Modifier
@@ -156,7 +156,7 @@ fun SuperAppPromotionalFeed(
                     .clickable(onClick = onOpenSearch),
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
@@ -164,12 +164,12 @@ fun SuperAppPromotionalFeed(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search",
                         tint = mutedColor,
-                        modifier = Modifier.size(18.dp),
+                        modifier = Modifier.size(16.dp),
                     )
                     Text(
                         text = "Search deals, dishes, or stores...",
                         color = mutedColor,
-                        fontSize = 12.5.sp,
+                        fontSize = 12.sp,
                     )
                 }
             }
@@ -179,7 +179,7 @@ fun SuperAppPromotionalFeed(
         item {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(horizontal = 2.dp),
+                contentPadding = PaddingValues(horizontal = 1.dp),
             ) {
                 items(categories) { cat ->
                     val isCatSelected = selectedCategory == cat
@@ -189,17 +189,17 @@ fun SuperAppPromotionalFeed(
 
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
+                            .clip(RoundedCornerShape(18.dp))
                             .background(chipBg)
-                            .border(1.dp, chipBorder, RoundedCornerShape(20.dp))
+                            .border(1.dp, chipBorder, RoundedCornerShape(18.dp))
                             .clickable { selectedCategory = cat }
-                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                            .padding(horizontal = 10.dp, vertical = 5.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             text = cat,
                             color = chipText,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
                         )
                     }
@@ -229,13 +229,13 @@ fun SuperAppPromotionalFeed(
                 Text(
                     text = "Special Offers & Highlights",
                     color = textColor,
-                    fontSize = 14.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
                     text = "${filteredPromotions.size} available",
                     color = mutedColor,
-                    fontSize = 10.5.sp,
+                    fontSize = 10.sp,
                 )
             }
         }
@@ -252,7 +252,7 @@ fun SuperAppPromotionalFeed(
 }
 
 /**
- * Top 16:9 featured hero promotion card with gradient overlay.
+ * Top featured hero promotion card with gradient overlay and responsive typography.
  */
 @Composable
 private fun FeaturedHeroPromoCard(
@@ -261,14 +261,14 @@ private fun FeaturedHeroPromoCard(
     isLight: Boolean,
 ) {
     Surface(
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         border = BorderStroke(1.dp, item.accentColor.copy(alpha = 0.35f)),
-        shadowElevation = 6.dp,
+        shadowElevation = 4.dp,
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onCtaClick),
     ) {
-        Box(modifier = Modifier.fillMaxWidth().height(180.dp)) {
+        Box(modifier = Modifier.fillMaxWidth().height(170.dp)) {
             AsyncImage(
                 model = item.imageUrl,
                 contentDescription = item.title,
@@ -282,8 +282,8 @@ private fun FeaturedHeroPromoCard(
                     .background(
                         Brush.verticalGradient(
                             colors = listOf(
-                                Color.Black.copy(alpha = 0.2f),
-                                Color.Black.copy(alpha = 0.88f),
+                                Color.Black.copy(alpha = 0.25f),
+                                Color.Black.copy(alpha = 0.90f),
                             ),
                         ),
                     ),
@@ -293,10 +293,10 @@ private fun FeaturedHeroPromoCard(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(14.dp),
+                    .padding(12.dp),
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                // Top Tag
+                // Top Tag Row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -304,32 +304,32 @@ private fun FeaturedHeroPromoCard(
                 ) {
                     Box(
                         modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(RoundedCornerShape(6.dp))
                             .background(item.accentColor)
-                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                            .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
                         Text(
                             text = item.highlightBadge,
                             color = Color.Black,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
 
                     Text(
                         text = item.categoryTag,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 10.5.sp,
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 10.sp,
                         fontWeight = FontWeight.SemiBold,
                     )
                 }
 
-                // Bottom Titles & CTA
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Bottom Titles & Action
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                     Text(
                         text = item.title,
                         color = Color.White,
-                        fontSize = 15.sp,
+                        fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -337,14 +337,16 @@ private fun FeaturedHeroPromoCard(
                     Text(
                         text = item.subtitle,
                         color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 11.sp,
+                        fontSize = 10.5.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
+                        lineHeight = 14.sp,
                     )
                     Spacer(Modifier.height(2.dp))
                     Row(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Button(
                             onClick = onCtaClick,
@@ -352,13 +354,13 @@ private fun FeaturedHeroPromoCard(
                                 containerColor = item.accentColor,
                                 contentColor = Color.Black,
                             ),
-                            shape = RoundedCornerShape(10.dp),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                            modifier = Modifier.height(32.dp),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp),
                         ) {
                             Text(
                                 text = item.ctaLabel,
-                                fontSize = 11.sp,
+                                fontSize = 10.5.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -368,7 +370,7 @@ private fun FeaturedHeroPromoCard(
                                 Text(
                                     text = item.promoPriceLabel,
                                     color = Color(0xFF34D399),
-                                    fontSize = 12.sp,
+                                    fontSize = 11.5.sp,
                                     fontWeight = FontWeight.Bold,
                                 )
                                 if (item.originalPriceLabel != null) {
@@ -376,7 +378,7 @@ private fun FeaturedHeroPromoCard(
                                     Text(
                                         text = item.originalPriceLabel,
                                         color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 10.5.sp,
+                                        fontSize = 10.sp,
                                         textDecoration = TextDecoration.LineThrough,
                                     )
                                 }
@@ -390,7 +392,7 @@ private fun FeaturedHeroPromoCard(
 }
 
 /**
- * Standard promotional feed card.
+ * Standard promotional feed card with compact layout to prevent text clipping.
  */
 @Composable
 private fun SuperAppPromoCard(
@@ -404,7 +406,7 @@ private fun SuperAppPromoCard(
     val mutedColor = if (isLight) Color(0xFF64748B) else Color(0xFF94A3B8)
 
     Surface(
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(12.dp),
         color = cardBg,
         border = BorderStroke(1.dp, cardBorder),
         shadowElevation = 2.dp,
@@ -413,15 +415,15 @@ private fun SuperAppPromoCard(
             .clickable(onClick = onCtaClick),
     ) {
         Row(
-            modifier = Modifier.padding(10.dp),
+            modifier = Modifier.padding(8.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Left Image Thumbnail
             Box(
                 modifier = Modifier
-                    .size(80.dp)
-                    .clip(RoundedCornerShape(10.dp)),
+                    .size(70.dp)
+                    .clip(RoundedCornerShape(8.dp)),
             ) {
                 AsyncImage(
                     model = item.imageUrl,
@@ -439,7 +441,7 @@ private fun SuperAppPromoCard(
                     Text(
                         text = item.highlightBadge,
                         color = Color.Black,
-                        fontSize = 7.5.sp,
+                        fontSize = 7.sp,
                         fontWeight = FontWeight.Bold,
                     )
                 }
@@ -453,7 +455,7 @@ private fun SuperAppPromoCard(
                 Text(
                     text = item.title,
                     color = textColor,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -461,9 +463,10 @@ private fun SuperAppPromoCard(
                 Text(
                     text = item.subtitle,
                     color = mutedColor,
-                    fontSize = 10.5.sp,
+                    fontSize = 10.sp,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    lineHeight = 13.sp,
                 )
 
                 Spacer(Modifier.height(2.dp))
@@ -478,15 +481,15 @@ private fun SuperAppPromoCard(
                             Text(
                                 text = item.promoPriceLabel,
                                 color = Color(0xFF34D399),
-                                fontSize = 11.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                             )
                             if (item.originalPriceLabel != null) {
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(3.dp))
                                 Text(
                                     text = item.originalPriceLabel,
                                     color = mutedColor,
-                                    fontSize = 9.5.sp,
+                                    fontSize = 9.sp,
                                     textDecoration = TextDecoration.LineThrough,
                                 )
                             }
@@ -495,7 +498,10 @@ private fun SuperAppPromoCard(
                         Text(
                             text = item.validityNote,
                             color = mutedColor,
-                            fontSize = 9.sp,
+                            fontSize = 8.5.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false),
                         )
                     }
 
@@ -507,14 +513,14 @@ private fun SuperAppPromoCard(
                         Text(
                             text = item.ctaLabel,
                             color = item.accentColor,
-                            fontSize = 11.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
                         )
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = item.ctaLabel,
                             tint = item.accentColor,
-                            modifier = Modifier.size(12.dp),
+                            modifier = Modifier.size(11.dp),
                         )
                     }
                 }

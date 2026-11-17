@@ -109,18 +109,24 @@ class RemoteRestaurantCenterDataSource(
         }
 
     override suspend fun loadAccessibleRestaurants(): Result<List<CenterRestaurantUi>> =
-        repository.getMyWorkspace().map { workspace ->
+        repository.getMyWorkspace().mapCatching { workspace ->
             cachedWorkspace = workspace
             val membershipsByRestaurant = workspace.memberships
                 .filter { it.status.equals("active", ignoreCase = true) }
                 .groupBy { it.restaurantId }
+            if (workspace.memberships.isNotEmpty() && membershipsByRestaurant.isEmpty()) {
+                throw RestaurantsFailure.Forbidden("inactive_restaurant_membership", "Restaurant membership is not active.")
+            }
 
             workspace.restaurants.mapNotNull { rest ->
                 val activeMemberships = membershipsByRestaurant[rest.id].orEmpty()
                 val primaryMembership = activeMemberships.firstOrNull {
                     it.role.equals("RESTAURANT_OWNER", ignoreCase = true)
                 } ?: activeMemberships.firstOrNull()
-                if (primaryMembership == null) {
+                val role = RestaurantStaffRole.fromWireValue(primaryMembership?.role)
+                if (primaryMembership == null || role == null ||
+                    (role != RestaurantStaffRole.RESTAURANT_OWNER && primaryMembership.branchId == null)
+                ) {
                     null
                 } else {
                     CenterRestaurantUi(
@@ -133,9 +139,14 @@ class RemoteRestaurantCenterDataSource(
                         suspendedReason = rest.suspendedReason,
                         logoPath = rest.logoPath,
                         coverPath = rest.coverPath,
-                        currentUserRole = RestaurantStaffRole.fromWireValue(primaryMembership.role),
+                        currentUserRole = role,
                         currentUserMembershipStatus = primaryMembership.status,
                         assignedBranchId = primaryMembership.branchId,
+                        branchRoles = activeMemberships.mapNotNull { membership ->
+                            val branchId = membership.branchId ?: return@mapNotNull null
+                            val branchRole = RestaurantStaffRole.fromWireValue(membership.role) ?: return@mapNotNull null
+                            branchId to branchRole
+                        }.toMap(),
                     )
                 }
             }

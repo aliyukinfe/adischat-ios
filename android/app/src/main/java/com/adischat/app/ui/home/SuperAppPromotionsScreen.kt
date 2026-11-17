@@ -75,7 +75,7 @@ fun SuperAppPromotionsScreen(
     val coralAccent = Color(0xFFF87171)
 
     var selectedCategory by remember { mutableStateOf("All") }
-    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Channels", "Seller Center") }
+    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Vouchers", "Deals") }
 
     val filtered = remember(selectedCategory, promotions) {
         if (selectedCategory == "All") promotions

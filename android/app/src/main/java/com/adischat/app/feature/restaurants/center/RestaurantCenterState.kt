@@ -100,13 +100,27 @@ enum class RestaurantStaffRole(val wireValue: String, val label: String) {
  */
 object RestaurantRolePermissions {
     fun canEditSettings(role: RestaurantStaffRole?): Boolean =
+        role == RestaurantStaffRole.RESTAURANT_OWNER
+
+    fun canEditBranchSettings(role: RestaurantStaffRole?): Boolean =
         role == RestaurantStaffRole.RESTAURANT_OWNER || role == RestaurantStaffRole.RESTAURANT_MANAGER
 
     fun canPublishLive(role: RestaurantStaffRole?): Boolean =
         role == RestaurantStaffRole.RESTAURANT_OWNER
 
     fun canManageMenu(role: RestaurantStaffRole?): Boolean =
-        role == RestaurantStaffRole.RESTAURANT_OWNER || role == RestaurantStaffRole.RESTAURANT_MANAGER
+        role == RestaurantStaffRole.RESTAURANT_OWNER
+
+    fun visibleTabs(role: RestaurantStaffRole?): List<RestaurantCenterTab> = when (role) {
+        RestaurantStaffRole.RESTAURANT_OWNER -> RestaurantCenterTab.entries.filter { it != RestaurantCenterTab.APPLICATION }
+        RestaurantStaffRole.RESTAURANT_MANAGER -> listOf(RestaurantCenterTab.OVERVIEW, RestaurantCenterTab.ORDERS,
+            RestaurantCenterTab.MENU, RestaurantCenterTab.TABLES_QR, RestaurantCenterTab.STAFF)
+        RestaurantStaffRole.KITCHEN_STAFF -> listOf(RestaurantCenterTab.OVERVIEW, RestaurantCenterTab.ORDERS,
+            RestaurantCenterTab.MENU)
+        RestaurantStaffRole.WAITER, RestaurantStaffRole.CASHIER -> listOf(RestaurantCenterTab.OVERVIEW,
+            RestaurantCenterTab.ORDERS, RestaurantCenterTab.TABLES_QR)
+        null -> emptyList()
+    }
 
     fun canToggleBranchStock(role: RestaurantStaffRole?): Boolean =
         role == RestaurantStaffRole.RESTAURANT_OWNER ||
@@ -295,9 +309,17 @@ data class CenterRestaurantUi(
     val currentUserRole: RestaurantStaffRole? = null,
     val currentUserMembershipStatus: String = "active",
     val assignedBranchId: String? = null,
+    val branchRoles: Map<String, RestaurantStaffRole> = emptyMap(),
 ) {
     val hasActiveRole: Boolean
         get() = currentUserRole != null && currentUserMembershipStatus.equals("active", ignoreCase = true)
+
+    fun roleForBranch(branchId: String?): RestaurantStaffRole? = when {
+        !hasActiveRole -> null
+        currentUserRole == RestaurantStaffRole.RESTAURANT_OWNER -> currentUserRole
+        branchRoles.isEmpty() -> currentUserRole
+        else -> branchRoles[branchId]
+    }
 }
 
 data class CenterBranchUi(
@@ -416,7 +438,7 @@ data class RestaurantCenterUiState(
         get() = branches.firstOrNull { it.id == selectedBranchId }
 
     val activeRole: RestaurantStaffRole?
-        get() = selectedRestaurant?.takeIf { it.hasActiveRole }?.currentUserRole
+        get() = selectedRestaurant?.roleForBranch(selectedBranchId)
 
     val filteredOrders: List<CenterOrderTicketUi>
         get() = RestaurantCenterReducers.filterOrders(orders, orderFilter)

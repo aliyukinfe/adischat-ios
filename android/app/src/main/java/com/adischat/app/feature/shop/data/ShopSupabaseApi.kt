@@ -18,33 +18,6 @@ interface ShopSupabaseApi {
     @POST("rest/v1/rpc/adishop_qa_product_detail")
     suspend fun qaProductDetail(@Body request: Map<String, String>): ShopProductDto?
 
-    @POST("rest/v1/rpc/adishop_qa_create_checkout")
-    suspend fun qaCreateCheckout(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_cart_action")
-    suspend fun qaCartAction(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_buyer_orders")
-    suspend fun qaBuyerOrders(@Body request: @JvmSuppressWildcards Map<String, Any?>): List<@JvmSuppressWildcards Map<String, Any?>>
-
-    @POST("rest/v1/rpc/adishop_qa_buyer_order_detail")
-    suspend fun qaBuyerOrderDetail(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_reveal_delivery_code")
-    suspend fun qaRevealDeliveryCode(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_apply_coupon")
-    suspend fun qaApplyCoupon(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_apply_voucher")
-    suspend fun qaApplyVoucher(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_remove_discount")
-    suspend fun qaRemoveDiscount(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
-    @POST("rest/v1/rpc/adishop_qa_confirm_checkout")
-    suspend fun qaConfirmCheckout(@Body request: @JvmSuppressWildcards Map<String, Any?>): @JvmSuppressWildcards Map<String, Any?>
-
     @GET("rest/v1/shop_banners?select=id,title,subtitle,image_url,action_url,is_active,display_order,start_at,end_at,is_seed&is_active=eq.true&order=display_order.asc&limit=5")
     suspend fun banners(): List<ShopBannerDto>
 

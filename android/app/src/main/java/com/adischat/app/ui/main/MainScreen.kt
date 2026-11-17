@@ -33,7 +33,7 @@ import com.adischat.app.FeatureFlags
 import com.adischat.app.R
 import com.adischat.app.data.model.AdisLinkTarget
 import com.adischat.app.data.preferences.AppPreferences
-import com.adischat.app.feature.restaurants.presentation.RestaurantCenterPlaceholderScreen
+import com.adischat.app.feature.restaurants.center.RestaurantCenterEntryScreen
 import com.adischat.app.feature.restaurants.presentation.RestaurantsCustomerRootScreen
 import com.adischat.app.feature.restaurants.qa.RestaurantsQaHost
 import com.adischat.app.feature.restaurants.qa.RestaurantsQaRoute
@@ -52,9 +52,9 @@ import com.adischat.app.ui.home.SuperAppCompactSidebar
 import com.adischat.app.ui.home.SuperAppPromotionsScreen
 import com.adischat.app.ui.home.SuperAppSavedScreen
 import com.adischat.app.ui.home.SuperAppActivityScreen
-import com.adischat.app.ui.browser.InAppBrowserScreen
 import com.adischat.app.feature.restaurants.data.RestaurantsRepository
-import com.adischat.app.feature.restaurants.data.RestaurantsConfig
+import com.adischat.app.feature.shop.data.SellerRepository
+import com.adischat.app.feature.shop.presentation.sellerFeaturesUnlocked
 import com.adischat.app.ui.localization.AdisLocalizer
 import com.adischat.app.ui.localization.tr
 import com.adischat.app.ui.profile.ProfileScreen
@@ -158,10 +158,7 @@ fun MainScreen(
     var sellerNotificationStoreId by rememberSaveable { mutableStateOf<String?>(null) }
     var restaurantsCustomerOpen by rememberSaveable { mutableStateOf(false) }
     var pendingRestaurantQrToken by rememberSaveable { mutableStateOf<String?>(null) }
-    var restaurantCenterPlaceholderOpen by rememberSaveable { mutableStateOf(false) }
-    var restaurantCenterWebViewOpen by rememberSaveable { mutableStateOf(false) }
-    var restaurantCenterWebUrl by rememberSaveable { mutableStateOf("") }
-    var restaurantCenterHandoffData by remember { mutableStateOf<ByteArray?>(null) }
+    var restaurantCenterNativeOpen by rememberSaveable { mutableStateOf(false) }
     var restaurantsQaRoute by rememberSaveable { mutableStateOf<RestaurantsQaRoute?>(null) }
 
     val onGoHome: () -> Unit = {
@@ -171,27 +168,32 @@ fun MainScreen(
     }
 
     val onSelectSidebarService: (SuperAppService) -> Unit = { targetService ->
-        activeSidebarService = targetService
-        activeBottomTab = null
-        when (targetService) {
-            SuperAppService.CHAT -> Unit
-            SuperAppService.ADISGEBEYA -> {
-                if (shopRoute == null) {
-                    shopRoute = ShopRoute.Home
+        if (targetService == SuperAppService.HOME) {
+            onGoHome()
+        } else {
+            activeSidebarService = targetService
+            activeBottomTab = null
+            when (targetService) {
+                SuperAppService.HOME -> Unit
+                SuperAppService.CHAT -> Unit
+                SuperAppService.ADISGEBEYA -> {
+                    if (shopRoute == null) {
+                        shopRoute = ShopRoute.Home
+                    }
                 }
-            }
-            SuperAppService.RESTAURANTS -> {
-                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
-                    restaurantsCustomerOpen = true
+                SuperAppService.RESTAURANTS -> {
+                    if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                        restaurantsCustomerOpen = true
+                    }
                 }
+                SuperAppService.PROMOTIONS -> Unit
             }
-            SuperAppService.CHANNELS -> Unit
-            SuperAppService.SELLER_CENTER -> {
-                sellerAccountOpen = true
-            }
-            SuperAppService.PROMOTIONS -> Unit
         }
     }
+
+    var isRestaurantCenterEligible by remember { mutableStateOf(false) }
+    var isSellerEligible by remember { mutableStateOf(false) }
+    var sellerApplicationStatus by remember { mutableStateOf<String?>("not_started") }
 
     var lastUid by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentUser?.uid) {
@@ -199,11 +201,40 @@ fun MainScreen(
         if (lastUid != null && lastUid != uid) {
             restaurantsCustomerOpen = false
             pendingRestaurantQrToken = null
-            restaurantCenterPlaceholderOpen = false
-            restaurantCenterWebViewOpen = false
-            restaurantCenterHandoffData = null
+            restaurantCenterNativeOpen = false
+            isRestaurantCenterEligible = false
+            isSellerEligible = false
+            sellerApplicationStatus = null
         }
         lastUid = uid
+
+        if (!uid.isNullOrBlank()) {
+            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                RestaurantsRepository().checkRestaurantCenterEligibility()
+                    .onSuccess { eligibility ->
+                        isRestaurantCenterEligible = eligibility.isEligible || (currentUser?.role == "admin")
+                    }
+                    .onFailure {
+                        isRestaurantCenterEligible = currentUser?.role == "admin"
+                    }
+            } else {
+                isRestaurantCenterEligible = currentUser?.role == "admin"
+            }
+
+            SellerRepository().status()
+                .onSuccess { (status, _) ->
+                    sellerApplicationStatus = status
+                    isSellerEligible = sellerFeaturesUnlocked(status) || (currentUser?.role == "admin")
+                }
+                .onFailure {
+                    sellerApplicationStatus = "not_started"
+                    isSellerEligible = currentUser?.role == "admin"
+                }
+        } else {
+            isRestaurantCenterEligible = false
+            isSellerEligible = false
+            sellerApplicationStatus = null
+        }
     }
 
     LaunchedEffect(initialRestaurantQrToken, currentUser?.uid) {
@@ -268,23 +299,18 @@ fun MainScreen(
 
     BackHandler {
         when {
-            restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
-                restaurantCenterWebViewOpen = false
-                restaurantCenterHandoffData = null
+            restaurantCenterNativeOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
+                restaurantCenterNativeOpen = false
             }
             restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED -> {
                 restaurantsQaRoute = null
             }
-            restaurantCenterPlaceholderOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
-                restaurantCenterPlaceholderOpen = false
+            sellerAccountOpen -> {
+                sellerAccountOpen = false
+                sellerNotificationsRequested = false
+                sellerNotificationStoreId = null
             }
-            activeSidebarService == SuperAppService.PROMOTIONS -> {
-                onGoHome()
-            }
-            activeSidebarService == SuperAppService.CHAT || activeSidebarService == SuperAppService.CHANNELS -> {
-                onGoHome()
-            }
-            activeSidebarService != null -> {
+            activeSidebarService != null && activeSidebarService != SuperAppService.HOME -> {
                 onGoHome()
             }
             FeatureFlags.SUPER_APP_HOME_ENABLED && activeBottomTab != null -> {
@@ -315,9 +341,9 @@ fun MainScreen(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
             val qaOpen = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
-            val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null
+            val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME
             val restaurantsOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
-            val centerOpen = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
+            val centerOpen = restaurantCenterNativeOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED
             val legacyChatSelected = !FeatureFlags.SUPER_APP_HOME_ENABLED && selected == 3
             val legacyShopOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && shopRoute != null
             val legacySellerOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && sellerAccountOpen
@@ -423,14 +449,15 @@ fun MainScreen(
     ) { padding ->
         val qaOverlayActive = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
         val restaurantsOverlayActive = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
-        val centerOverlayActive = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
+        val centerOverlayActive = restaurantCenterNativeOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED
         val promotionsActive = activeSidebarService == SuperAppService.PROMOTIONS
-        val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null
+        val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME
 
         val shouldShowCompactSidebar = FeatureFlags.SUPER_APP_HOME_ENABLED &&
             activeSidebarService != null &&
+            activeSidebarService != SuperAppService.HOME &&
             !keyboardOpen &&
-            !restaurantCenterWebViewOpen &&
+            !restaurantCenterNativeOpen &&
             restaurantsQaRoute == null &&
             pendingRestaurantQrToken == null
 
@@ -444,29 +471,25 @@ fun MainScreen(
             val renderCoreScreenContent: @Composable () -> Unit = {
                 val activeShopRoute = shopRoute
                 val activeQaRoute = restaurantsQaRoute
-                if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                    InAppBrowserScreen(
-                        url = restaurantCenterWebUrl,
-                        postData = restaurantCenterHandoffData,
-                        onClose = {
-                            restaurantCenterWebViewOpen = false
-                            restaurantCenterHandoffData = null
-                        },
-                    )
+                if (centerOverlayActive) {
+                    val uid = currentUser?.uid
+                    if (uid != null) {
+                        RestaurantCenterEntryScreen(
+                            accountUid = uid,
+                            onBack = { restaurantCenterNativeOpen = false },
+                        )
+                    }
                 } else if (activeQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
                     RestaurantsQaHost(
                         initialRoute = activeQaRoute,
                         onClose = { restaurantsQaRoute = null },
                     )
-                } else if (centerOverlayActive) {
-                    RestaurantCenterPlaceholderScreen(
-                        onBackToProfile = { restaurantCenterPlaceholderOpen = false },
-                    )
-                } else if (FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null) {
+                } else if (FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME) {
                     // Unified service switching with state and scroll preservation
                     saveableStateHolder.SaveableStateProvider(key = "SERVICE_${activeSidebarService?.name}") {
                         when (activeSidebarService) {
-                            SuperAppService.CHAT, SuperAppService.CHANNELS -> {
+                            SuperAppService.HOME -> Unit
+                            SuperAppService.CHAT -> {
                                 ChatScreen(
                                     pendingAdisLink = pendingAdisLink,
                                     onAdisLinkConsumed = onAdisLinkConsumed,
@@ -508,18 +531,6 @@ fun MainScreen(
                                     } else {
                                         null
                                     },
-                                )
-                            }
-                            SuperAppService.SELLER_CENTER -> {
-                                SellerAccountRootScreen(
-                                    onBackToHome = {
-                                        sellerAccountOpen = false
-                                        sellerNotificationsRequested = false
-                                        sellerNotificationStoreId = null
-                                        onGoHome()
-                                    },
-                                    openNotificationsInitially = sellerNotificationsRequested,
-                                    initialStoreId = sellerNotificationStoreId,
                                 )
                             }
                             SuperAppService.PROMOTIONS -> {
@@ -590,7 +601,7 @@ fun MainScreen(
                                 onGoChat = { onSelectSidebarService(SuperAppService.CHAT) },
                                 onGoWallet = { },
                                 onGoDiscover = { activeBottomTab = 1 },
-                                onOpenSellerAccount = { onSelectSidebarService(SuperAppService.SELLER_CENTER) },
+                                onOpenSellerAccount = { sellerAccountOpen = true },
                                 onOpenRestaurants = { onSelectSidebarService(SuperAppService.RESTAURANTS) },
                                 onOpenRestaurantsQa = {
                                     if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
@@ -598,22 +609,8 @@ fun MainScreen(
                                     }
                                 },
                                 onOpenRestaurantCenter = {
-                                    if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                                        scope.launch {
-                                            val repo = RestaurantsRepository()
-                                            repo.createRestaurantCenterHandoffTicket()
-                                                .onSuccess { ticketRes ->
-                                                    val ticket = ticketRes.ticket
-                                                    if (!ticket.isNullOrBlank()) {
-                                                        val env = RestaurantsConfig.currentEnvironment
-                                                        val handoffUrl = env.handoffAuthUrl()
-                                                        val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
-                                                        restaurantCenterHandoffData = postBody
-                                                        restaurantCenterWebUrl = handoffUrl
-                                                        restaurantCenterWebViewOpen = true
-                                                    }
-                                                }
-                                        }
+                                    if (FeatureFlags.RESTAURANT_CENTER_ENABLED && currentUser?.uid != null) {
+                                        restaurantCenterNativeOpen = true
                                     }
                                 },
                                 onSelectSidebarService = onSelectSidebarService,
@@ -692,6 +689,17 @@ fun MainScreen(
                             3 -> SuperAppActivityScreen(
                                 onGoHome = onGoHome,
                                 onNavigateService = onSelectSidebarService,
+                                onOpenRestaurantCenter = {
+                                    if (FeatureFlags.RESTAURANT_CENTER_ENABLED && currentUser?.uid != null) {
+                                        restaurantCenterNativeOpen = true
+                                    }
+                                },
+                                onOpenSellerCenter = {
+                                    sellerAccountOpen = true
+                                },
+                                isRestaurantCenterAuthorized = isRestaurantCenterEligible,
+                                isSellerAuthorized = isSellerEligible,
+                                sellerStatus = sellerApplicationStatus,
                             )
                             4 -> Column(modifier = Modifier.fillMaxSize()) {
                                 Surface(
@@ -749,7 +757,7 @@ fun MainScreen(
                                 Box(modifier = Modifier.weight(1f)) {
                                     ProfileScreen(
                                         prefs = prefs,
-                                        onSignOut = onSignOut,
+                                        onSignOut = { restaurantCenterNativeOpen = false; onSignOut() },
                                         onGoScan = { activeBottomTab = 2 },
                                         onOpenUrl = onOpenUrl,
                                         onOpenShopRoute = { route ->
@@ -757,8 +765,8 @@ fun MainScreen(
                                             onSelectSidebarService(SuperAppService.ADISGEBEYA)
                                         },
                                         onOpenRestaurantCenter = {
-                                            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                                                restaurantCenterPlaceholderOpen = true
+                                            if (FeatureFlags.RESTAURANT_CENTER_ENABLED && currentUser?.uid != null) {
+                                                restaurantCenterNativeOpen = true
                                             }
                                         },
                                         onOpenRestaurantsQa = {
@@ -777,7 +785,7 @@ fun MainScreen(
                                 onGoChat = { onSelectSidebarService(SuperAppService.CHAT) },
                                 onGoWallet = { },
                                 onGoDiscover = { activeBottomTab = 1 },
-                                onOpenSellerAccount = { onSelectSidebarService(SuperAppService.SELLER_CENTER) },
+                                onOpenSellerAccount = { sellerAccountOpen = true },
                                 onOpenRestaurants = { onSelectSidebarService(SuperAppService.RESTAURANTS) },
                                 onSelectSidebarService = onSelectSidebarService,
                             )
@@ -806,7 +814,6 @@ fun MainScreen(
                                 selected = 1
                             },
                             onOpenSellerAccount = {
-                                activeSidebarService = SuperAppService.SELLER_CENTER
                                 sellerAccountOpen = true
                             },
                             onOpenRestaurants = {
@@ -821,22 +828,8 @@ fun MainScreen(
                                 }
                             },
                             onOpenRestaurantCenter = {
-                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                                    scope.launch {
-                                        val repo = RestaurantsRepository()
-                                        repo.createRestaurantCenterHandoffTicket()
-                                            .onSuccess { ticketRes ->
-                                                val ticket = ticketRes.ticket
-                                                if (!ticket.isNullOrBlank()) {
-                                                    val env = RestaurantsConfig.currentEnvironment
-                                                    val handoffUrl = env.handoffAuthUrl()
-                                                    val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
-                                                    restaurantCenterHandoffData = postBody
-                                                    restaurantCenterWebUrl = handoffUrl
-                                                    restaurantCenterWebViewOpen = true
-                                                }
-                                            }
-                                    }
+                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED && currentUser?.uid != null) {
+                                    restaurantCenterNativeOpen = true
                                 }
                             },
                             onSelectSidebarService = onSelectSidebarService,
@@ -862,7 +855,7 @@ fun MainScreen(
                         )
                         4 -> ProfileScreen(
                             prefs = prefs,
-                            onSignOut = onSignOut,
+                            onSignOut = { restaurantCenterNativeOpen = false; onSignOut() },
                             onGoScan = {
                                 activeSidebarService = null
                                 selected = 2
@@ -873,8 +866,8 @@ fun MainScreen(
                                 shopRoute = route
                             },
                             onOpenRestaurantCenter = {
-                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                                    restaurantCenterPlaceholderOpen = true
+                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED && currentUser?.uid != null) {
+                                    restaurantCenterNativeOpen = true
                                 }
                             },
                             onOpenRestaurantsQa = {

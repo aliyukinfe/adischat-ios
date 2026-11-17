@@ -69,6 +69,7 @@ class RestaurantsCustomerCoordinatorTest {
         assertEquals(RestaurantsCustomerDestination.Discover, state.destination)
         assertEquals(RestaurantsLoadState.Content, state.discoverState.loadState)
         assertEquals(listOf("Habesha Hearth"), state.discoverState.allRestaurants.map { it.brandName })
+        assertEquals("Ethiopian", state.discoverState.allRestaurants.first().cuisineTag)
         assertEquals(
             "https://test.supabase.co/storage/v1/object/public/restaurant-public-media/restaurants/r1/cover.jpg",
             state.discoverState.allRestaurants.first().coverUrl,
@@ -99,6 +100,20 @@ class RestaurantsCustomerCoordinatorTest {
         assertEquals(71000L, state.menuState.items.first { it.id == "mi-tibs" }.effectivePriceMinor)
         assertFalse(state.menuState.items.first { it.id == "mi-doro" }.isAvailableAtBranch)
         Unit
+    }
+
+    @Test
+    fun `missing cuisine metadata uses neutral label`() = runBlocking {
+        val fake = FakeRestaurantsDataSource().apply { cuisineCategory = null }
+        val coordinator = RestaurantsCustomerCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledEnv() },
+            accountUidProvider = { "uid-customer-1" },
+        )
+        coordinator.loadDiscover()
+        awaitIdle(40)
+        assertEquals("Restaurant", coordinator.state.value.discoverState.allRestaurants.first().cuisineTag)
     }
 
     @Test
@@ -555,6 +570,7 @@ class RestaurantsCustomerCoordinatorTest {
 
 private class FakeRestaurantsDataSource : RestaurantsCustomerDataSource {
     val calls = AtomicInteger(0)
+    var cuisineCategory: String? = "Ethiopian"
     val submittedIdempotencyKeys = mutableListOf<String>()
     var onGetRestaurantDelay: (suspend () -> Unit)? = null
     var orderDetailsFailure: Throwable? = null
@@ -620,6 +636,7 @@ private class FakeRestaurantsDataSource : RestaurantsCustomerDataSource {
                     slug = "habesha-hearth",
                     name = "Habesha Hearth",
                     description = "Wood-fired Ethiopian classics",
+                    cuisineCategory = cuisineCategory,
                     logoPath = "restaurants/r1/logo.jpg",
                     coverPath = "restaurants/r1/cover.jpg",
                     status = "active",

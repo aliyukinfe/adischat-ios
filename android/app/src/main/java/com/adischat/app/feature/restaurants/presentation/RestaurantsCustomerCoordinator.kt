@@ -1336,7 +1336,7 @@ class RestaurantsCustomerCoordinator(
             id = dto.id,
             slug = dto.slug,
             brandName = dto.name,
-            cuisineTag = "Dine-In Kitchen",
+            cuisineTag = dto.cuisineCategory?.trim()?.takeIf { it.isNotEmpty() } ?: "Restaurant",
             city = primary?.city ?: "Addis Ababa",
             primaryBranchName = primary?.name ?: "Main Branch",
             primaryAddress = primary?.address ?: "",

@@ -103,6 +103,7 @@ class RestaurantCenterCoordinator(
     }
 
     fun selectTab(tab: RestaurantCenterTab) {
+        if (tab !in RestaurantRolePermissions.visibleTabs(_state.value.activeRole)) return
         _state.update { it.copy(selectedTab = tab, errorBanner = null, actionFeedback = null) }
     }
 
@@ -143,24 +144,12 @@ class RestaurantCenterCoordinator(
 
             val apps = appsRes.getOrElse { err ->
                 val f = RestaurantsErrorMapper.mapThrowable(err)
-                _state.update { current ->
-                    if (!isStillValid(startEpoch, uid)) return@update current
-                    current.copy(
-                        loadState = RestaurantsLoadState.Error(f.userMessage),
-                        errorBanner = f.userMessage,
-                    )
-                }
+                showLoadFailure(f, startEpoch, uid)
                 return@launch
             }
             val rests = restsRes.getOrElse { err ->
                 val f = RestaurantsErrorMapper.mapThrowable(err)
-                _state.update { current ->
-                    if (!isStillValid(startEpoch, uid)) return@update current
-                    current.copy(
-                        loadState = RestaurantsLoadState.Error(f.userMessage),
-                        errorBanner = f.userMessage,
-                    )
-                }
+                showLoadFailure(f, startEpoch, uid)
                 return@launch
             }
 
@@ -175,6 +164,8 @@ class RestaurantCenterCoordinator(
                     applications = apps,
                     ownedRestaurants = rests,
                     selectedRestaurantId = selectedRest?.id,
+                    selectedTab = if (current.selectedTab in RestaurantRolePermissions.visibleTabs(selectedRest?.roleForBranch(if (switchedOrCleared) selectedRest?.assignedBranchId else current.selectedBranchId)))
+                        current.selectedTab else RestaurantCenterTab.OVERVIEW,
                     selectedBranchId = if (switchedOrCleared) selectedRest?.assignedBranchId else current.selectedBranchId,
                     branches = if (switchedOrCleared) emptyList() else current.branches,
                     categories = if (switchedOrCleared) emptyList() else current.categories,
@@ -207,6 +198,8 @@ class RestaurantCenterCoordinator(
         _state.update {
             it.copy(
                 selectedRestaurantId = target.id,
+                selectedTab = if (it.selectedTab in RestaurantRolePermissions.visibleTabs(target.roleForBranch(target.assignedBranchId)))
+                    it.selectedTab else RestaurantCenterTab.OVERVIEW,
                 selectedBranchId = target.assignedBranchId,
                 branches = emptyList(),
                 categories = emptyList(),
@@ -243,6 +236,8 @@ class RestaurantCenterCoordinator(
         _state.update {
             it.copy(
                 selectedBranchId = branchId,
+                selectedTab = if (it.selectedTab in RestaurantRolePermissions.visibleTabs(it.selectedRestaurant?.roleForBranch(branchId)))
+                    it.selectedTab else RestaurantCenterTab.OVERVIEW,
                 tables = emptyList(),
                 orders = emptyList(),
                 orderSyncCursor = null,
@@ -507,7 +502,7 @@ class RestaurantCenterCoordinator(
     fun activateRestaurant() {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canPublishLive(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canPublishLive(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Only the Restaurant Owner may activate the restaurant.") }
             return
         }
@@ -578,7 +573,7 @@ class RestaurantCenterCoordinator(
     fun togglePublishLive(enable: Boolean) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canPublishLive(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canPublishLive(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Only the Restaurant Owner can change live ordering status.") }
             return
         }
@@ -604,8 +599,8 @@ class RestaurantCenterCoordinator(
     fun updateRestaurantSettings(description: String, logoPath: String? = null, coverPath: String? = null) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canEditSettings(rest.currentUserRole)) {
-            _state.update { it.copy(errorBanner = "Owner or Manager role required to update settings.") }
+        if (!RestaurantRolePermissions.canEditSettings(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Owner role required to update settings.") }
             return
         }
         val startEpoch = flowEpoch.get()
@@ -634,8 +629,8 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val resolvedTarget = target ?: RestaurantsPendingPickerTarget.RestaurantMedia(rest.id, slot, description)
-        if (!RestaurantRolePermissions.canEditSettings(rest.currentUserRole)) {
-            reportUploadValidationError(resolvedTarget, "Owner or Manager role required to update settings.")
+        if (!RestaurantRolePermissions.canEditSettings(_state.value.activeRole)) {
+            reportUploadValidationError(resolvedTarget, "Owner role required to update settings.")
             return
         }
         launchTrackedUpload(uid = uid, target = resolvedTarget, source = source) { startEpoch ->
@@ -682,8 +677,9 @@ class RestaurantCenterCoordinator(
     ) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canEditSettings(rest.currentUserRole)) {
-            _state.update { it.copy(errorBanner = "Owner or Manager role required to update branch settings.") }
+        if (_state.value.selectedBranchId != branchId || _state.value.branches.none { it.id == branchId && it.restaurantId == rest.id }) return
+        if (!RestaurantRolePermissions.canEditBranchSettings(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Owner or assigned branch manager role required to update branch settings.") }
             return
         }
         val startEpoch = flowEpoch.get()
@@ -715,7 +711,7 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
-        if (!RestaurantRolePermissions.canToggleBranchStock(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canToggleBranchStock(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Staff role lacks permission to toggle branch stock.") }
             return
         }
@@ -744,8 +740,8 @@ class RestaurantCenterCoordinator(
     fun upsertMenuCategory(name: String, sortOrder: Int) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canManageMenu(rest.currentUserRole)) {
-            _state.update { it.copy(errorBanner = "Only Owner or Manager can edit menu categories.") }
+        if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Only the Owner can edit menu categories.") }
             return
         }
         val startEpoch = flowEpoch.get()
@@ -767,8 +763,8 @@ class RestaurantCenterCoordinator(
     fun upsertMenuItem(categoryId: String, name: String, description: String, priceMinor: Long) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canManageMenu(rest.currentUserRole)) {
-            _state.update { it.copy(errorBanner = "Only Owner or Manager can edit menu items.") }
+        if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Only the Owner can edit menu items.") }
             return
         }
         val branchId = _state.value.selectedBranchId ?: return
@@ -805,8 +801,8 @@ class RestaurantCenterCoordinator(
         val rest = requireActiveSelectedRestaurant() ?: return
         val itemName = _state.value.menuItems.firstOrNull { it.id == menuItemId }?.name ?: "Menu Item"
         val resolvedTarget = target ?: RestaurantsPendingPickerTarget.MenuItemPhoto(rest.id, menuItemId, itemName)
-        if (!RestaurantRolePermissions.canManageMenu(rest.currentUserRole)) {
-            reportUploadValidationError(resolvedTarget, "Only Owner or Manager can edit menu items.")
+        if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
+            reportUploadValidationError(resolvedTarget, "Only the Owner can edit menu items.")
             return
         }
         val branchId = _state.value.selectedBranchId
@@ -846,7 +842,7 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
-        if (!RestaurantRolePermissions.canManageTablesAndQr(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canManageTablesAndQr(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Only Owner or Manager can add or edit tables.") }
             return
         }
@@ -876,7 +872,7 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
-        if (!RestaurantRolePermissions.canManageTablesAndQr(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canManageTablesAndQr(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Only Owner or Manager can rotate table QR codes.") }
             return
         }
@@ -907,7 +903,7 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
-        if (!RestaurantRolePermissions.canActivateTableSession(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canActivateTableSession(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Your role cannot open dining sessions.") }
             return
         }
@@ -939,7 +935,7 @@ class RestaurantCenterCoordinator(
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
-        if (!RestaurantRolePermissions.canActivateTableSession(rest.currentUserRole)) {
+        if (!RestaurantRolePermissions.canActivateTableSession(_state.value.activeRole)) {
             _state.update { it.copy(errorBanner = "Your role cannot close dining sessions.") }
             return
         }
@@ -977,9 +973,9 @@ class RestaurantCenterCoordinator(
     ) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
-        if (!RestaurantRolePermissions.canInviteStaffRole(rest.currentUserRole, targetRole)) {
+        if (!RestaurantRolePermissions.canInviteStaffRole(_state.value.activeRole, targetRole)) {
             _state.update {
-                it.copy(errorBanner = "Your role (${rest.currentUserRole?.label}) cannot invite ${targetRole.label}.")
+                it.copy(errorBanner = "Your role (${_state.value.activeRole?.label}) cannot invite ${targetRole.label}.")
             }
             return
         }
@@ -1020,7 +1016,7 @@ class RestaurantCenterCoordinator(
             it.staffMemberId == staffMemberId && it.restaurantId == rest.id
         } ?: return
 
-        if (!RestaurantRolePermissions.canRevokeStaff(rest.currentUserRole, targetMember.role)) {
+        if (!RestaurantRolePermissions.canRevokeStaff(_state.value.activeRole, targetMember.role)) {
             _state.update { it.copy(errorBanner = "Your role cannot revoke ${targetMember.role.label}.") }
             return
         }
@@ -1070,11 +1066,11 @@ class RestaurantCenterCoordinator(
             it.orderId == orderId && it.restaurantId == rest.id && it.branchId == branchId
         } ?: return
 
-        val allowed = RestaurantRolePermissions.allowedNextOrderStatuses(rest.currentUserRole, ticket.status)
+        val allowed = RestaurantRolePermissions.allowedNextOrderStatuses(_state.value.activeRole, ticket.status)
         if (!allowed.contains(targetStatus)) {
             _state.update {
                 it.copy(
-                    errorBanner = "Transition ${ticket.status.label} -> ${targetStatus.label} is not allowed for ${rest.currentUserRole?.label ?: "current role"}.",
+                    errorBanner = "Transition ${ticket.status.label} -> ${targetStatus.label} is not allowed for ${_state.value.activeRole?.label ?: "current role"}.",
                 )
             }
             return
@@ -1106,6 +1102,7 @@ class RestaurantCenterCoordinator(
     private suspend fun loadRestaurantScope(restaurantId: String, startEpoch: Long, uid: String) {
         val branchesRes = dataSource.loadBranches(restaurantId)
         if (!isStillValid(startEpoch, uid)) return
+        if (clearOnAuthorizationFailure(branchesRes.exceptionOrNull(), startEpoch, uid)) return
 
         val branches = branchesRes.getOrElse { err ->
             val f = RestaurantsErrorMapper.mapThrowable(err)
@@ -1127,12 +1124,17 @@ class RestaurantCenterCoordinator(
             Triple(c.await(), s.await(), i.await())
         }
         if (!isStillValid(startEpoch, uid)) return
+        if (listOf(catsRes, staffRes, invitesRes).any {
+                clearOnAuthorizationFailure(it.exceptionOrNull(), startEpoch, uid)
+            }) return
 
         _state.update { current ->
             if (!isStillValid(startEpoch, uid)) return@update current
             current.copy(
                 branches = branches,
                 selectedBranchId = selectedBranchId,
+                selectedTab = if (current.selectedTab in RestaurantRolePermissions.visibleTabs(current.selectedRestaurant?.roleForBranch(selectedBranchId)))
+                    current.selectedTab else RestaurantCenterTab.OVERVIEW,
                 categories = catsRes.getOrElse { emptyList() }.filter { it.restaurantId == restaurantId },
                 staffMembers = staffRes.getOrElse { emptyList() }
                     .filter { it.restaurantId == restaurantId }
@@ -1162,6 +1164,9 @@ class RestaurantCenterCoordinator(
             Triple(m.await(), t.await(), o.await())
         }
         if (!isStillValid(startEpoch, uid)) return
+        if (listOf(menuRes, tablesRes, ordersRes).any {
+                clearOnAuthorizationFailure(it.exceptionOrNull(), startEpoch, uid)
+            }) return
 
         val syncedPair = ordersRes.getOrNull()
         _state.update { current ->
@@ -1280,6 +1285,7 @@ class RestaurantCenterCoordinator(
                 throw ce
             } catch (t: Throwable) {
                 if (!isStillValid(startEpoch, uid)) return@launch
+                if (clearOnAuthorizationFailure(t, startEpoch, uid)) return@launch
                 val mapped = RestaurantsErrorMapper.mapThrowable(t)
                 val recoverable = isRecoverableUploadFailure(mapped)
                 pendingRetryUpload = if (recoverable) {
@@ -1327,6 +1333,7 @@ class RestaurantCenterCoordinator(
                 block()
             } catch (t: Throwable) {
                 if (!isStillValid(startEpoch, uid)) return@launch
+                if (clearOnAuthorizationFailure(t, startEpoch, uid)) return@launch
                 val mapped = RestaurantsErrorMapper.mapThrowable(t)
                 _state.update { current ->
                     if (!isStillValid(startEpoch, uid)) return@update current
@@ -1347,6 +1354,30 @@ class RestaurantCenterCoordinator(
             return null
         }
         return requireUid()
+    }
+
+    private fun clearOnAuthorizationFailure(error: Throwable?, epoch: Long, uid: String): Boolean {
+        if (error == null) return false
+        val failure = RestaurantsErrorMapper.mapThrowable(error)
+        if (failure !is RestaurantsFailure.Unauthenticated && failure !is RestaurantsFailure.Forbidden) return false
+        if (!isStillValid(epoch, uid)) return true
+        pendingRetryUpload = null
+        showLoadFailure(failure, epoch, uid)
+        return true
+    }
+
+    private fun showLoadFailure(failure: RestaurantsFailure, epoch: Long, uid: String) {
+        if (!isStillValid(epoch, uid)) return
+        inFlightUploadJob?.cancel()
+        pendingRetryUpload = null
+        (dataSource as? RemoteRestaurantCenterDataSource)?.clearCachedWorkspace()
+        _state.value = RestaurantCenterUiState(
+            loadState = RestaurantsLoadState.Error(failure.userMessage),
+            isCenterEnabled = true,
+            activeAccountUid = uid,
+            errorBanner = failure.userMessage,
+        )
+        flowEpoch.incrementAndGet()
     }
 
     private fun requireUid(): String? {

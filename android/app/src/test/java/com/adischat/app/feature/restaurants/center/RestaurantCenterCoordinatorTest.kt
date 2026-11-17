@@ -40,6 +40,63 @@ import java.util.concurrent.atomic.AtomicInteger
 class RestaurantCenterCoordinatorTest {
 
     @Test
+    fun `native tabs and owner-only menu permissions follow backend roles`() = runBlocking {
+        assertTrue(RestaurantRolePermissions.canManageMenu(RestaurantStaffRole.RESTAURANT_OWNER))
+        assertFalse(RestaurantRolePermissions.canManageMenu(RestaurantStaffRole.RESTAURANT_MANAGER))
+        assertFalse(RestaurantRolePermissions.canEditSettings(RestaurantStaffRole.RESTAURANT_MANAGER))
+        assertTrue(RestaurantRolePermissions.canEditBranchSettings(RestaurantStaffRole.RESTAURANT_MANAGER))
+        assertEquals(emptyList<RestaurantCenterTab>(), RestaurantRolePermissions.visibleTabs(null))
+        assertFalse(RestaurantCenterTab.STAFF in RestaurantRolePermissions.visibleTabs(RestaurantStaffRole.WAITER))
+        assertFalse(RestaurantCenterTab.MENU in RestaurantRolePermissions.visibleTabs(RestaurantStaffRole.CASHIER))
+        assertTrue(RestaurantCenterTab.MENU in RestaurantRolePermissions.visibleTabs(RestaurantStaffRole.KITCHEN_STAFF))
+        val mixedBranchRoles = CenterRestaurantUi(
+            id = "r-1", slug = "r-1", name = "Test", description = "",
+            status = RestaurantOperationalStatus.ACTIVE, isLiveOrderingEnabled = false,
+            currentUserRole = RestaurantStaffRole.RESTAURANT_MANAGER,
+            branchRoles = mapOf("b-1" to RestaurantStaffRole.RESTAURANT_MANAGER,
+                "b-2" to RestaurantStaffRole.WAITER),
+        )
+        assertEquals(RestaurantStaffRole.WAITER, mixedBranchRoles.roleForBranch("b-2"))
+        assertNull(mixedBranchRoles.roleForBranch("b-other"))
+
+        val fake = FakeCenterDataSource().apply { customRoleForHearth = RestaurantStaffRole.RESTAURANT_MANAGER }
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "manager-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectTab(RestaurantCenterTab.SETTINGS)
+        assertEquals(RestaurantCenterTab.OVERVIEW, coordinator.state.value.selectedTab)
+        coordinator.upsertMenuCategory("Unauthorized", 0)
+        assertNotNull(coordinator.state.value.errorBanner)
+    }
+
+    @Test
+    fun `workspace authorization failure clears restaurant scoped data`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        assertTrue(coordinator.state.value.ownedRestaurants.isNotEmpty())
+        fake.workspaceFailure = com.adischat.app.feature.restaurants.data.RestaurantsFailure.Forbidden(
+            "membership_revoked", "Restaurant access revoked.",
+        )
+        coordinator.loadCenter()
+        delay(40)
+        assertTrue(coordinator.state.value.loadState is RestaurantsLoadState.Error)
+        assertTrue(coordinator.state.value.ownedRestaurants.isEmpty())
+        assertTrue(coordinator.state.value.orders.isEmpty())
+    }
+
+    @Test
     fun `disabled feature flag blocks all center entry points and mutations`() = runBlocking {
         assertFalse(FeatureFlags.RESTAURANT_CENTER_ENABLED)
         assertFalse(BuildConfig.RESTAURANTS_IDENTITY_BRIDGE_ENABLED)
@@ -171,6 +228,9 @@ class RestaurantCenterCoordinatorTest {
         assertTrue(coordinator.state.value.ownedRestaurants.isEmpty())
         assertTrue(coordinator.state.value.orders.isEmpty())
         assertNull(coordinator.state.value.selectedRestaurantId)
+        coordinator.onAccountChanged(null)
+        assertNull(coordinator.state.value.activeAccountUid)
+        assertTrue(coordinator.state.value.applications.isEmpty())
     }
 
     @Test
@@ -284,6 +344,7 @@ class RestaurantCenterCoordinatorTest {
 }
 
 private class FakeCenterDataSource : RestaurantCenterDataSource {
+    var workspaceFailure: Throwable? = null
     val calls = AtomicInteger(0)
     var customRoleForHearth = RestaurantStaffRole.RESTAURANT_OWNER
     var lastInviteRequest: StaffInviteRequest? = null
@@ -364,6 +425,7 @@ private class FakeCenterDataSource : RestaurantCenterDataSource {
 
     override suspend fun loadAccessibleRestaurants(): Result<List<CenterRestaurantUi>> {
         calls.incrementAndGet()
+        workspaceFailure?.let { return Result.failure(it) }
         return Result.success(
             listOf(
                 CenterRestaurantUi(

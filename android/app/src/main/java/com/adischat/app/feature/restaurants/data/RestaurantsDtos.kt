@@ -107,6 +107,8 @@ data class RestaurantSummaryDto(
     val slug: String = "",
     val name: String = "",
     val description: String = "",
+    @SerializedName("cuisine_category")
+    val cuisineCategory: String? = null,
     @SerializedName("logo_path")
     val logoPath: String? = null,
     @SerializedName("cover_path")

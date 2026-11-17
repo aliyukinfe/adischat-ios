@@ -7,8 +7,7 @@ import java.net.URI
 internal object ShopQaMutationGuard {
     private const val STAGING_HOST = "opkqyvttbyezjbqwkvho.supabase.co"
     private val safeRpcPosts = setOf(
-        "adishop_qa_catalog_page", "adishop_qa_product_detail", "adishop_qa_cart_action",
-        "adishop_qa_buyer_orders", "adishop_qa_buyer_order_detail",
+        "adishop_qa_catalog_page", "adishop_qa_product_detail",
         "adishop_product_catalog_payload", "adishop_category_attribute_schema",
     )
     private val unsafeFunctionWords = listOf(

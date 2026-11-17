@@ -1,31 +1,29 @@
 package com.adischat.app.ui.home
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
-import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.outlined.Campaign
 import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LocalOffer
 import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.material.icons.outlined.ShoppingBag
-import androidx.compose.material.icons.outlined.Storefront
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 
 /**
- * The 6 modern super app sidebar services as approved in Phase H1:
- * - Chat
- * - AdisGebeya
- * - Restaurants
- * - Channels
- * - Seller Center
- * - Promotions
+ * The approved 5 modern Super App services (Phase H1 Unified Navigation):
+ * 1. Home — Unified dashboard and promotional feed
+ * 2. Chat — Includes messages, groups, and channels
+ * 3. AdisGebeya — Marketplace & delivery
+ * 4. Restaurants — Dine-in menus & table QR
+ * 5. Promotions — Curated vouchers, deals & highlights
  *
- * (Home is intentionally excluded from the sidebar and stays in bottom navigation).
+ * Duplicate Channels and Seller Center entries are removed from the sidebar.
+ * (Channels live inside Chat; Seller Center lives inside Activity Center -> Business).
  */
 enum class SuperAppService(
     val id: String,
@@ -36,10 +34,18 @@ enum class SuperAppService(
     val accentColor: Color,
     val badgeLabel: String? = null,
 ) {
+    HOME(
+        id = "home",
+        title = "Home",
+        subtitle = "Dashboard & Feed",
+        selectedIcon = Icons.Filled.Home,
+        unselectedIcon = Icons.Outlined.Home,
+        accentColor = Color(0xFF10B981), // Emerald green
+    ),
     CHAT(
         id = "chat",
         title = "Chat",
-        subtitle = "Messages & Calls",
+        subtitle = "Messages, Groups & Channels",
         selectedIcon = Icons.Filled.Chat,
         unselectedIcon = Icons.Outlined.ChatBubbleOutline,
         accentColor = Color(0xFF60A5FA), // Blue
@@ -62,22 +68,6 @@ enum class SuperAppService(
         accentColor = Color(0xFFFB923C), // Warm orange
         badgeLabel = "NEW",
     ),
-    CHANNELS(
-        id = "channels",
-        title = "Channels",
-        subtitle = "News & Community Feeds",
-        selectedIcon = Icons.Filled.Campaign,
-        unselectedIcon = Icons.Outlined.Campaign,
-        accentColor = Color(0xFFC084FC), // Purple
-    ),
-    SELLER_CENTER(
-        id = "seller_center",
-        title = "Seller Center",
-        subtitle = "Merchant Dashboard",
-        selectedIcon = Icons.Filled.Storefront,
-        unselectedIcon = Icons.Outlined.Storefront,
-        accentColor = Color(0xFFFBBF24), // Amber gold
-    ),
     PROMOTIONS(
         id = "promotions",
         title = "Promotions",
@@ -87,6 +77,20 @@ enum class SuperAppService(
         accentColor = Color(0xFFF87171), // Coral red
         badgeLabel = "DEALS",
     );
+
+    companion object {
+        /**
+         * Services displayed in the expanded sidebar on the Home dashboard:
+         * Home, Chat, AdisGebeya, Restaurants, Promotions.
+         */
+        val dashboardServices: List<SuperAppService> = listOf(HOME, CHAT, ADISGEBEYA, RESTAURANTS, PROMOTIONS)
+
+        /**
+         * Services displayed in the collapsed 48-56dp compact rail inside full-screen services:
+         * Chat, AdisGebeya, Restaurants, Promotions (with Home as the dedicated top icon).
+         */
+        val compactRailServices: List<SuperAppService> = listOf(CHAT, ADISGEBEYA, RESTAURANTS, PROMOTIONS)
+    }
 }
 
 /**
@@ -150,37 +154,37 @@ object SuperAppDemoPromotions {
             promoPriceLabel = "ETB 390",
         ),
         SuperAppPromotionItem(
-            id = "promo-channels-creators",
-            title = "AdisChat Creator Channels",
-            subtitle = "Follow official news, tech updates, and community broadcasts with instant push notifications.",
-            highlightBadge = "VERIFIED",
-            categoryTag = "Channels",
-            imageUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80",
-            targetService = SuperAppService.CHANNELS,
-            ctaLabel = "Browse Channels",
-            accentColor = Color(0xFFC084FC),
-        ),
-        SuperAppPromotionItem(
-            id = "promo-seller-perks",
-            title = "Seller Center Zero-Commission",
-            subtitle = "List your store products or restaurant menu on AdisChat with 30 days zero platform commission.",
-            highlightBadge = "0% FEE",
-            categoryTag = "Seller Center",
-            imageUrl = "https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=1000&q=80",
-            targetService = SuperAppService.SELLER_CENTER,
-            ctaLabel = "Start Selling",
-            accentColor = Color(0xFFFBBF24),
-        ),
-        SuperAppPromotionItem(
             id = "promo-super-weekend",
             title = "Super App Weekend Bonus",
-            subtitle = "Unified voucher valid for dining sessions, marketplace orders, and premium channel perks.",
+            subtitle = "Unified voucher valid for dining sessions, marketplace orders, and chat perks.",
             highlightBadge = "SUPER PACK",
             categoryTag = "Promotions",
             imageUrl = "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=1000&q=80",
             targetService = SuperAppService.PROMOTIONS,
             ctaLabel = "Claim Voucher",
             accentColor = Color(0xFFF87171),
+        ),
+        SuperAppPromotionItem(
+            id = "promo-channels-creators",
+            title = "Community & Channel Broadcasts",
+            subtitle = "Join tech updates, startup discussions, and city announcements inside Chat Channels.",
+            highlightBadge = "VERIFIED",
+            categoryTag = "Chat",
+            imageUrl = "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1000&q=80",
+            targetService = SuperAppService.CHAT,
+            ctaLabel = "Open Chat Channels",
+            accentColor = Color(0xFF60A5FA),
+        ),
+        SuperAppPromotionItem(
+            id = "promo-voucher-welcome",
+            title = "Welcome Voucher 15% OFF",
+            subtitle = "Apply voucher code ADIS15 at table checkout or marketplace delivery.",
+            highlightBadge = "15% OFF",
+            categoryTag = "Promotions",
+            imageUrl = "https://images.unsplash.com/photo-1472851294608-062f824d29cc?auto=format&fit=crop&w=1000&q=80",
+            targetService = SuperAppService.PROMOTIONS,
+            ctaLabel = "View Deals",
+            accentColor = Color(0xFFFBBF24),
         ),
     )
 }

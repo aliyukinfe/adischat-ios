@@ -31,8 +31,9 @@ class ShopQaMutationGuardTest {
         }
         assertTrue(ShopQaMutationGuard.blocks("POST", listOf("rest", "v1", "rpc", "unknown_mutation")))
         assertTrue(ShopQaMutationGuard.blocks("POST", listOf("rest", "v1", "shop_orders")))
-        assertFalse(ShopQaMutationGuard.blocks("POST", listOf("rest", "v1", "rpc", "adishop_qa_buyer_orders")))
-        assertFalse(ShopQaMutationGuard.blocks("POST", listOf("rest", "v1", "rpc", "adishop_qa_cart_action")))
+        listOf("buyer_orders", "buyer_order_detail", "cart_action").forEach { name ->
+            assertTrue(ShopQaMutationGuard.blocks("POST", listOf("rest", "v1", "rpc", "adishop_qa_$name")))
+        }
     }
 
     @Test fun edgeOrderPaymentAndDeliveryAliasesAreDenied() {
@@ -61,6 +62,9 @@ class ShopQaMutationGuardTest {
         val checkout = Request.Builder().url("$staging/rest/v1/rpc/adishop_qa_confirm_checkout")
             .post("{}".toRequestBody()).build()
         assertThrows(IOException::class.java) { client.newCall(checkout).execute().use { } }
+        val knownSessionRead = Request.Builder().url("$staging/rest/v1/rpc/adishop_qa_buyer_orders")
+            .post("{}".toRequestBody()).build()
+        assertThrows(IOException::class.java) { client.newCall(knownSessionRead).execute().use { } }
         val production = Request.Builder().url("https://mcewjfnkrtiiolzibsuh.supabase.co/functions/v1/adishop-create-address")
             .post("{}".toRequestBody()).build()
         assertThrows(IOException::class.java) { client.newCall(production).execute().use { } }

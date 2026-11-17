@@ -163,11 +163,12 @@ class RestaurantsDtosAndErrorMapperTest {
     @Test
     fun `parses PostgREST SQL snake_case fields matching R2B and R3B schema`() {
         val restaurant = gson.fromJson(
-            """{"id":"r1","slug":"hearth","name":"Habesha Hearth","status":"active","is_live_ordering_enabled":true}""",
+            """{"id":"r1","slug":"hearth","name":"Habesha Hearth","cuisine_category":"Ethiopian","status":"active","is_live_ordering_enabled":true}""",
             RestaurantSummaryDto::class.java,
         )
         assertEquals("Habesha Hearth", restaurant.name)
         assertEquals("active", restaurant.status)
+        assertEquals("Ethiopian", restaurant.cuisineCategory)
 
         val branch = gson.fromJson(
             """{"id":"b1","restaurant_id":"r1","code":"BOLE","name":"Bole","address":"Cape Verde","status":"suspended","is_dine_in_active":false}""",
