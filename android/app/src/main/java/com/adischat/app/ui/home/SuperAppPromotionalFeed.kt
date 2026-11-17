@@ -1,33 +1,26 @@
 package com.adischat.app.ui.home
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -39,22 +32,51 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
-/**
- * Premium Promotional Feed for the Super App Home screen.
- * Displays curated hero promotions, deals, and service highlights with responsive layouts.
- */
+internal fun overlapsSidebar(rowTop: Float, rowBottom: Float, sidebar: Rect?): Boolean =
+    sidebar == null || (rowTop < sidebar.bottom && rowBottom > sidebar.top)
+
+@Composable
+private fun FlowAroundRow(
+    sidebarBounds: Rect?,
+    height: Dp,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
+    var besideSidebar by remember { mutableStateOf(true) }
+    val startPadding by animateDpAsState(
+        targetValue = if (besideSidebar) 114.dp else 12.dp,
+        animationSpec = tween(160),
+        label = "flowAroundSidebar",
+    )
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+            .onGloballyPositioned { coordinates ->
+                val top = coordinates.positionInRoot().y
+                val next = overlapsSidebar(top, top + coordinates.size.height, sidebarBounds)
+                if (besideSidebar != next) besideSidebar = next
+            }
+            .padding(start = startPadding, end = 12.dp),
+        contentAlignment = Alignment.CenterStart,
+    ) {
+        content()
+    }
+}
+
 @Composable
 fun SuperAppPromotionalFeed(
     userName: String,
@@ -62,466 +84,126 @@ fun SuperAppPromotionalFeed(
     onOpenSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
     promotions: List<SuperAppPromotionItem> = SuperAppDemoPromotions.items,
+    sidebarBounds: Rect? = null,
 ) {
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
-    val bgColor = if (isLight) Color(0xFFF8FAFC) else Color(0xFF0B0D12)
-    val cardBg = if (isLight) Color.White else Color(0xFF12151C)
-    val cardBorder = if (isLight) Color(0xFFE2E8F0) else Color(0xFF1F2530)
-    val textColor = if (isLight) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val mutedColor = if (isLight) Color(0xFF64748B) else Color(0xFF94A3B8)
-    val mintAccent = Color(0xFF34D399)
-
+    val background = if (isLight) Color(0xFFF8FAFC) else Color(0xFF0B0D12)
+    val ink = if (isLight) Color(0xFF0F172A) else Color.White
+    val muted = if (isLight) Color(0xFF475569) else Color(0xFFCBD5E1)
     var selectedCategory by remember { mutableStateOf("All") }
-    // Clean categories reflecting the approved 5 services without duplicate Channels/Seller Center
-    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Deals") }
-
-    val filteredPromotions = remember(selectedCategory, promotions) {
+    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Chat", "Promotions") }
+    val visible = remember(selectedCategory, promotions) {
         if (selectedCategory == "All") promotions
-        else promotions.filter {
-            it.categoryTag.equals(selectedCategory, ignoreCase = true) ||
-                (selectedCategory == "Deals" && (it.originalPriceLabel != null || it.categoryTag == "Promotions"))
-        }
+        else promotions.filter { it.categoryTag == selectedCategory }
     }
 
     LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(bgColor)
-            .padding(horizontal = 10.dp),
+        modifier = modifier.fillMaxSize().background(background),
         contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        // 1. User Header & Welcome
-        item {
-            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 2.dp)) {
-                Text(
-                    text = "AdisChat Super App",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.sp,
-                        color = mintAccent,
-                    ),
-                )
-                Text(
-                    text = "Welcome, ${userName.ifBlank { "Akab" }} \uD83D\uDC4B",
-                    style = MaterialTheme.typography.headlineSmall.copy(
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = textColor,
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-
-        // 2. QA Notice Banner
-        item {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFF064E3B).copy(alpha = if (isLight) 0.12f else 0.25f),
-                border = BorderStroke(1.dp, mintAccent.copy(alpha = 0.25f)),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = "QA Info",
-                        tint = mintAccent,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text(
-                        text = "QA DEMO FEED • Previewing unified promotional feed. Zero charges.",
-                        color = if (isLight) Color(0xFF047857) else mintAccent,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
+        item(key = "welcome") {
+            FlowAroundRow(sidebarBounds, 66.dp) {
+                Column {
+                    Text("AdisChat", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Welcome, ${userName.ifBlank { "Akab" }}", color = ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
-
-        // 3. Search Bar
-        item {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = cardBg,
-                border = BorderStroke(1.dp, cardBorder),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(onClick = onOpenSearch),
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 9.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Search,
-                        contentDescription = "Search",
-                        tint = mutedColor,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Search deals, dishes, or stores...",
-                        color = mutedColor,
-                        fontSize = 12.sp,
-                    )
-                }
-            }
-        }
-
-        // 4. Category Filter Chips
-        item {
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                contentPadding = PaddingValues(horizontal = 1.dp),
-            ) {
-                items(categories) { cat ->
-                    val isCatSelected = selectedCategory == cat
-                    val chipBg = if (isCatSelected) mintAccent else cardBg
-                    val chipText = if (isCatSelected) Color.Black else textColor
-                    val chipBorder = if (isCatSelected) mintAccent else cardBorder
-
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(chipBg)
-                            .border(1.dp, chipBorder, RoundedCornerShape(18.dp))
-                            .clickable { selectedCategory = cat }
-                            .padding(horizontal = 10.dp, vertical = 5.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            text = cat,
-                            color = chipText,
-                            fontSize = 10.5.sp,
-                            fontWeight = if (isCatSelected) FontWeight.Bold else FontWeight.Medium,
-                        )
-                    }
-                }
-            }
-        }
-
-        // 5. Featured Hero Card
-        if (filteredPromotions.isNotEmpty()) {
-            val hero = filteredPromotions.first()
-            item {
-                FeaturedHeroPromoCard(
-                    item = hero,
-                    onCtaClick = { onSelectService(hero.targetService) },
-                    isLight = isLight,
-                )
-            }
-        }
-
-        // 6. Section Title
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
+        item(key = "demo-notice") {
+            FlowAroundRow(sidebarBounds, 48.dp) {
                 Text(
-                    text = "Special Offers & Highlights",
-                    color = textColor,
-                    fontSize = 13.5.sp,
+                    "DEMO PREVIEW  |  Not live offers",
+                    color = if (isLight) Color(0xFF065F46) else Color(0xFF6EE7B7),
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    text = "${filteredPromotions.size} available",
-                    color = mutedColor,
-                    fontSize = 10.sp,
-                )
-            }
-        }
-
-        // 7. Promotional Feed Cards
-        items(filteredPromotions.drop(1), key = { it.id }) { promo ->
-            SuperAppPromoCard(
-                item = promo,
-                onCtaClick = { onSelectService(promo.targetService) },
-                isLight = isLight,
-            )
-        }
-    }
-}
-
-/**
- * Top featured hero promotion card with gradient overlay and responsive typography.
- */
-@Composable
-private fun FeaturedHeroPromoCard(
-    item: SuperAppPromotionItem,
-    onCtaClick: () -> Unit,
-    isLight: Boolean,
-) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, item.accentColor.copy(alpha = 0.35f)),
-        shadowElevation = 4.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onCtaClick),
-    ) {
-        Box(modifier = Modifier.fillMaxWidth().height(170.dp)) {
-            AsyncImage(
-                model = item.imageUrl,
-                contentDescription = item.title,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-            // Gradient overlay
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Black.copy(alpha = 0.25f),
-                                Color.Black.copy(alpha = 0.90f),
-                            ),
-                        ),
-                    ),
-            )
-
-            // Content
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.SpaceBetween,
-            ) {
-                // Top Tag Row
-                Row(
+                    maxLines = 2,
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
+                )
+            }
+        }
+        item(key = "search") {
+            FlowAroundRow(sidebarBounds, 52.dp) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth().height(48.dp).clickable(onClick = onOpenSearch),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isLight) Color.White else Color(0xFF171C24),
+                    border = BorderStroke(1.dp, if (isLight) Color(0xFFE2E8F0) else Color(0xFF334155)),
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(item.accentColor)
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                    ) {
-                        Text(
-                            text = item.highlightBadge,
-                            color = Color.Black,
-                            fontSize = 8.5.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
+                    Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = muted)
+                        Text("Search", color = muted, fontSize = 13.sp)
                     }
-
-                    Text(
-                        text = item.categoryTag,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
                 }
-
-                // Bottom Titles & Action
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(
-                        text = item.title,
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = item.subtitle,
-                        color = Color.White.copy(alpha = 0.85f),
-                        fontSize = 10.5.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 14.sp,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Button(
-                            onClick = onCtaClick,
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = item.accentColor,
-                                contentColor = Color.Black,
-                            ),
+            }
+        }
+        item(key = "categories") {
+            FlowAroundRow(sidebarBounds, 44.dp) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(categories) { category ->
+                        val selected = selectedCategory == category
+                        Surface(
+                            modifier = Modifier.clickable { selectedCategory = category },
                             shape = RoundedCornerShape(8.dp),
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                            modifier = Modifier.height(30.dp),
+                            color = if (selected) Color(0xFF10B981) else if (isLight) Color.White else Color(0xFF171C24),
                         ) {
-                            Text(
-                                text = item.ctaLabel,
-                                fontSize = 10.5.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                        }
-
-                        if (item.promoPriceLabel != null) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = item.promoPriceLabel,
-                                    color = Color(0xFF34D399),
-                                    fontSize = 11.5.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                                if (item.originalPriceLabel != null) {
-                                    Spacer(Modifier.width(4.dp))
-                                    Text(
-                                        text = item.originalPriceLabel,
-                                        color = Color.White.copy(alpha = 0.6f),
-                                        fontSize = 10.sp,
-                                        textDecoration = TextDecoration.LineThrough,
-                                    )
-                                }
-                            }
+                            Text(category, color = if (selected) Color(0xFF052E26) else ink, fontSize = 11.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
                         }
                     }
                 }
             }
         }
+        item(key = "section-title") {
+            FlowAroundRow(sidebarBounds, 40.dp) {
+                Column {
+                    Text("Discover", color = ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Text("${visible.size} demo concepts", color = muted, fontSize = 11.sp)
+                }
+            }
+        }
+        items(visible, key = { it.id }) { item ->
+            FlowAroundRow(sidebarBounds, 212.dp) {
+                DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
+            }
+        }
     }
 }
 
-/**
- * Standard promotional feed card with compact layout to prevent text clipping.
- */
 @Composable
-private fun SuperAppPromoCard(
-    item: SuperAppPromotionItem,
-    onCtaClick: () -> Unit,
-    isLight: Boolean,
-) {
-    val cardBg = if (isLight) Color.White else Color(0xFF12151C)
-    val cardBorder = if (isLight) Color(0xFFE2E8F0) else Color(0xFF1F2530)
-    val textColor = if (isLight) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val mutedColor = if (isLight) Color(0xFF64748B) else Color(0xFF94A3B8)
-
+private fun DemoPromotionCard(item: SuperAppPromotionItem, isLight: Boolean, onClick: () -> Unit) {
+    val ink = if (isLight) Color(0xFF0F172A) else Color.White
+    val muted = if (isLight) Color(0xFF475569) else Color(0xFFCBD5E1)
     Surface(
-        shape = RoundedCornerShape(12.dp),
-        color = cardBg,
-        border = BorderStroke(1.dp, cardBorder),
-        shadowElevation = 2.dp,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onCtaClick),
+        modifier = Modifier.fillMaxWidth().height(208.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        color = if (isLight) Color.White else Color(0xFF171C24),
+        shadowElevation = 3.dp,
+        border = BorderStroke(1.dp, if (isLight) Color(0xFFE2E8F0) else Color(0xFF334155)),
     ) {
-        Row(
-            modifier = Modifier.padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            // Left Image Thumbnail
-            Box(
-                modifier = Modifier
-                    .size(70.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-            ) {
+        Column {
+            Box(Modifier.fillMaxWidth().height(94.dp)) {
                 AsyncImage(
                     model = item.imageUrl,
                     contentDescription = item.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
                 )
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .clip(RoundedCornerShape(bottomEnd = 6.dp))
-                        .background(item.accentColor)
-                        .padding(horizontal = 4.dp, vertical = 2.dp),
-                ) {
-                    Text(
-                        text = item.highlightBadge,
-                        color = Color.Black,
-                        fontSize = 7.sp,
-                        fontWeight = FontWeight.Bold,
-                    )
-                }
-            }
-
-            // Right Info
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) {
                 Text(
-                    text = item.title,
-                    color = textColor,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    text = item.subtitle,
-                    color = mutedColor,
+                    "DEMO",
+                    color = Color(0xFF052E26),
                     fontSize = 10.sp,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.align(Alignment.TopStart).padding(7.dp).background(Color(0xFF6EE7B7), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
                 )
-
-                Spacer(Modifier.height(2.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (item.promoPriceLabel != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = item.promoPriceLabel,
-                                color = Color(0xFF34D399),
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            if (item.originalPriceLabel != null) {
-                                Spacer(Modifier.width(3.dp))
-                                Text(
-                                    text = item.originalPriceLabel,
-                                    color = mutedColor,
-                                    fontSize = 9.sp,
-                                    textDecoration = TextDecoration.LineThrough,
-                                )
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = item.validityNote,
-                            color = mutedColor,
-                            fontSize = 8.5.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                    }
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(2.dp),
-                        modifier = Modifier.clickable(onClick = onCtaClick),
-                    ) {
-                        Text(
-                            text = item.ctaLabel,
-                            color = item.accentColor,
-                            fontSize = 10.5.sp,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                            contentDescription = item.ctaLabel,
-                            tint = item.accentColor,
-                            modifier = Modifier.size(11.dp),
-                        )
+            }
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(item.title, color = ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.subtitle, color = muted, fontSize = 11.sp, maxLines = 2, lineHeight = 13.sp, overflow = TextOverflow.Ellipsis)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Prices in app", color = muted, fontSize = 10.sp, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(item.ctaLabel, color = item.accentColor, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = item.accentColor, modifier = Modifier.height(14.dp))
                     }
                 }
             }

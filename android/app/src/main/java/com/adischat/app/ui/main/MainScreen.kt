@@ -651,15 +651,16 @@ fun MainScreen(
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(36.dp)
+                                                    .size(48.dp)
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(if (lightMode) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                                                 contentAlignment = Alignment.Center,
                                             ) {
-                                                Image(
-                                                    painter = painterResource(R.drawable.logo),
+                                                Icon(
+                                                    imageVector = Icons.Filled.Home,
                                                     contentDescription = "Return to Home",
-                                                    modifier = Modifier.size(24.dp),
+                                                    tint = Color(0xFF10B981),
+                                                    modifier = Modifier.size(20.dp),
                                                 )
                                             }
                                             Column {
@@ -672,7 +673,7 @@ fun MainScreen(
                                                     ),
                                                 )
                                                 Text(
-                                                    text = "Tap logo to return Home",
+                                                    text = "Discover services",
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontSize = 10.sp,
                                                         color = if (lightMode) Color(0xFF64748B) else Color(0xFF94A3B8),
@@ -733,15 +734,16 @@ fun MainScreen(
                                         ) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(36.dp)
+                                                    .size(48.dp)
                                                     .clip(RoundedCornerShape(10.dp))
                                                     .background(if (lightMode) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                                                 contentAlignment = Alignment.Center,
                                             ) {
-                                                Image(
-                                                    painter = painterResource(R.drawable.logo),
+                                                Icon(
+                                                    imageVector = Icons.Filled.Home,
                                                     contentDescription = "Return to Home",
-                                                    modifier = Modifier.size(24.dp),
+                                                    tint = Color(0xFF10B981),
+                                                    modifier = Modifier.size(20.dp),
                                                 )
                                             }
                                             Column {
@@ -754,7 +756,7 @@ fun MainScreen(
                                                     ),
                                                 )
                                                 Text(
-                                                    text = "Tap logo to return Home",
+                                                    text = "Account and settings",
                                                     style = MaterialTheme.typography.labelSmall.copy(
                                                         fontSize = 10.sp,
                                                         color = if (lightMode) Color(0xFF64748B) else Color(0xFF94A3B8),

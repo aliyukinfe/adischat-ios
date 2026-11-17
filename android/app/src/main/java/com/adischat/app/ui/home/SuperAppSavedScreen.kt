@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.Check
@@ -182,15 +183,16 @@ fun SuperAppSavedScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(48.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Image(
-                            painter = painterResource(R.drawable.logo),
+                        Icon(
+                            imageVector = Icons.Filled.Home,
                             contentDescription = "Return to Home",
-                            modifier = Modifier.size(24.dp),
+                            tint = Color(0xFF10B981),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                     Column {
@@ -203,7 +205,7 @@ fun SuperAppSavedScreen(
                             ),
                         )
                         Text(
-                            text = "Tap logo to return Home",
+                            text = "Saved for later",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 color = mutedColor,
