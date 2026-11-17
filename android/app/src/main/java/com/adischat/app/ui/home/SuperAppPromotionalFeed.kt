@@ -102,8 +102,13 @@ fun SuperAppPromotionalFeed(
         contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        items(visible.take(2), key = { "lead-${it.id}" }) { item ->
+            FlowAroundRow(sidebarBounds, 176.dp) {
+                DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
+            }
+        }
         item(key = "welcome") {
-            FlowAroundRow(sidebarBounds, 66.dp) {
+            FlowAroundRow(sidebarBounds, 56.dp) {
                 Column {
                     Text("AdisChat", color = Color(0xFF10B981), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     Text("Welcome, ${userName.ifBlank { "Akab" }}", color = ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -161,8 +166,8 @@ fun SuperAppPromotionalFeed(
                 }
             }
         }
-        items(visible, key = { it.id }) { item ->
-            FlowAroundRow(sidebarBounds, 212.dp) {
+        items(visible.drop(2), key = { it.id }) { item ->
+            FlowAroundRow(sidebarBounds, 176.dp) {
                 DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
             }
         }
@@ -174,14 +179,14 @@ private fun DemoPromotionCard(item: SuperAppPromotionItem, isLight: Boolean, onC
     val ink = if (isLight) Color(0xFF0F172A) else Color.White
     val muted = if (isLight) Color(0xFF475569) else Color(0xFFCBD5E1)
     Surface(
-        modifier = Modifier.fillMaxWidth().height(208.dp).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().height(172.dp).clickable(onClick = onClick),
         shape = RoundedCornerShape(8.dp),
         color = if (isLight) Color.White else Color(0xFF171C24),
         shadowElevation = 3.dp,
         border = BorderStroke(1.dp, if (isLight) Color(0xFFE2E8F0) else Color(0xFF334155)),
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(94.dp)) {
+            Box(Modifier.fillMaxWidth().height(76.dp)) {
                 AsyncImage(
                     model = item.imageUrl,
                     contentDescription = item.title,
@@ -196,7 +201,7 @@ private fun DemoPromotionCard(item: SuperAppPromotionItem, isLight: Boolean, onC
                     modifier = Modifier.align(Alignment.TopStart).padding(7.dp).background(Color(0xFF6EE7B7), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
                 )
             }
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(item.title, color = ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(item.subtitle, color = muted, fontSize = 11.sp, maxLines = 2, lineHeight = 13.sp, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
