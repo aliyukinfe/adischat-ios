@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -301,6 +302,12 @@ private fun RestaurantWorkspaceScreenContent(
             .fillMaxSize()
             .background(extColors.mainBackground),
     ) {
+        val activeBrandColor = RestaurantsLightPalette.parseHexColor(
+            hex = restaurant?.brandColorHex ?: menuState.brandColorHex,
+            fallback = extColors.brandGreen,
+        )
+        val activeBrandTextColor = RestaurantsLightPalette.getContrastTextColor(activeBrandColor)
+
         RestaurantCompactWorkspaceHeader(
             restaurant = restaurant,
             displayName = displayName,
@@ -315,6 +322,13 @@ private fun RestaurantWorkspaceScreenContent(
             onBranchSelected = onBranchSelected,
             onScanTableQrClick = onScanTableQrClick,
             onActiveOrdersClick = { onOpenOrdersSheet(RestaurantWorkspaceTab.MY_ORDERS) },
+            coverUrl = restaurant?.coverUrl ?: menuState.coverUrl,
+            logoUrl = restaurant?.logoUrl ?: menuState.logoUrl,
+            brandColorHex = restaurant?.brandColorHex ?: menuState.brandColorHex,
+            isVerified = restaurant?.isVerified ?: menuState.isVerified,
+            rating = restaurant?.rating ?: menuState.rating,
+            reviewCount = restaurant?.reviewCount ?: menuState.reviewCount,
+            isDemoPreview = menuState.isDemoPreview,
         )
 
         val showFloatingCartBar = cartMatchesContext && cartState.items.isNotEmpty()
@@ -451,8 +465,8 @@ private fun RestaurantWorkspaceScreenContent(
                             onClick = onSheetAddToCartClick,
                             enabled = activeMenuItemSheet.isSelectionValid(),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = extColors.brandGreen,
-                                contentColor = Color.White,
+                                containerColor = activeBrandColor,
+                                contentColor = activeBrandTextColor,
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth(),
@@ -486,8 +500,8 @@ private fun RestaurantWorkspaceScreenContent(
                                 onScanTableQrClick()
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = extColors.brandGreen,
-                                contentColor = Color.White,
+                                containerColor = activeBrandColor,
+                                contentColor = activeBrandTextColor,
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth(),
@@ -564,158 +578,347 @@ private fun RestaurantCompactWorkspaceHeader(
     onBranchSelected: (String) -> Unit,
     onScanTableQrClick: () -> Unit,
     onActiveOrdersClick: () -> Unit,
+    coverUrl: String? = restaurant?.coverUrl,
+    logoUrl: String? = restaurant?.logoUrl,
+    brandColorHex: String? = restaurant?.brandColorHex,
+    isVerified: Boolean = restaurant?.isVerified ?: true,
+    rating: Double? = restaurant?.rating,
+    reviewCount: Int? = restaurant?.reviewCount,
+    isDemoPreview: Boolean = false,
 ) {
     val extColors = RestaurantsLightTheme.colors
     val applyStatusPadding = LocalRestaurantsTopBarStatusPadding.current
     val openStatusLabel = restaurant?.isOpenNowLabel?.takeIf { it.isNotBlank() }
         ?: if (selectedBranch?.isDineInActive == false) "Dine-in Paused" else "Dine-in Open"
+    val brandColor = RestaurantsLightPalette.parseHexColor(brandColorHex, extColors.brandGreen)
     var branchMenuExpanded by remember { mutableStateOf(false) }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        extColors.headerGradientTop,
-                        extColors.headerGradientMid,
-                        extColors.mainBackground,
-                    ),
-                ),
-            ),
+            .background(Color.White),
     ) {
+        if (!coverUrl.isNullOrBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(130.dp),
+            ) {
+                RestaurantArtworkImage(
+                    imageUrl = coverUrl,
+                    contentDescription = "$displayName cover",
+                    aspectRatio = null,
+                    cornerRadius = 0.dp,
+                    modifier = Modifier.fillMaxSize(),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.45f),
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.35f),
+                                ),
+                            ),
+                        ),
+                )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .let { if (applyStatusPadding) it.statusBarsPadding() else it }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color.White.copy(alpha = 0.94f),
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        IconButton(onClick = onBackClick, modifier = Modifier.fillMaxSize()) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                                contentDescription = "Back",
+                                tint = Color(0xFF0F172A),
+                                modifier = Modifier.size(19.dp),
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = Color.White.copy(alpha = 0.95f),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.Search,
+                                contentDescription = "Search dishes",
+                                tint = Color(0xFF64748B),
+                                modifier = Modifier.size(15.dp),
+                            )
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Search dishes...",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                                        color = Color(0xFF94A3B8),
+                                        maxLines = 1,
+                                    )
+                                }
+                                BasicTextField(
+                                    value = searchQuery,
+                                    onValueChange = onSearchQueryChange,
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodySmall.copy(
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF0F172A),
+                                    ),
+                                    cursorBrush = SolidColor(brandColor),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = "Clear search",
+                                    tint = Color(0xFF64748B),
+                                    modifier = Modifier
+                                        .size(14.dp)
+                                        .clickable { onSearchQueryChange("") },
+                                )
+                            }
+                        }
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onActiveOrdersClick),
+                        shape = RoundedCornerShape(50),
+                        color = if (activeOrderCount > 0) Color.White else Color.White.copy(alpha = 0.92f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (activeOrderCount > 0) brandColor else Color(0xFFE2E8F0),
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
+                                contentDescription = "Active Orders",
+                                tint = if (activeOrderCount > 0) brandColor else Color(0xFF0F172A),
+                                modifier = Modifier.size(14.dp),
+                            )
+                            Text(
+                                text = "Active ($activeOrderCount)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = if (activeOrderCount > 0) brandColor else Color(0xFF0F172A),
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .let { if (applyStatusPadding) it.statusBarsPadding() else it }
-                .padding(bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Row 1: Back + Restaurant Title + Rounded Search Pill
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(start = 4.dp, end = 12.dp, top = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier.size(34.dp),
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
-                        contentDescription = "Back",
-                        tint = extColors.primaryText,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-
-                Text(
-                    text = displayName,
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                    ),
-                    color = extColors.primaryText,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = Color.White.copy(alpha = 0.94f),
-                    border = BorderStroke(1.dp, Color(0xFFD6E5DC)),
+            if (coverUrl.isNullOrBlank()) {
+                Row(
                     modifier = Modifier
-                        .width(136.dp)
-                        .height(32.dp),
+                        .fillMaxWidth()
+                        .let { if (applyStatusPadding) it.statusBarsPadding() else it }
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
+                    IconButton(
+                        onClick = onBackClick,
+                        modifier = Modifier.size(34.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.Search,
-                            contentDescription = "Search dishes",
-                            tint = extColors.secondaryText,
-                            modifier = Modifier.size(15.dp),
+                            imageVector = Icons.AutoMirrored.Rounded.ArrowBack,
+                            contentDescription = "Back",
+                            tint = Color(0xFF0F172A),
+                            modifier = Modifier.size(20.dp),
                         )
-                        Box(
-                            modifier = Modifier.weight(1f),
-                            contentAlignment = Alignment.CenterStart,
+                    }
+
+                    Text(
+                        text = displayName,
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                        ),
+                        color = Color(0xFF0F172A),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable(onClick = onActiveOrdersClick),
+                        shape = RoundedCornerShape(50),
+                        color = if (activeOrderCount > 0) Color.White else Color.White.copy(alpha = 0.9f),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (activeOrderCount > 0) brandColor else Color(0xFFE2E8F0),
+                        ),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            if (searchQuery.isEmpty()) {
-                                Text(
-                                    text = "Search",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
-                                    color = extColors.tertiaryText,
-                                    maxLines = 1,
-                                )
-                            }
-                            BasicTextField(
-                                value = searchQuery,
-                                onValueChange = onSearchQueryChange,
-                                singleLine = true,
-                                textStyle = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 12.5.sp,
-                                    color = extColors.primaryText,
-                                ),
-                                cursorBrush = SolidColor(extColors.brandGreen),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        if (searchQuery.isNotEmpty()) {
                             Icon(
-                                imageVector = Icons.Rounded.Close,
-                                contentDescription = "Clear search",
-                                tint = extColors.secondaryText,
-                                modifier = Modifier
-                                    .size(14.dp)
-                                    .clickable { onSearchQueryChange("") },
+                                imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
+                                contentDescription = "Active Orders",
+                                tint = if (activeOrderCount > 0) brandColor else Color(0xFF0F172A),
+                                modifier = Modifier.size(13.dp),
+                            )
+                            Text(
+                                text = "Active ($activeOrderCount)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                ),
+                                color = if (activeOrderCount > 0) brandColor else Color(0xFF0F172A),
                             )
                         }
                     }
                 }
             }
 
-            // Row 2: Compact Branch + Table Info + Switch QR + Active Orders CTA
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp),
+                    .let {
+                        if (!coverUrl.isNullOrBlank()) it.offset(y = (-18).dp) else it
+                    },
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Row(
+                RestaurantLogoAvatar(
+                    logoUrl = logoUrl,
+                    brandName = displayName,
+                    size = 46.dp,
+                    brandColor = brandColor,
+                    borderWidth = 2.5.dp,
+                    borderColor = Color.White,
+                    cornerRadius = 12.dp,
+                )
+
+                Column(
                     modifier = Modifier.weight(1f),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
                 ) {
-                    Box {
-                        val hasMultipleBranches = branches.size > 1
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Text(
+                            text = displayName,
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                            ),
+                            color = Color(0xFF0F172A),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (isVerified) {
+                            RestaurantVerifiedBadge(showLabel = false)
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        if (rating != null) {
+                            RestaurantRatingPill(
+                                rating = rating,
+                                reviewCount = reviewCount,
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(50),
+                            color = Color(0xFFF1F5F9),
+                            border = BorderStroke(0.6.dp, Color(0xFFE2E8F0)),
+                        ) {
+                            Text(
+                                text = openStatusLabel,
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = Color(0xFF475569),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .let {
+                        if (!coverUrl.isNullOrBlank()) it.offset(y = (-12).dp) else it
+                    },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Box {
+                    val hasMultipleBranches = branches.size > 1
+                    Surface(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable(enabled = hasMultipleBranches) { branchMenuExpanded = true },
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFF8FAFC),
+                        border = BorderStroke(0.8.dp, Color(0xFFE2E8F0)),
+                    ) {
                         Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .clickable(enabled = hasMultipleBranches) { branchMenuExpanded = true }
-                                .padding(vertical = 2.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
                             Icon(
                                 imageVector = Icons.Rounded.LocationOn,
                                 contentDescription = null,
-                                tint = extColors.brandGreenDeep,
+                                tint = brandColor,
                                 modifier = Modifier.size(13.dp),
                             )
                             Text(
                                 text = selectedBranch?.name ?: "Main Branch",
-                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.5.sp),
                                 fontWeight = FontWeight.SemiBold,
-                                color = extColors.primaryText,
+                                color = Color(0xFF1E293B),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -723,111 +926,63 @@ private fun RestaurantCompactWorkspaceHeader(
                                 Icon(
                                     imageVector = Icons.Rounded.KeyboardArrowDown,
                                     contentDescription = "Select branch",
-                                    tint = extColors.secondaryText,
+                                    tint = Color(0xFF64748B),
                                     modifier = Modifier.size(14.dp),
                                 )
                             }
                         }
-
-                        DropdownMenu(
-                            expanded = branchMenuExpanded,
-                            onDismissRequest = { branchMenuExpanded = false },
-                            containerColor = extColors.mainBackground,
-                        ) {
-                            branches.forEach { branch ->
-                                val isSelected = branch.id == selectedBranch?.id
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = branch.name,
-                                            color = if (isSelected) extColors.brandGreenDeep else extColors.primaryText,
-                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                                        )
-                                    },
-                                    trailingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Rounded.Check,
-                                                contentDescription = null,
-                                                tint = extColors.brandGreen,
-                                                modifier = Modifier.size(16.dp),
-                                            )
-                                        }
-                                    } else {
-                                        null
-                                    },
-                                    onClick = {
-                                        branchMenuExpanded = false
-                                        onBranchSelected(branch.id)
-                                    },
-                                )
-                            }
-                        }
                     }
 
-                    Text(
-                        text = "•",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = extColors.secondaryText,
-                    )
-
-                    val sessionText = when {
-                        matchingSession != null -> matchingSession.tableLabel
-                        otherBranchSession != null -> "Other: ${otherBranchSession.tableLabel}"
-                        else -> "Browse Mode"
-                    }
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f, fill = false)
-                            .clip(RoundedCornerShape(6.dp))
-                            .clickable(onClick = onScanTableQrClick),
-                        shape = RoundedCornerShape(6.dp),
-                        color = when {
-                            matchingSession != null -> Color.White.copy(alpha = 0.85f)
-                            otherBranchSession != null -> extColors.qaNoticeBackground
-                            else -> Color.White.copy(alpha = 0.72f)
-                        },
-                        border = BorderStroke(
-                            width = 0.8.dp,
-                            color = if (matchingSession != null) extColors.brandGreenBorder else extColors.cardBorder,
-                        ),
+                    DropdownMenu(
+                        expanded = branchMenuExpanded,
+                        onDismissRequest = { branchMenuExpanded = false },
+                        containerColor = Color.White,
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(3.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.QrCodeScanner,
-                                contentDescription = "Scan or Switch Table QR",
-                                tint = if (matchingSession != null) extColors.brandGreenDeep else extColors.secondaryText,
-                                modifier = Modifier.size(11.dp),
-                            )
-                            Text(
-                                text = sessionText,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                fontWeight = if (matchingSession != null) FontWeight.SemiBold else FontWeight.Medium,
-                                color = when {
-                                    matchingSession != null -> extColors.brandGreenDeep
-                                    otherBranchSession != null -> extColors.qaNoticeText
-                                    else -> extColors.secondaryText
+                        branches.forEach { branch ->
+                            val isSelected = branch.id == selectedBranch?.id
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = branch.name,
+                                        color = if (isSelected) brandColor else Color(0xFF0F172A),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    )
                                 },
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                                trailingIcon = if (isSelected) {
+                                    {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Check,
+                                            contentDescription = null,
+                                            tint = brandColor,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                } else null,
+                                onClick = {
+                                    branchMenuExpanded = false
+                                    onBranchSelected(branch.id)
+                                },
                             )
                         }
                     }
                 }
 
+                val isSeated = matchingSession != null
+                val tableLabel = when {
+                    isSeated -> matchingSession!!.tableLabel
+                    otherBranchSession != null -> "Other: ${otherBranchSession.tableLabel}"
+                    else -> "Scan Table QR"
+                }
+
                 Surface(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable(onClick = onActiveOrdersClick),
-                    shape = RoundedCornerShape(50),
-                    color = if (activeOrderCount > 0) Color.White else Color.White.copy(alpha = 0.78f),
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable(onClick = onScanTableQrClick),
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isSeated) Color(0xFFECFDF5) else Color(0xFFF8FAFC),
                     border = BorderStroke(
                         width = 1.dp,
-                        color = if (activeOrderCount > 0) extColors.brandGreen else extColors.cardBorder,
+                        color = if (isSeated) Color(0xFF6EE7B7) else Color(0xFFE2E8F0),
                     ),
                 ) {
                     Row(
@@ -836,121 +991,48 @@ private fun RestaurantCompactWorkspaceHeader(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Icon(
-                            imageVector = Icons.AutoMirrored.Rounded.ReceiptLong,
-                            contentDescription = "Active Orders",
-                            tint = if (activeOrderCount > 0) extColors.brandGreenDeep else extColors.primaryText,
+                            imageVector = Icons.Rounded.QrCodeScanner,
+                            contentDescription = "Scan Table QR",
+                            tint = if (isSeated) Color(0xFF047857) else brandColor,
                             modifier = Modifier.size(13.dp),
                         )
                         Text(
-                            text = "Active ($activeOrderCount)",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                            ),
-                            color = if (activeOrderCount > 0) extColors.brandGreenDeep else extColors.primaryText,
+                            text = tableLabel,
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSeated) Color(0xFF047857) else Color(0xFF334155),
                             maxLines = 1,
                         )
                     }
                 }
             }
 
-            // Row 3: Trust / Status / Promotional Chips (only real or explicitly marked demo data)
-            LazyRow(
-                modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                val badgeText = restaurant?.highlightBadge?.takeIf { it.isNotBlank() }
-                if (badgeText != null) {
-                    item(key = "chip_highlight") {
-                        val suffix = if (restaurant.isHighlightBadgeDemo) " • QA Demo" else ""
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = extColors.trustGoldSurface,
-                            border = BorderStroke(0.8.dp, extColors.trustGoldBorder),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.LocalFireDepartment,
-                                    contentDescription = null,
-                                    tint = Color(0xFFD97706),
-                                    modifier = Modifier.size(12.dp),
-                                )
-                                Text(
-                                    text = "$badgeText$suffix",
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                                    fontWeight = FontWeight.Bold,
-                                    color = extColors.trustGoldText,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                item(key = "chip_dine_in") {
-                    Surface(
-                        shape = RoundedCornerShape(50),
-                        color = Color.White.copy(alpha = 0.88f),
-                        border = BorderStroke(0.8.dp, Color(0xFFDCE7E0)),
+            if (isDemoPreview) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFFEF3C7),
+                    border = BorderStroke(0.8.dp, Color(0xFFFDE68A)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .let {
+                            if (!coverUrl.isNullOrBlank()) it.offset(y = (-8).dp) else it
+                        },
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Storefront,
-                                contentDescription = null,
-                                tint = extColors.brandGreenDeep,
-                                modifier = Modifier.size(12.dp),
-                            )
-                            Text(
-                                text = openStatusLabel,
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                                fontWeight = FontWeight.Medium,
-                                color = extColors.primaryText,
-                                maxLines = 1,
-                            )
-                        }
-                    }
-                }
-
-                val realRating = restaurant?.ratingLabel?.takeIf { it.isNotBlank() }
-                if (realRating != null) {
-                    item(key = "chip_rating") {
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = Color.White.copy(alpha = 0.88f),
-                            border = BorderStroke(0.8.dp, Color(0xFFDCE7E0)),
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.Star,
-                                    contentDescription = null,
-                                    tint = Color(0xFFF59E0B),
-                                    modifier = Modifier.size(12.dp),
-                                )
-                                Text(
-                                    text = realRating,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = extColors.primaryText,
-                                    maxLines = 1,
-                                )
-                            }
-                        }
+                        Text(
+                            text = "QA DEMO MODE • Fictional restaurant & menu preview (Zero charges)",
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.5.sp),
+                            color = Color(0xFF92400E),
+                            fontWeight = FontWeight.Medium,
+                        )
                     }
                 }
             }
         }
+        HorizontalDivider(color = Color(0xFFE2E8F0), thickness = 1.dp)
     }
 }

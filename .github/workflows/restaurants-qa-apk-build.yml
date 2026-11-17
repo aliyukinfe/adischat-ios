@@ -1,0 +1,64 @@
+name: Build AdisChat Restaurants QA APK
+
+on:
+  push:
+    branches:
+      - 'feature/b5j-restaurants-qa'
+      - 'restaurants/**'
+  workflow_dispatch:
+    inputs:
+      clean_build:
+        description: 'Run clean before build'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-qa-apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare private QA configuration
+        env:
+          QA_PROPERTIES: ${{ secrets.ADISGEBEYA_QA_PROPERTIES }}
+          QA_FIREBASE_JSON: ${{ secrets.ADISGEBEYA_QA_FIREBASE_JSON }}
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$QA_PROPERTIES" || { echo 'QA properties are unavailable'; exit 1; }
+          test -n "$QA_FIREBASE_JSON" || { echo 'QA Firebase configuration is unavailable'; exit 1; }
+          printf '%s' "$QA_PROPERTIES" > android/qa.local.properties
+          printf '%s' "$QA_FIREBASE_JSON" > android/app/src/qa/google-services.json
+          if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
+            echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" || true
+          fi
+          test -d "$ANDROID_HOME/platforms/android-36" || { echo 'Android SDK 36 is unavailable'; exit 1; }
+
+      - name: Build QA APK
+        working-directory: android
+        run: |
+          if [ "${{ inputs.clean_build }}" = "true" ]; then
+            ./gradlew clean :app:assembleQa --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+          else
+            ./gradlew :app:assembleQa --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+          fi
+
+      - name: Upload QA APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adischat-qa-apk
+          path: android/app/build/outputs/apk/qa/app-qa.apk
+          if-no-files-found: error
+          retention-days: 7

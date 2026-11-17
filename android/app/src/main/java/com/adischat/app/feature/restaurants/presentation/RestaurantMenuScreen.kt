@@ -735,6 +735,7 @@ private fun ContinuousCategoryMenuSplitView(
                                         onCardClick = { onMenuItemClick(entry.item) },
                                         onQuickAddClick = { onQuickAddClick(entry.item) },
                                         onQuickDecrementClick = { onQuickDecrementClick(entry.item) },
+                                        brandColorHex = state.brandColorHex,
                                     )
                                 }
                             }
@@ -908,13 +909,17 @@ private fun MenuDishCard(
     onCardClick: () -> Unit,
     onQuickAddClick: () -> Unit,
     onQuickDecrementClick: () -> Unit,
+    brandColorHex: String? = null,
 ) {
     val extColors = RestaurantsLightTheme.colors
     val availabilityAlpha = if (item.isAvailableAtBranch) 1f else 0.68f
+    val brandColor = RestaurantsLightPalette.parseHexColor(brandColorHex, extColors.brandGreen)
+    val brandTextColor = RestaurantsLightPalette.getContrastTextColor(brandColor)
+
     val borderStroke = if (inCartQuantity > 0) {
-        BorderStroke(1.3.dp, extColors.brandGreen.copy(alpha = 0.72f))
+        BorderStroke(1.3.dp, brandColor.copy(alpha = 0.75f))
     } else {
-        BorderStroke(1.dp, extColors.cardBorder)
+        BorderStroke(1.dp, Color(0xFFE2E8F0))
     }
     val placeholderTint = when (fallbackIconKey) {
         "juice", "cafe" -> extColors.brandGreen
@@ -928,9 +933,9 @@ private fun MenuDishCard(
             .alpha(availabilityAlpha)
             .clickable(onClick = onCardClick),
         shape = RoundedCornerShape(14.dp),
-        color = extColors.cardSurface,
+        color = Color.White,
         border = borderStroke,
-        shadowElevation = 1.5.dp,
+        shadowElevation = 1.dp,
     ) {
         Row(
             modifier = Modifier
@@ -950,7 +955,7 @@ private fun MenuDishCard(
                         fontWeight = FontWeight.Bold,
                         lineHeight = 18.sp,
                     ),
-                    color = extColors.primaryText,
+                    color = Color(0xFF0F172A),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -962,16 +967,20 @@ private fun MenuDishCard(
                             fontSize = 11.5.sp,
                             lineHeight = 15.sp,
                         ),
-                        color = extColors.secondaryText,
+                        color = Color(0xFF64748B),
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
 
-                if (!item.isAvailableAtBranch || item.dietaryTags.isNotEmpty() || item.hasRequiredOptions()) {
+                val hasMetaInfo = !item.isAvailableAtBranch || item.isFasting || item.isVeg ||
+                    item.prepTimeMins != null || item.dietaryTags.isNotEmpty() || item.hasRequiredOptions()
+
+                if (hasMetaInfo) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(vertical = 1.dp),
                     ) {
                         if (!item.isAvailableAtBranch) {
                             DenseCreamTagPill(
@@ -980,7 +989,28 @@ private fun MenuDishCard(
                                 contentColor = extColors.error,
                             )
                         } else {
-                            item.dietaryTags.take(2).forEach { tag ->
+                            if (item.isFasting) {
+                                DenseCreamTagPill(
+                                    label = "Fasting",
+                                    containerColor = Color(0xFFE8F5E9),
+                                    contentColor = Color(0xFF1B5E20),
+                                )
+                            }
+                            if (item.isVeg) {
+                                DenseCreamTagPill(
+                                    label = "Veg",
+                                    containerColor = Color(0xFFECFDF5),
+                                    contentColor = Color(0xFF047857),
+                                )
+                            }
+                            if (item.prepTimeMins != null) {
+                                DenseCreamTagPill(
+                                    label = "${item.prepTimeMins} min",
+                                    containerColor = Color(0xFFF1F5F9),
+                                    contentColor = Color(0xFF475569),
+                                )
+                            }
+                            item.dietaryTags.take(1).forEach { tag ->
                                 DenseCreamTagPill(
                                     label = tag,
                                     containerColor = extColors.tagCreamSurface,
@@ -1010,7 +1040,7 @@ private fun MenuDishCard(
                             fontSize = 15.sp,
                             fontWeight = FontWeight.ExtraBold,
                         ),
-                        color = extColors.primaryText,
+                        color = Color(0xFF0F172A),
                     )
                     if (item.priceOverrideMinor != null && item.priceOverrideMinor != item.basePriceMinor) {
                         Text(
@@ -1114,6 +1144,7 @@ private fun MenuDishCard(
                                 quantity = actionState,
                                 onDecrementClick = onQuickDecrementClick,
                                 onIncrementClick = onQuickAddClick,
+                                brandColor = brandColor,
                             )
                         }
 
@@ -1125,35 +1156,25 @@ private fun MenuDishCard(
                                     .clip(RoundedCornerShape(50))
                                     .clickable(onClick = onQuickAddClick),
                                 shape = RoundedCornerShape(50),
-                                color = Color.Transparent,
+                                color = brandColor,
                             ) {
                                 Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .background(
-                                            Brush.horizontalGradient(
-                                                colors = listOf(
-                                                    extColors.addButtonStart,
-                                                    extColors.addButtonMid,
-                                                    extColors.addButtonEnd,
-                                                ),
-                                            ),
-                                        ),
+                                    modifier = Modifier.fillMaxSize(),
                                     horizontalArrangement = Arrangement.Center,
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
                                     Icon(
                                         imageVector = Icons.Rounded.Add,
                                         contentDescription = "Add ${item.name}",
-                                        tint = Color.White,
+                                        tint = brandTextColor,
                                         modifier = Modifier.size(14.dp),
                                     )
-                                    Spacer(modifier = Modifier.width(2.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "Add",
                                         style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
                                         fontWeight = FontWeight.Bold,
-                                        color = Color.White,
+                                        color = brandTextColor,
                                     )
                                 }
                             }
@@ -1195,6 +1216,7 @@ private fun DishQuantityStepperPill(
     quantity: Int,
     onDecrementClick: () -> Unit,
     onIncrementClick: () -> Unit,
+    brandColor: Color = RestaurantsLightTheme.colors.brandGreen,
 ) {
     val extColors = RestaurantsLightTheme.colors
     Surface(
@@ -1202,8 +1224,8 @@ private fun DishQuantityStepperPill(
             .fillMaxWidth()
             .height(28.dp),
         shape = RoundedCornerShape(50),
-        color = extColors.mainBackground,
-        border = BorderStroke(1.dp, extColors.cardBorder),
+        color = Color.White,
+        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
     ) {
         Row(
             modifier = Modifier
@@ -1218,13 +1240,13 @@ private fun DishQuantityStepperPill(
                     .clip(CircleShape)
                     .clickable(onClick = onDecrementClick),
                 shape = CircleShape,
-                color = extColors.brandGreen,
+                color = brandColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Rounded.Remove,
                         contentDescription = "Decrease quantity",
-                        tint = Color.White,
+                        tint = RestaurantsLightPalette.getContrastTextColor(brandColor),
                         modifier = Modifier.size(14.dp),
                     )
                 }
@@ -1234,7 +1256,7 @@ private fun DishQuantityStepperPill(
                 text = quantity.toString(),
                 style = MaterialTheme.typography.labelLarge.copy(fontSize = 13.sp),
                 fontWeight = FontWeight.Bold,
-                color = extColors.primaryText,
+                color = Color(0xFF0F172A),
             )
 
             Surface(
@@ -1243,13 +1265,13 @@ private fun DishQuantityStepperPill(
                     .clip(CircleShape)
                     .clickable(onClick = onIncrementClick),
                 shape = CircleShape,
-                color = extColors.stepperPlusOrange,
+                color = brandColor,
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.Rounded.Add,
                         contentDescription = "Increase quantity",
-                        tint = Color.White,
+                        tint = RestaurantsLightPalette.getContrastTextColor(brandColor),
                         modifier = Modifier.size(14.dp),
                     )
                 }

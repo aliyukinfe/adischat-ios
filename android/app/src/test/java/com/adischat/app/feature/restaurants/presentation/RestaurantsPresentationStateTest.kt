@@ -70,13 +70,13 @@ class RestaurantsPresentationStateTest {
     @Test
     fun `discover search and cuisine filters narrow preview restaurants accurately`() {
         val base = RestaurantsPreviewFixtures.discoverState(isDineInEnabled = true)
-        assertEquals(4, base.filteredRestaurants.size)
+        assertEquals(8, base.filteredRestaurants.size)
 
-        val ethiopianOnly = base.copy(selectedCuisineFilter = "Ethiopian").filteredRestaurants
-        assertEquals(listOf("Habesha Hearth"), ethiopianOnly.map { it.brandName })
+        val traditionalOnly = base.copy(selectedCuisineFilter = "Traditional").filteredRestaurants
+        assertEquals(listOf("Habesha Heritage Kitchen"), traditionalOnly.map { it.brandName })
 
         val byArea = base.copy(searchQuery = "kazanchis").filteredRestaurants
-        assertEquals(listOf("Kaffa Roastery & Bistro"), byArea.map { it.brandName })
+        assertEquals(listOf("Bun & Patty Craft Burgers"), byArea.map { it.brandName })
 
         val noneFound = base.copy(searchQuery = "nonexistent-dish-xyz").filteredRestaurants
         assertTrue(noneFound.isEmpty())

@@ -25,11 +25,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.Star
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -54,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil.compose.SubcomposeAsyncImage
 
 internal object RestaurantsUiDefaults {
@@ -337,7 +340,11 @@ internal fun RestaurantLogoAvatar(
     logoUrl: String?,
     brandName: String,
     size: Dp = 44.dp,
+    brandColor: Color? = null,
     modifier: Modifier = Modifier,
+    borderWidth: Dp = 1.dp,
+    borderColor: Color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+    cornerRadius: Dp = 12.dp,
 ) {
     val initials = brandName.trim()
         .split(" ")
@@ -346,11 +353,18 @@ internal fun RestaurantLogoAvatar(
         .joinToString("") { it.first().uppercaseChar().toString() }
         .ifEmpty { "R" }
 
+    val bgColor = brandColor ?: MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+    val textColor = if (brandColor != null) {
+        RestaurantsLightPalette.getContrastTextColor(brandColor)
+    } else {
+        MaterialTheme.colorScheme.primary
+    }
+
     Surface(
         modifier = modifier.size(size),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(cornerRadius),
         color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.7f)),
+        border = BorderStroke(borderWidth, borderColor),
         tonalElevation = 2.dp,
     ) {
         if (!logoUrl.isNullOrBlank()) {
@@ -364,12 +378,12 @@ internal fun RestaurantLogoAvatar(
                     Box(modifier = Modifier.fillMaxSize().background(shimmerBrush))
                 },
                 error = {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize().background(bgColor)) {
                         Text(
                             text = initials,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = textColor,
                         )
                     }
                 },
@@ -379,13 +393,13 @@ internal fun RestaurantLogoAvatar(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
+                    .background(bgColor),
             ) {
                 Text(
                     text = initials,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = textColor,
                 )
             }
         }
@@ -534,4 +548,121 @@ internal fun RestaurantsDisabledNoticeCard(
         message = "Dine-in restaurant discovery is disabled in this release configuration.",
         modifier = modifier,
     )
+}
+
+@Composable
+internal fun RestaurantVerifiedBadge(
+    modifier: Modifier = Modifier,
+    label: String = "Verified",
+    showLabel: Boolean = true,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(RestaurantsUiDefaults.PillRadius),
+        color = Color(0xFFE0F2FE),
+        border = BorderStroke(0.8.dp, Color(0xFFBAE6FD)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.CheckCircle,
+                contentDescription = "Verified restaurant",
+                tint = Color(0xFF0284C7),
+                modifier = Modifier.size(13.dp),
+            )
+            if (showLabel) {
+                Text(
+                    text = label,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.Bold,
+                    ),
+                    color = Color(0xFF0369A1),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun RestaurantRatingPill(
+    rating: Double,
+    reviewCount: Int? = null,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(RestaurantsUiDefaults.PillRadius),
+        color = Color(0xFFFEF3C7),
+        border = BorderStroke(0.8.dp, Color(0xFFFDE68A)),
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Star,
+                contentDescription = null,
+                tint = Color(0xFFD97706),
+                modifier = Modifier.size(12.dp),
+            )
+            val text = if (reviewCount != null && reviewCount > 0) {
+                "${String.format(java.util.Locale.US, "%.1f", rating)} ($reviewCount)"
+            } else {
+                String.format(java.util.Locale.US, "%.1f", rating)
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Bold,
+                ),
+                color = Color(0xFF92400E),
+            )
+        }
+    }
+}
+
+@Composable
+internal fun DemoPreviewAlertBanner(
+    modifier: Modifier = Modifier,
+    title: String = "QA DEMO MODE",
+    description: String = "Previewing 8 sample restaurants & menus with simulated table ordering. Zero backend mutations or charges.",
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFFFEF3C7),
+        border = BorderStroke(1.dp, Color(0xFFFCD34D)),
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Info,
+                contentDescription = null,
+                tint = Color(0xFFD97706),
+                modifier = Modifier.size(20.dp),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF92400E),
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                    color = Color(0xFFB45309),
+                )
+            }
+        }
+    }
 }

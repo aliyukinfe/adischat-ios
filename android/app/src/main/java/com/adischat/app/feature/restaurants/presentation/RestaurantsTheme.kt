@@ -21,20 +21,28 @@ import com.adischat.app.ui.theme.AppTypography
  * Deliberately separated from global [com.adischat.app.ui.theme.AdisChatTheme] and AdisGebeya.
  */
 object RestaurantsLightPalette {
-    val MainBackground = Color(0xFFFFFFFF)
-    val FeedBackground = Color(0xFFF7F8FA)
+    val MainBackground = Color(0xFFF5F6F8)
+    val FeedBackground = Color(0xFFF5F6F8)
     val SidebarBackground = Color(0xFFF8F6F2)
     val CardSurface = Color(0xFFFFFFFF)
-    val MutedSurface = Color(0xFFF3F4F6)
+    val MutedSurface = Color(0xFFF1F3F5)
 
-    val PrimaryText = Color(0xFF202124)
-    val SecondaryText = Color(0xFF5F6368)
-    val TertiaryText = Color(0xFF80868B)
+    val PrimaryText = Color(0xFF1E293B)
+    val SecondaryText = Color(0xFF64748B)
+    val TertiaryText = Color(0xFF94A3B8)
 
     val BrandGreen = Color(0xFF16A34A)
     val BrandGreenDeep = Color(0xFF15803D)
     val BrandGreenSoft = Color(0xFFECFDF3)
     val BrandGreenBorder = Color(0xFFBBF7D0)
+
+    val VerifiedSky = Color(0xFF0284C7)
+    val VerifiedSkySoft = Color(0xFFE0F2FE)
+    val VerifiedSkyBorder = Color(0xFFBAE6FD)
+
+    val RatingAmber = Color(0xFFD97706)
+    val RatingAmberSoft = Color(0xFFFEF3C7)
+    val RatingAmberBorder = Color(0xFFFDE68A)
 
     // Meituan / Ele.me-inspired super-app accents scoped to Restaurants customer UI
     val HeaderGradientTop = Color(0xFFCFF6DF)
@@ -72,8 +80,8 @@ object RestaurantsLightPalette {
     val CheckoutGoldEnd = Color(0xFFFFAC1C)
     val CheckoutGoldText = Color(0xFF1E1A12)
 
-    val CardBorder = Color(0xFFEAECEF)
-    val Divider = Color(0xFFEAECEF)
+    val CardBorder = Color(0xFFE2E8F0)
+    val Divider = Color(0xFFE2E8F0)
 
     val Error = Color(0xFFDC2626)
     val ErrorSoft = Color(0xFFFEF2F2)
@@ -81,6 +89,26 @@ object RestaurantsLightPalette {
     val QaNoticeBackground = Color(0xFFFFFBEB)
     val QaNoticeText = Color(0xFF92400E)
     val QaNoticeBorder = Color(0xFFFDE68A)
+
+    fun parseHexColor(hex: String?, fallback: Color = BrandGreen): Color {
+        if (hex.isNullOrBlank()) return fallback
+        val clean = hex.trim().removePrefix("#")
+        return runCatching {
+            when (clean.length) {
+                6 -> Color(clean.toLong(16) or 0x00000000FF000000L)
+                8 -> Color(clean.toLong(16))
+                else -> fallback
+            }
+        }.getOrDefault(fallback)
+    }
+
+    fun getContrastTextColor(background: Color): Color {
+        val r = background.red
+        val g = background.green
+        val b = background.blue
+        val luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return if (luminance > 0.55) Color(0xFF0F172A) else Color.White
+    }
 }
 
 @Immutable

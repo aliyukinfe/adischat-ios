@@ -53,6 +53,12 @@ data class RestaurantCardUiModel(
     val highlightBadge: String? = null,
     val isHighlightBadgeDemo: Boolean = false,
     val ratingLabel: String? = null,
+    val isVerified: Boolean = true,
+    val brandColorHex: String? = null,
+    val rating: Double? = null,
+    val reviewCount: Int? = null,
+    val featuredDishes: List<String> = emptyList(),
+    val priceRangeLabel: String? = null,
 )
 
 enum class PromotionTone {
@@ -136,6 +142,9 @@ data class MenuItemUiModel(
     val dietaryTags: List<String> = emptyList(),
     val promoRibbonText: String? = null,
     val spotlightTags: List<String> = emptyList(),
+    val prepTimeMins: Int? = null,
+    val isFasting: Boolean = false,
+    val isVeg: Boolean = false,
 ) {
     val effectivePriceMinor: Long
         get() = priceOverrideMinor ?: basePriceMinor
@@ -161,6 +170,7 @@ data class RestaurantsDiscoverUiState(
     val availableCuisineFilters: List<String> = listOf(ALL_CUISINES),
     val allRestaurants: List<RestaurantCardUiModel> = emptyList(),
     val isDineInEnabled: Boolean = FeatureFlags.RESTAURANTS_DINE_IN_ENABLED,
+    val isDemoPreview: Boolean = false,
 ) {
     val filteredRestaurants: List<RestaurantCardUiModel>
         get() = RestaurantsUiReducers.filterRestaurants(
@@ -187,8 +197,14 @@ data class RestaurantProfileUiState(
 
 data class RestaurantMenuUiState(
     val loadState: RestaurantsLoadState = RestaurantsLoadState.Content,
+    val restaurantId: String = "",
+    val restaurantSlug: String = "",
     val restaurantName: String = "",
     val restaurantBrandTagline: String = "",
+    val coverUrl: String? = null,
+    val logoUrl: String? = null,
+    val brandColorHex: String? = null,
+    val isVerified: Boolean = false,
     val branches: List<RestaurantBranchUiModel> = emptyList(),
     val selectedBranchId: String? = null,
     val categories: List<MenuCategoryUiModel> = emptyList(),
@@ -197,6 +213,10 @@ data class RestaurantMenuUiState(
     val promotions: List<RestaurantPromotionUiModel> = emptyList(),
     val isBrowseOnly: Boolean = true,
     val isDineInEnabled: Boolean = FeatureFlags.RESTAURANTS_DINE_IN_ENABLED,
+    val isDemoPreview: Boolean = false,
+    val description: String = "",
+    val rating: Double? = null,
+    val reviewCount: Int? = null,
 ) {
     val selectedBranch: RestaurantBranchUiModel?
         get() = RestaurantsUiReducers.resolveSelectedBranch(branches, selectedBranchId)
