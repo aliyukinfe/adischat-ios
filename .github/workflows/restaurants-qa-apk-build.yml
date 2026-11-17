@@ -49,6 +49,7 @@ jobs:
       - name: Build QA APK
         working-directory: android
         run: |
+          chmod +x ./gradlew
           if [ "${{ inputs.clean_build }}" = "true" ]; then
             ./gradlew clean :app:assembleQa --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
           else
