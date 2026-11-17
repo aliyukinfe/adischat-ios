@@ -165,6 +165,16 @@ fun MainScreen(
         activeSidebarService = null
         activeBottomTab = null
         selected = 0
+        if (FeatureFlags.SUPER_APP_HOME_ENABLED) {
+            shopRoute = null
+            sellerAccountOpen = false
+            sellerNotificationsRequested = false
+            sellerNotificationStoreId = null
+            restaurantsCustomerOpen = false
+            pendingRestaurantQrToken = null
+            restaurantCenterNativeOpen = false
+            restaurantsQaRoute = null
+        }
     }
 
     val onSelectSidebarService: (SuperAppService) -> Unit = { targetService ->
@@ -182,7 +192,7 @@ fun MainScreen(
                     }
                 }
                 SuperAppService.RESTAURANTS -> {
-                    if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                    if (!FeatureFlags.SUPER_APP_HOME_ENABLED && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
                         restaurantsCustomerOpen = true
                     }
                 }
@@ -342,11 +352,11 @@ fun MainScreen(
         bottomBar = {
             val qaOpen = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
             val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME
-            val restaurantsOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
+            val restaurantsOpen = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
             val centerOpen = restaurantCenterNativeOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED
             val legacyChatSelected = !FeatureFlags.SUPER_APP_HOME_ENABLED && selected == 3
-            val legacyShopOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && shopRoute != null
-            val legacySellerOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && sellerAccountOpen
+            val legacyShopOpen = shopRoute != null
+            val legacySellerOpen = sellerAccountOpen
 
             if (!keyboardOpen && !isSuperAppActive && !legacyChatSelected && !legacyShopOpen && !legacySellerOpen && !qaOpen && !restaurantsOpen && !centerOpen) {
                 Box(

@@ -1,7 +1,6 @@
 package com.adischat.app.ui.home
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -18,6 +17,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,12 +36,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.adischat.app.R
 
 /**
  * Red notification badge for unread chat counts on sidebar icons.
@@ -71,31 +69,6 @@ private fun SidebarUnreadBadge(
 }
 
 /**
- * Text chip badge (e.g. "HOT", "NEW", "DEALS") for service items.
- */
-@Composable
-private fun SidebarTextBadge(
-    label: String,
-    accentColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(accentColor.copy(alpha = 0.2f))
-            .padding(horizontal = 4.dp, vertical = 1.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = label,
-            color = accentColor,
-            fontSize = 7.5.sp,
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-/**
  * Expanded compact sidebar for the Home dashboard:
  * Displays the 5 approved services:
  * 1. Home (active on dashboard)
@@ -119,7 +92,6 @@ fun SuperAppExpandedSidebar(
     val bgColor = if (isLight) Color(0xFFF1F5F9) else Color(0xFF10141D)
     val borderColor = if (isLight) Color(0xFFE2E8F0) else Color(0xFF1E2532)
     val textColor = if (isLight) Color(0xFF0F172A) else Color(0xFFF8FAFC)
-    val mutedColor = if (isLight) Color(0xFF64748B) else Color(0xFF94A3B8)
 
     // On the Home dashboard, default to HOME being selected
     val activeService = selectedService ?: SuperAppService.HOME
@@ -138,118 +110,58 @@ fun SuperAppExpandedSidebar(
             modifier = Modifier
                 .fillMaxHeight()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 5.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+                .padding(horizontal = 6.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Header with AdisChat logo (clickable to return to Home dashboard)
-            Row(
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
+                    .size(48.dp)
                     .clip(RoundedCornerShape(8.dp))
-                    .clickable(onClick = onGoHome)
-                    .padding(horizontal = 4.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    .clickable(onClick = onGoHome),
+                contentAlignment = Alignment.Center,
             ) {
-                Image(
-                    painter = painterResource(R.drawable.logo),
-                    contentDescription = "AdisChat Home",
-                    modifier = Modifier.size(16.dp),
-                )
-                Text(
-                    text = "SERVICES",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 8.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.8.sp,
-                    ),
-                    color = mutedColor,
-                    modifier = Modifier.weight(1f),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF34D399)),
+                Icon(
+                    imageVector = Icons.Filled.Home,
+                    contentDescription = "Home",
+                    tint = SuperAppService.HOME.accentColor,
+                    modifier = Modifier.size(20.dp),
                 )
             }
 
-            Spacer(Modifier.height(2.dp))
-
-            SuperAppService.dashboardServices.forEach { service ->
+            SuperAppService.dashboardServices.filter { it != SuperAppService.HOME }.forEach { service ->
                 val isSelected = activeService == service
                 val itemBg = when {
                     isSelected && isLight -> Color(0xFFE2E8F0)
                     isSelected && !isLight -> Color(0xFF1E2532)
                     else -> Color.Transparent
                 }
-                val iconTint = if (isSelected) service.accentColor else mutedColor
-
-                Row(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .defaultMinSize(minHeight = 48.dp)
+                        .clip(RoundedCornerShape(8.dp))
                         .background(itemBg)
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                        ) {
-                            if (service == SuperAppService.HOME) {
-                                onGoHome()
-                            } else {
-                                onSelectService(service)
-                            }
-                        }
-                        .padding(horizontal = 6.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                        ) { onSelectService(service) }
+                        .padding(horizontal = 4.dp),
+                    contentAlignment = Alignment.CenterStart,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isSelected) service.accentColor.copy(alpha = 0.22f)
-                                else if (isLight) Color.White else Color(0xFF161B26)
-                            ),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = if (isSelected) service.selectedIcon else service.unselectedIcon,
-                            contentDescription = service.title,
-                            tint = iconTint,
-                            modifier = Modifier.size(18.dp),
+                    Text(
+                        text = service.title,
+                        color = if (isSelected) service.accentColor else textColor,
+                        fontSize = 11.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(end = if (service == SuperAppService.CHAT && totalUnreadChat > 0) 20.dp else 0.dp),
+                    )
+                    if (service == SuperAppService.CHAT && totalUnreadChat > 0) {
+                        SidebarUnreadBadge(
+                            count = totalUnreadChat,
+                            modifier = Modifier.align(Alignment.CenterEnd),
                         )
-                        if (service == SuperAppService.CHAT && totalUnreadChat > 0) {
-                            SidebarUnreadBadge(
-                                count = totalUnreadChat,
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .offset(x = 3.dp, y = (-3).dp),
-                            )
-                        }
-                    }
-
-                    Spacer(Modifier.width(6.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.Center,
-                    ) {
-                        Text(
-                            text = service.title,
-                            color = if (isSelected) service.accentColor else textColor,
-                            fontSize = 10.5.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (!service.badgeLabel.isNullOrBlank()) {
-                            Spacer(Modifier.height(1.dp))
-                            SidebarTextBadge(
-                                label = service.badgeLabel,
-                                accentColor = service.accentColor,
-                            )
-                        }
                     }
                 }
             }
@@ -292,18 +204,18 @@ fun SuperAppCompactSidebar(
         Column(
             modifier = Modifier
                 .fillMaxHeight()
-                .padding(vertical = 10.dp, horizontal = 4.dp),
+                .statusBarsPadding()
+                .padding(vertical = 4.dp, horizontal = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.SpaceBetween,
+            verticalArrangement = Arrangement.Top,
         ) {
-            // Top Home Icon Button — returns to unified dashboard
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
                 Box(
                     modifier = Modifier
-                        .size(38.dp)
+                        .size(48.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (isLight) Color(0xFFE2E8F0) else Color(0xFF191F2B))
                         .clickable(onClick = onExpandHome),
@@ -324,10 +236,10 @@ fun SuperAppCompactSidebar(
                 )
             }
 
-            // Services vertical stack: Chat, AdisGebeya, Restaurants, Promotions
+            Spacer(Modifier.height(8.dp))
+
             Column(
                 modifier = Modifier
-                    .weight(1f, fill = false)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -343,7 +255,7 @@ fun SuperAppCompactSidebar(
 
                     Box(
                         modifier = Modifier
-                            .size(38.dp)
+                            .size(48.dp)
                             .clip(RoundedCornerShape(10.dp))
                             .background(bgBoxColor)
                             .clickable { onSelectService(service) },
@@ -367,13 +279,6 @@ fun SuperAppCompactSidebar(
                 }
             }
 
-            // Bottom collapse status dot
-            Box(
-                modifier = Modifier
-                    .size(5.dp)
-                    .clip(CircleShape)
-                    .background(mutedColor.copy(alpha = 0.4f)),
-            )
         }
     }
 }

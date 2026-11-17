@@ -202,13 +202,6 @@ fun HomeScreen(
             onOpenSearch = onGoDiscover,
             onSelectService = { service ->
                 onSelectSidebarService(service)
-                when (service) {
-                    SuperAppService.HOME -> Unit
-                    SuperAppService.CHAT -> onGoChat()
-                    SuperAppService.ADISGEBEYA -> onOpenShop()
-                    SuperAppService.RESTAURANTS -> onOpenRestaurants()
-                    SuperAppService.PROMOTIONS -> onSelectSidebarService(SuperAppService.PROMOTIONS)
-                }
             },
         )
         return
