@@ -5,6 +5,7 @@ on:
     branches:
       - 'feature/b5j-restaurants-qa'
       - 'restaurants/**'
+      - 'feature/h1-**'
   workflow_dispatch:
     inputs:
       clean_build:

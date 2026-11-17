@@ -159,6 +159,7 @@ fun HomeScreen(
     onOpenRestaurants: () -> Unit = {},
     onOpenRestaurantsQa: () -> Unit = {},
     onOpenRestaurantCenter: () -> Unit = {},
+    onSelectSidebarService: (SuperAppService) -> Unit = {},
 ) {
     val vm: UserViewModel = viewModel()
     val scope = rememberCoroutineScope()
@@ -191,6 +192,27 @@ fun HomeScreen(
         in 5..11 -> "Good morning"
         in 12..17 -> "Good afternoon"
         else -> "Good evening"
+    }
+
+    if (com.adischat.app.FeatureFlags.SUPER_APP_HOME_ENABLED) {
+        SuperAppHomeScreen(
+            userName = displayName,
+            selectedService = null,
+            totalUnreadChat = totalUnread,
+            onOpenSearch = onGoDiscover,
+            onSelectService = { service ->
+                onSelectSidebarService(service)
+                when (service) {
+                    SuperAppService.CHAT -> onGoChat()
+                    SuperAppService.ADISGEBEYA -> onOpenShop()
+                    SuperAppService.RESTAURANTS -> onOpenRestaurants()
+                    SuperAppService.CHANNELS -> onSelectSidebarService(SuperAppService.CHANNELS)
+                    SuperAppService.SELLER_CENTER -> onOpenSellerAccount()
+                    SuperAppService.PROMOTIONS -> onSelectSidebarService(SuperAppService.PROMOTIONS)
+                }
+            },
+        )
+        return
     }
 
     val services = remember(isRestaurantCenterEligible) {

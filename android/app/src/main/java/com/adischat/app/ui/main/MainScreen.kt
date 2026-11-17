@@ -2,6 +2,8 @@ package com.adischat.app.ui.main
 
 import android.app.Activity
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,6 +14,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,11 +23,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.adischat.app.FeatureFlags
+import com.adischat.app.R
 import com.adischat.app.data.model.AdisLinkTarget
 import com.adischat.app.data.preferences.AppPreferences
 import com.adischat.app.feature.restaurants.presentation.RestaurantCenterPlaceholderScreen
@@ -40,6 +46,11 @@ import com.adischat.app.feature.shop.presentation.ShopRootScreen
 import com.adischat.app.feature.shop.presentation.ShopRoute
 import com.adischat.app.feature.shop.presentation.ShopNotificationRouteEffect
 import com.adischat.app.ui.home.HomeScreen
+import com.adischat.app.ui.home.SuperAppService
+import com.adischat.app.ui.home.SuperAppCompactSidebar
+import com.adischat.app.ui.home.SuperAppPromotionsScreen
+import com.adischat.app.ui.home.SuperAppSavedScreen
+import com.adischat.app.ui.home.SuperAppActivityScreen
 import com.adischat.app.ui.browser.InAppBrowserScreen
 import com.adischat.app.feature.restaurants.data.RestaurantsRepository
 import com.adischat.app.feature.restaurants.data.RestaurantsConfig
@@ -76,12 +87,22 @@ private fun NavUnreadBadge(count: Int, modifier: Modifier = Modifier) {
     }
 }
 
+// Approved Phase H1.1 unified bottom navigation: Saved | Explore | Scan | Activity | Profile
+private val superAppNavItems = listOf(
+    NavItem("Saved",    Icons.Filled.Bookmark,      Icons.Outlined.BookmarkBorder),
+    NavItem("Explore",  Icons.Filled.Explore,       Icons.Outlined.Explore),
+    NavItem("Scan",     Icons.Filled.QrCodeScanner, Icons.Outlined.QrCodeScanner),
+    NavItem("Activity", Icons.Filled.Notifications, Icons.Outlined.Notifications),
+    NavItem("Profile",  Icons.Filled.Person,        Icons.Outlined.Person),
+)
+
+// Legacy bottom navigation fallback
 private val standardNavItems = listOf(
-    NavItem("Home",     Icons.Filled.Home,      Icons.Outlined.Home),
+    NavItem("Home",     Icons.Filled.Home,          Icons.Outlined.Home),
     NavItem("Discover", Icons.Filled.Explore,       Icons.Outlined.Explore),
     NavItem("Scan",     Icons.Filled.QrCodeScanner, Icons.Outlined.QrCodeScanner),
-    NavItem("Chat",     Icons.Filled.Chat,      Icons.Outlined.ChatBubbleOutline),
-    NavItem("Profile",  Icons.Filled.Person,      Icons.Outlined.Person),
+    NavItem("Chat",     Icons.Filled.Chat,          Icons.Outlined.ChatBubbleOutline),
+    NavItem("Profile",  Icons.Filled.Person,        Icons.Outlined.Person),
 )
 
 private val adminNavItem = NavItem(
@@ -115,27 +136,61 @@ fun MainScreen(
     AdisLocalizer.language = "en"
     val isAdmin     = currentUser?.role == "admin"
 
-    val navItems = remember(isAdmin) {
-        if (isAdmin) standardNavItems + adminNavItem else standardNavItems
+    val navItems = remember(isAdmin, FeatureFlags.SUPER_APP_HOME_ENABLED) {
+        val base = if (FeatureFlags.SUPER_APP_HOME_ENABLED) superAppNavItems else standardNavItems
+        if (isAdmin) base + adminNavItem else base
     }
 
-    // Global unread aggregator - drives the Chat-tab notification badge app-wide.
+    // Global unread aggregator - drives notification badges app-wide.
     val context = LocalContext.current
     LaunchedEffect(Unit) { com.adischat.app.notifications.UnreadCenter.start(context) }
     val totalUnread by com.adischat.app.notifications.UnreadCenter.total.collectAsStateWithLifecycle()
 
-    var selected by remember { mutableIntStateOf(0) }
-    var shopRoute by remember { mutableStateOf<ShopRoute?>(null) }
-    var sellerAccountOpen by remember { mutableStateOf(false) }
-    var sellerNotificationsRequested by remember { mutableStateOf(false) }
-    var sellerNotificationStoreId by remember { mutableStateOf<String?>(null) }
-    var restaurantsCustomerOpen by remember { mutableStateOf(false) }
-    var pendingRestaurantQrToken by remember { mutableStateOf<String?>(null) }
-    var restaurantCenterPlaceholderOpen by remember { mutableStateOf(false) }
-    var restaurantCenterWebViewOpen by remember { mutableStateOf(false) }
-    var restaurantCenterWebUrl by remember { mutableStateOf("") }
+    var selected by rememberSaveable { mutableIntStateOf(0) }
+    var activeBottomTab by rememberSaveable { mutableStateOf<Int?>(null) } // null = Home in Super App mode
+    var activeSidebarService by rememberSaveable { mutableStateOf<SuperAppService?>(null) }
+    val saveableStateHolder = rememberSaveableStateHolder()
+
+    var shopRoute by rememberSaveable { mutableStateOf<ShopRoute?>(null) }
+    var sellerAccountOpen by rememberSaveable { mutableStateOf(false) }
+    var sellerNotificationsRequested by rememberSaveable { mutableStateOf(false) }
+    var sellerNotificationStoreId by rememberSaveable { mutableStateOf<String?>(null) }
+    var restaurantsCustomerOpen by rememberSaveable { mutableStateOf(false) }
+    var pendingRestaurantQrToken by rememberSaveable { mutableStateOf<String?>(null) }
+    var restaurantCenterPlaceholderOpen by rememberSaveable { mutableStateOf(false) }
+    var restaurantCenterWebViewOpen by rememberSaveable { mutableStateOf(false) }
+    var restaurantCenterWebUrl by rememberSaveable { mutableStateOf("") }
     var restaurantCenterHandoffData by remember { mutableStateOf<ByteArray?>(null) }
-    var restaurantsQaRoute by remember { mutableStateOf<RestaurantsQaRoute?>(null) }
+    var restaurantsQaRoute by rememberSaveable { mutableStateOf<RestaurantsQaRoute?>(null) }
+
+    val onGoHome: () -> Unit = {
+        activeSidebarService = null
+        activeBottomTab = null
+        selected = 0
+    }
+
+    val onSelectSidebarService: (SuperAppService) -> Unit = { targetService ->
+        activeSidebarService = targetService
+        activeBottomTab = null
+        when (targetService) {
+            SuperAppService.CHAT -> Unit
+            SuperAppService.ADISGEBEYA -> {
+                if (shopRoute == null) {
+                    shopRoute = ShopRoute.Home
+                }
+            }
+            SuperAppService.RESTAURANTS -> {
+                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                    restaurantsCustomerOpen = true
+                }
+            }
+            SuperAppService.CHANNELS -> Unit
+            SuperAppService.SELLER_CENTER -> {
+                sellerAccountOpen = true
+            }
+            SuperAppService.PROMOTIONS -> Unit
+        }
+    }
 
     var lastUid by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(currentUser?.uid) {
@@ -211,34 +266,46 @@ fun MainScreen(
     var lastBackTime      by remember { mutableLongStateOf(0L) }
 
     BackHandler {
-        if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-            restaurantCenterWebViewOpen = false
-            restaurantCenterHandoffData = null
-        } else if (restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
-        restaurantsQaRoute = null
-        } else if (restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
-        restaurantsCustomerOpen = false
-        } else if (restaurantCenterPlaceholderOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-        restaurantCenterPlaceholderOpen = false
-        } else if (sellerAccountOpen) {
-        sellerAccountOpen = false
-        } else if (shopRoute != null) {
-        shopRoute = null
-        } else if (selected != 0) {
-        selected = 0
-        } else {
-        val now = System.currentTimeMillis()
-        if (now - lastBackTime < 2_000L) {
-        activity?.finish()
-        } else {
-        lastBackTime = now
-        scope.launch {
-        snackbarHostState.showSnackbar(
-        message  = "Press back again to exit",
-        duration = SnackbarDuration.Short,
-        )
-        }
-        }
+        when {
+            restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
+                restaurantCenterWebViewOpen = false
+                restaurantCenterHandoffData = null
+            }
+            restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED -> {
+                restaurantsQaRoute = null
+            }
+            restaurantCenterPlaceholderOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
+                restaurantCenterPlaceholderOpen = false
+            }
+            activeSidebarService == SuperAppService.PROMOTIONS -> {
+                onGoHome()
+            }
+            activeSidebarService == SuperAppService.CHAT || activeSidebarService == SuperAppService.CHANNELS -> {
+                onGoHome()
+            }
+            activeSidebarService != null -> {
+                onGoHome()
+            }
+            FeatureFlags.SUPER_APP_HOME_ENABLED && activeBottomTab != null -> {
+                onGoHome()
+            }
+            !FeatureFlags.SUPER_APP_HOME_ENABLED && selected != 0 -> {
+                selected = 0
+            }
+            else -> {
+                val now = System.currentTimeMillis()
+                if (now - lastBackTime < 2_000L) {
+                    activity?.finish()
+                } else {
+                    lastBackTime = now
+                    scope.launch {
+                        snackbarHostState.showSnackbar(
+                            message  = "Press back again to exit",
+                            duration = SnackbarDuration.Short,
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -246,230 +313,595 @@ fun MainScreen(
         snackbarHost   = { SnackbarHost(snackbarHostState) },
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-        val qaOpen = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
-        val restaurantsOpen = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
-        val centerOpen = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
-        if (!keyboardOpen && !isChatSelected && shopRoute == null && !sellerAccountOpen && !qaOpen && !restaurantsOpen && !centerOpen) {
-        Box(
-        modifier = Modifier
-        .fillMaxWidth()
-        .navigationBarsPadding()
-        .background(if (selected == 0) Color(0xFF0B0D12) else Color.Transparent)
-        .padding(horizontal = 16.dp, vertical = 12.dp),
-        contentAlignment = Alignment.Center,
-        ) {
-        Surface(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(28.dp),
-        color = Color(0xFF12151C).copy(alpha = 0.96f),
-        tonalElevation = 0.dp,
-        shadowElevation = 24.dp,
-        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1F2530)),
-        ) {
-        Row(
-        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
-        verticalAlignment = Alignment.CenterVertically,
-        ) {
-        navItems.forEachIndexed { index, item ->
-        val active = selected == index
-        Column(
-        modifier = Modifier
-        .weight(1f)
-        .clip(RoundedCornerShape(20.dp))
-        .clickable { selected = index }
-        .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-        Box(
-        modifier = Modifier.size(48.dp),
-        contentAlignment = Alignment.Center,
-        ) {
-        Box(
-        modifier = Modifier
-        .size(40.dp)
-        .clip(RoundedCornerShape(16.dp))
-        .background(if (active) navActive else Color.Transparent),
-        contentAlignment = Alignment.Center,
-        ) {
-        Icon(
-        imageVector = if (active) item.selectedIcon else item.unselectedIcon,
-        contentDescription = tr(item.label),
-        tint = if (active) Color.Black else navInactive,
-        modifier = Modifier.size(21.dp),
-        )
-        }
-        if (item.label == "Chat" && totalUnread > 0) {
-        NavUnreadBadge(
-        count = totalUnread,
-        modifier = Modifier
-        .align(Alignment.TopEnd)
-        .offset(x = (-2).dp, y = 1.dp),
-        )
-        }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-        text = tr(item.label),
-        color = if (active) navActive else navInactive,
-        fontSize = 10.sp,
-        fontWeight = if (active) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
-        maxLines = 1,
-        )
-        }
-        }
-        }
-        }
-        }
-        }
+            val qaOpen = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
+            val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null
+            val restaurantsOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
+            val centerOpen = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
+            val legacyChatSelected = !FeatureFlags.SUPER_APP_HOME_ENABLED && selected == 3
+            val legacyShopOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && shopRoute != null
+            val legacySellerOpen = !FeatureFlags.SUPER_APP_HOME_ENABLED && sellerAccountOpen
+
+            if (!keyboardOpen && !isSuperAppActive && !legacyChatSelected && !legacyShopOpen && !legacySellerOpen && !qaOpen && !restaurantsOpen && !centerOpen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .background(if (if (FeatureFlags.SUPER_APP_HOME_ENABLED) activeBottomTab == null else selected == 0) Color(0xFF0B0D12) else Color.Transparent)
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(28.dp),
+                        color = Color(0xFF12151C).copy(alpha = 0.96f),
+                        tonalElevation = 0.dp,
+                        shadowElevation = 24.dp,
+                        border = BorderStroke(1.dp, Color(0xFF1F2530)),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceAround,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            navItems.forEachIndexed { index, item ->
+                                val active = if (FeatureFlags.SUPER_APP_HOME_ENABLED) {
+                                    activeBottomTab == index
+                                } else {
+                                    selected == index
+                                }
+                                Column(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable {
+                                            if (FeatureFlags.SUPER_APP_HOME_ENABLED) {
+                                                activeBottomTab = index
+                                                activeSidebarService = null
+                                            } else {
+                                                selected = index
+                                                if (index == 0) {
+                                                    activeSidebarService = null
+                                                    shopRoute = null
+                                                    sellerAccountOpen = false
+                                                    restaurantsCustomerOpen = false
+                                                    restaurantsQaRoute = null
+                                                } else if (index == 3) {
+                                                    if (activeSidebarService != null) {
+                                                        activeSidebarService = SuperAppService.CHAT
+                                                    }
+                                                } else {
+                                                    activeSidebarService = null
+                                                }
+                                            }
+                                        }
+                                        .padding(vertical = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Box(
+                                        modifier = Modifier.size(48.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(RoundedCornerShape(16.dp))
+                                                .background(if (active) navActive else Color.Transparent),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = if (active) item.selectedIcon else item.unselectedIcon,
+                                                contentDescription = tr(item.label),
+                                                tint = if (active) Color.Black else navInactive,
+                                                modifier = Modifier.size(21.dp),
+                                            )
+                                        }
+                                        if ((item.label == "Chat" || item.label == "Activity") && totalUnread > 0) {
+                                            NavUnreadBadge(
+                                                count = totalUnread,
+                                                modifier = Modifier
+                                                    .align(Alignment.TopEnd)
+                                                    .offset(x = (-2).dp, y = 1.dp),
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = tr(item.label),
+                                        color = if (active) navActive else navInactive,
+                                        fontSize = 10.sp,
+                                        fontWeight = if (active) androidx.compose.ui.text.font.FontWeight.Bold else androidx.compose.ui.text.font.FontWeight.Medium,
+                                        maxLines = 1,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     ) { padding ->
         val qaOverlayActive = restaurantsQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED
         val restaurantsOverlayActive = restaurantsCustomerOpen && FeatureFlags.RESTAURANTS_DINE_IN_ENABLED
         val centerOverlayActive = (restaurantCenterPlaceholderOpen || restaurantCenterWebViewOpen) && FeatureFlags.RESTAURANT_CENTER_ENABLED
-        Box(
-            if (isChatSelected || shopRoute != null || sellerAccountOpen || qaOverlayActive || restaurantsOverlayActive || centerOverlayActive) {
-                Modifier.fillMaxSize()
-            } else {
-                Modifier.padding(padding)
-            },
-        ) {
-        val activeShopRoute = shopRoute
-        val activeQaRoute = restaurantsQaRoute
-        if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-            InAppBrowserScreen(
-                url = restaurantCenterWebUrl,
-                postData = restaurantCenterHandoffData,
-                onClose = {
-                    restaurantCenterWebViewOpen = false
-                    restaurantCenterHandoffData = null
-                },
-            )
-        } else if (activeQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
-        RestaurantsQaHost(
-            initialRoute = activeQaRoute,
-            onClose = { restaurantsQaRoute = null },
-        )
-        } else if (restaurantsOverlayActive) {
-        RestaurantsCustomerRootScreen(
-            initialQrToken = pendingRestaurantQrToken,
-            onInitialQrTokenConsumed = { pendingRestaurantQrToken = null },
-            onBackToHome = {
-                pendingRestaurantQrToken = null
-                restaurantsCustomerOpen = false
-            },
-            onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
-                {
-                    restaurantsCustomerOpen = false
-                    restaurantsQaRoute = RestaurantsQaRoute.HUB
-                }
-            } else {
-                null
-            },
-        )
-        } else if (centerOverlayActive) {
-        RestaurantCenterPlaceholderScreen(
-            onBackToProfile = { restaurantCenterPlaceholderOpen = false },
-        )
-        } else if (sellerAccountOpen) {
-        SellerAccountRootScreen(
-            onBackToHome = { sellerAccountOpen = false; sellerNotificationsRequested = false; sellerNotificationStoreId = null },
-            openNotificationsInitially = sellerNotificationsRequested,
-            initialStoreId = sellerNotificationStoreId,
-        )
-        } else if (activeShopRoute != null) {
-        ShopRootScreen(
-        initialRoute = activeShopRoute,
-        onBackToHome = { shopRoute = null },
-        marketplaceLanguage = marketplaceLanguage,
-        onMarketplaceLanguageChange = { language -> scope.launch { prefs.setLanguage(language) } },
-        accountIdentity = AdisChatAccountIdentity(
-        displayName = currentUser?.name.orEmpty(),
-        photoUrl = currentUser?.photoUrl.orEmpty(),
-        ),
-        onOpenAdisChatProfile = {
-        shopRoute = null
-        selected = 4
-        },
-        )
+        val promotionsActive = activeSidebarService == SuperAppService.PROMOTIONS
+        val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null
+
+        val shouldShowCompactSidebar = FeatureFlags.SUPER_APP_HOME_ENABLED &&
+            activeSidebarService != null &&
+            !keyboardOpen &&
+            !restaurantCenterWebViewOpen &&
+            restaurantsQaRoute == null &&
+            pendingRestaurantQrToken == null
+
+        val mainContentModifier = if (isChatSelected || shopRoute != null || sellerAccountOpen || qaOverlayActive || restaurantsOverlayActive || centerOverlayActive || promotionsActive || isSuperAppActive) {
+            Modifier.fillMaxSize()
         } else {
-        when (selected) {
-        0 -> HomeScreen(
-        onOpenUrl = onOpenUrl,
-        onOpenShop = { shopRoute = ShopRoute.Home },
-        onGoScan = { selected = 2 },
-        onGoChat = { selected = 3 },
-        onGoWallet = { },
-        onGoDiscover = { selected = 1 },
-        onOpenSellerAccount = { sellerAccountOpen = true },
-        onOpenRestaurants = {
-            if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
-                restaurantsCustomerOpen = true
-            }
-        },
-        onOpenRestaurantsQa = {
-            if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
-                restaurantsQaRoute = RestaurantsQaRoute.HUB
-            }
-        },
-        onOpenRestaurantCenter = {
-            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                scope.launch {
-                    val repo = RestaurantsRepository()
-                    repo.createRestaurantCenterHandoffTicket()
-                        .onSuccess { ticketRes ->
-                            val ticket = ticketRes.ticket
-                            if (!ticket.isNullOrBlank()) {
-                                val env = RestaurantsConfig.currentEnvironment
-                                val handoffUrl = env.handoffAuthUrl()
-                                val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
-                                restaurantCenterHandoffData = postBody
-                                restaurantCenterWebUrl = handoffUrl
-                                restaurantCenterWebViewOpen = true
+            Modifier.padding(padding)
+        }
+
+        Box(modifier = mainContentModifier) {
+            val renderCoreScreenContent: @Composable () -> Unit = {
+                val activeShopRoute = shopRoute
+                val activeQaRoute = restaurantsQaRoute
+                if (restaurantCenterWebViewOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                    InAppBrowserScreen(
+                        url = restaurantCenterWebUrl,
+                        postData = restaurantCenterHandoffData,
+                        onClose = {
+                            restaurantCenterWebViewOpen = false
+                            restaurantCenterHandoffData = null
+                        },
+                    )
+                } else if (activeQaRoute != null && FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                    RestaurantsQaHost(
+                        initialRoute = activeQaRoute,
+                        onClose = { restaurantsQaRoute = null },
+                    )
+                } else if (centerOverlayActive) {
+                    RestaurantCenterPlaceholderScreen(
+                        onBackToProfile = { restaurantCenterPlaceholderOpen = false },
+                    )
+                } else if (FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null) {
+                    // Unified service switching with state and scroll preservation
+                    saveableStateHolder.SaveableStateProvider(key = "SERVICE_${activeSidebarService?.name}") {
+                        when (activeSidebarService) {
+                            SuperAppService.CHAT, SuperAppService.CHANNELS -> {
+                                ChatScreen(
+                                    pendingAdisLink = pendingAdisLink,
+                                    onAdisLinkConsumed = onAdisLinkConsumed,
+                                    pendingNotificationConversationId = pendingNotificationConversationId,
+                                    onNotificationConversationConsumed = onNotificationConversationConsumed,
+                                    onOpenUrl = onOpenUrl,
+                                )
                             }
+                            SuperAppService.ADISGEBEYA -> {
+                                ShopRootScreen(
+                                    initialRoute = activeShopRoute ?: ShopRoute.Home,
+                                    onBackToHome = onGoHome,
+                                    marketplaceLanguage = marketplaceLanguage,
+                                    onMarketplaceLanguageChange = { language -> scope.launch { prefs.setLanguage(language) } },
+                                    accountIdentity = AdisChatAccountIdentity(
+                                        displayName = currentUser?.name.orEmpty(),
+                                        photoUrl = currentUser?.photoUrl.orEmpty(),
+                                    ),
+                                    onOpenAdisChatProfile = {
+                                        activeSidebarService = null
+                                        activeBottomTab = 4
+                                    },
+                                )
+                            }
+                            SuperAppService.RESTAURANTS -> {
+                                RestaurantsCustomerRootScreen(
+                                    initialQrToken = pendingRestaurantQrToken,
+                                    onInitialQrTokenConsumed = { pendingRestaurantQrToken = null },
+                                    onBackToHome = {
+                                        pendingRestaurantQrToken = null
+                                        restaurantsCustomerOpen = false
+                                        onGoHome()
+                                    },
+                                    onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                                        {
+                                            restaurantsCustomerOpen = false
+                                            restaurantsQaRoute = RestaurantsQaRoute.HUB
+                                        }
+                                    } else {
+                                        null
+                                    },
+                                )
+                            }
+                            SuperAppService.SELLER_CENTER -> {
+                                SellerAccountRootScreen(
+                                    onBackToHome = {
+                                        sellerAccountOpen = false
+                                        sellerNotificationsRequested = false
+                                        sellerNotificationStoreId = null
+                                        onGoHome()
+                                    },
+                                    openNotificationsInitially = sellerNotificationsRequested,
+                                    initialStoreId = sellerNotificationStoreId,
+                                )
+                            }
+                            SuperAppService.PROMOTIONS -> {
+                                SuperAppPromotionsScreen(
+                                    onBack = onGoHome,
+                                    onSelectService = onSelectSidebarService,
+                                )
+                            }
+                            null -> Unit
                         }
+                    }
+                } else if (restaurantsOverlayActive) {
+                    RestaurantsCustomerRootScreen(
+                        initialQrToken = pendingRestaurantQrToken,
+                        onInitialQrTokenConsumed = { pendingRestaurantQrToken = null },
+                        onBackToHome = {
+                            pendingRestaurantQrToken = null
+                            restaurantsCustomerOpen = false
+                            onGoHome()
+                        },
+                        onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                            {
+                                restaurantsCustomerOpen = false
+                                restaurantsQaRoute = RestaurantsQaRoute.HUB
+                            }
+                        } else {
+                            null
+                        },
+                    )
+                } else if (sellerAccountOpen) {
+                    SellerAccountRootScreen(
+                        onBackToHome = {
+                            sellerAccountOpen = false
+                            sellerNotificationsRequested = false
+                            sellerNotificationStoreId = null
+                            onGoHome()
+                        },
+                        openNotificationsInitially = sellerNotificationsRequested,
+                        initialStoreId = sellerNotificationStoreId,
+                    )
+                } else if (activeShopRoute != null) {
+                    ShopRootScreen(
+                        initialRoute = activeShopRoute,
+                        onBackToHome = {
+                            shopRoute = null
+                            onGoHome()
+                        },
+                        marketplaceLanguage = marketplaceLanguage,
+                        onMarketplaceLanguageChange = { language -> scope.launch { prefs.setLanguage(language) } },
+                        accountIdentity = AdisChatAccountIdentity(
+                            displayName = currentUser?.name.orEmpty(),
+                            photoUrl = currentUser?.photoUrl.orEmpty(),
+                        ),
+                        onOpenAdisChatProfile = {
+                            shopRoute = null
+                            activeSidebarService = null
+                            selected = 4
+                        },
+                    )
+                } else if (FeatureFlags.SUPER_APP_HOME_ENABLED) {
+                    // Unified Super App bottom navigation
+                    saveableStateHolder.SaveableStateProvider(key = "BOTTOM_TAB_${activeBottomTab ?: -1}") {
+                        when (activeBottomTab) {
+                            null -> HomeScreen(
+                                onOpenUrl = onOpenUrl,
+                                onOpenShop = { onSelectSidebarService(SuperAppService.ADISGEBEYA) },
+                                onGoScan = { activeBottomTab = 2 },
+                                onGoChat = { onSelectSidebarService(SuperAppService.CHAT) },
+                                onGoWallet = { },
+                                onGoDiscover = { activeBottomTab = 1 },
+                                onOpenSellerAccount = { onSelectSidebarService(SuperAppService.SELLER_CENTER) },
+                                onOpenRestaurants = { onSelectSidebarService(SuperAppService.RESTAURANTS) },
+                                onOpenRestaurantsQa = {
+                                    if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                                        restaurantsQaRoute = RestaurantsQaRoute.HUB
+                                    }
+                                },
+                                onOpenRestaurantCenter = {
+                                    if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                                        scope.launch {
+                                            val repo = RestaurantsRepository()
+                                            repo.createRestaurantCenterHandoffTicket()
+                                                .onSuccess { ticketRes ->
+                                                    val ticket = ticketRes.ticket
+                                                    if (!ticket.isNullOrBlank()) {
+                                                        val env = RestaurantsConfig.currentEnvironment
+                                                        val handoffUrl = env.handoffAuthUrl()
+                                                        val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
+                                                        restaurantCenterHandoffData = postBody
+                                                        restaurantCenterWebUrl = handoffUrl
+                                                        restaurantCenterWebViewOpen = true
+                                                    }
+                                                }
+                                        }
+                                    }
+                                },
+                                onSelectSidebarService = onSelectSidebarService,
+                            )
+                            0 -> SuperAppSavedScreen(
+                                onGoHome = onGoHome,
+                                onNavigateService = onSelectSidebarService,
+                            )
+                            1 -> Column(modifier = Modifier.fillMaxSize()) {
+                                Surface(
+                                    color = if (lightMode) Color.White else Color(0xFF12151C),
+                                    tonalElevation = 2.dp,
+                                    shadowElevation = 4.dp,
+                                    border = BorderStroke(1.dp, if (lightMode) Color(0xFFE2E8F0) else Color(0xFF1F2530)),
+                                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.clickable(onClick = onGoHome),
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (lightMode) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(R.drawable.logo),
+                                                    contentDescription = "Return to Home",
+                                                    modifier = Modifier.size(24.dp),
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = "Explore",
+                                                    style = MaterialTheme.typography.titleMedium.copy(
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (lightMode) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                                                    ),
+                                                )
+                                                Text(
+                                                    text = "Tap logo to return Home",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontSize = 10.sp,
+                                                        color = if (lightMode) Color(0xFF64748B) else Color(0xFF94A3B8),
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Box(modifier = Modifier.weight(1f)) {
+                                    DiscoverScreen(onOpenUrl = onOpenUrl)
+                                }
+                            }
+                            2 -> ScanScreen(
+                                prefs = prefs,
+                                onOpenUrl = onOpenUrl,
+                                onOpenRestaurantQr = { token ->
+                                    if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                                        pendingRestaurantQrToken = token
+                                        onSelectSidebarService(SuperAppService.RESTAURANTS)
+                                    }
+                                },
+                            )
+                            3 -> SuperAppActivityScreen(
+                                onGoHome = onGoHome,
+                                onNavigateService = onSelectSidebarService,
+                            )
+                            4 -> Column(modifier = Modifier.fillMaxSize()) {
+                                Surface(
+                                    color = if (lightMode) Color.White else Color(0xFF12151C),
+                                    tonalElevation = 2.dp,
+                                    shadowElevation = 4.dp,
+                                    border = BorderStroke(1.dp, if (lightMode) Color(0xFFE2E8F0) else Color(0xFF1F2530)),
+                                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.clickable(onClick = onGoHome),
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (lightMode) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Image(
+                                                    painter = painterResource(R.drawable.logo),
+                                                    contentDescription = "Return to Home",
+                                                    modifier = Modifier.size(24.dp),
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = "Profile",
+                                                    style = MaterialTheme.typography.titleMedium.copy(
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (lightMode) Color(0xFF0F172A) else Color(0xFFF8FAFC),
+                                                    ),
+                                                )
+                                                Text(
+                                                    text = "Tap logo to return Home",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontSize = 10.sp,
+                                                        color = if (lightMode) Color(0xFF64748B) else Color(0xFF94A3B8),
+                                                    ),
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Box(modifier = Modifier.weight(1f)) {
+                                    ProfileScreen(
+                                        prefs = prefs,
+                                        onSignOut = onSignOut,
+                                        onGoScan = { activeBottomTab = 2 },
+                                        onOpenUrl = onOpenUrl,
+                                        onOpenShopRoute = { route ->
+                                            shopRoute = route
+                                            onSelectSidebarService(SuperAppService.ADISGEBEYA)
+                                        },
+                                        onOpenRestaurantCenter = {
+                                            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                                                restaurantCenterPlaceholderOpen = true
+                                            }
+                                        },
+                                        onOpenRestaurantsQa = {
+                                            if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                                                restaurantsQaRoute = RestaurantsQaRoute.HUB
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                            5 -> AdminScreen()
+                            else -> HomeScreen(
+                                onOpenUrl = onOpenUrl,
+                                onOpenShop = { onSelectSidebarService(SuperAppService.ADISGEBEYA) },
+                                onGoScan = { activeBottomTab = 2 },
+                                onGoChat = { onSelectSidebarService(SuperAppService.CHAT) },
+                                onGoWallet = { },
+                                onGoDiscover = { activeBottomTab = 1 },
+                                onOpenSellerAccount = { onSelectSidebarService(SuperAppService.SELLER_CENTER) },
+                                onOpenRestaurants = { onSelectSidebarService(SuperAppService.RESTAURANTS) },
+                                onSelectSidebarService = onSelectSidebarService,
+                            )
+                        }
+                    }
+                } else {
+                    // Legacy when (selected)
+                    when (selected) {
+                        0 -> HomeScreen(
+                            onOpenUrl = onOpenUrl,
+                            onOpenShop = {
+                                activeSidebarService = SuperAppService.ADISGEBEYA
+                                shopRoute = ShopRoute.Home
+                            },
+                            onGoScan = {
+                                activeSidebarService = null
+                                selected = 2
+                            },
+                            onGoChat = {
+                                activeSidebarService = SuperAppService.CHAT
+                                selected = 3
+                            },
+                            onGoWallet = { },
+                            onGoDiscover = {
+                                activeSidebarService = null
+                                selected = 1
+                            },
+                            onOpenSellerAccount = {
+                                activeSidebarService = SuperAppService.SELLER_CENTER
+                                sellerAccountOpen = true
+                            },
+                            onOpenRestaurants = {
+                                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                                    activeSidebarService = SuperAppService.RESTAURANTS
+                                    restaurantsCustomerOpen = true
+                                }
+                            },
+                            onOpenRestaurantsQa = {
+                                if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                                    restaurantsQaRoute = RestaurantsQaRoute.HUB
+                                }
+                            },
+                            onOpenRestaurantCenter = {
+                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                                    scope.launch {
+                                        val repo = RestaurantsRepository()
+                                        repo.createRestaurantCenterHandoffTicket()
+                                            .onSuccess { ticketRes ->
+                                                val ticket = ticketRes.ticket
+                                                if (!ticket.isNullOrBlank()) {
+                                                    val env = RestaurantsConfig.currentEnvironment
+                                                    val handoffUrl = env.handoffAuthUrl()
+                                                    val postBody = "ticket=${java.net.URLEncoder.encode(ticket, "UTF-8")}".toByteArray(Charsets.UTF_8)
+                                                    restaurantCenterHandoffData = postBody
+                                                    restaurantCenterWebUrl = handoffUrl
+                                                    restaurantCenterWebViewOpen = true
+                                                }
+                                            }
+                                    }
+                                }
+                            },
+                            onSelectSidebarService = onSelectSidebarService,
+                        )
+                        1 -> DiscoverScreen(onOpenUrl = onOpenUrl)
+                        2 -> ScanScreen(
+                            prefs = prefs,
+                            onOpenUrl = onOpenUrl,
+                            onOpenRestaurantQr = { token ->
+                                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
+                                    pendingRestaurantQrToken = token
+                                    activeSidebarService = SuperAppService.RESTAURANTS
+                                    restaurantsCustomerOpen = true
+                                }
+                            },
+                        )
+                        3 -> ChatScreen(
+                            pendingAdisLink = pendingAdisLink,
+                            onAdisLinkConsumed = onAdisLinkConsumed,
+                            pendingNotificationConversationId = pendingNotificationConversationId,
+                            onNotificationConversationConsumed = onNotificationConversationConsumed,
+                            onOpenUrl = onOpenUrl,
+                        )
+                        4 -> ProfileScreen(
+                            prefs = prefs,
+                            onSignOut = onSignOut,
+                            onGoScan = {
+                                activeSidebarService = null
+                                selected = 2
+                            },
+                            onOpenUrl = onOpenUrl,
+                            onOpenShopRoute = { route ->
+                                activeSidebarService = SuperAppService.ADISGEBEYA
+                                shopRoute = route
+                            },
+                            onOpenRestaurantCenter = {
+                                if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
+                                    restaurantCenterPlaceholderOpen = true
+                                }
+                            },
+                            onOpenRestaurantsQa = {
+                                if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
+                                    restaurantsQaRoute = RestaurantsQaRoute.HUB
+                                }
+                            },
+                        )
+                        5 -> AdminScreen()
+                    }
                 }
             }
-        },
-        )
-        1 -> DiscoverScreen(onOpenUrl = onOpenUrl)
-        2 -> ScanScreen(
-            prefs = prefs,
-            onOpenUrl = onOpenUrl,
-            onOpenRestaurantQr = { token ->
-                if (FeatureFlags.RESTAURANTS_DINE_IN_ENABLED) {
-                    pendingRestaurantQrToken = token
-                    restaurantsCustomerOpen = true
+
+            if (shouldShowCompactSidebar) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    SuperAppCompactSidebar(
+                        selectedService = activeSidebarService,
+                        onSelectService = onSelectSidebarService,
+                        onExpandHome = onGoHome,
+                        totalUnreadChat = totalUnread,
+                    )
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        renderCoreScreenContent()
+                    }
                 }
-            },
-        )
-        3 -> ChatScreen(
-        pendingAdisLink = pendingAdisLink,
-        onAdisLinkConsumed = onAdisLinkConsumed,
-        pendingNotificationConversationId = pendingNotificationConversationId,
-        onNotificationConversationConsumed = onNotificationConversationConsumed,
-        onOpenUrl = onOpenUrl,
-        )
-        4 -> ProfileScreen(
-        prefs = prefs,
-        onSignOut = onSignOut,
-        onGoScan = { selected = 2 },
-        onOpenUrl = onOpenUrl,
-        onOpenShopRoute = { route -> shopRoute = route },
-        onOpenRestaurantCenter = {
-            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                restaurantCenterPlaceholderOpen = true
+            } else {
+                renderCoreScreenContent()
             }
-        },
-        onOpenRestaurantsQa = {
-            if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
-                restaurantsQaRoute = RestaurantsQaRoute.HUB
-            }
-        },
-        )
-        5 -> AdminScreen()
-        }
-        }
         }
     }
 }

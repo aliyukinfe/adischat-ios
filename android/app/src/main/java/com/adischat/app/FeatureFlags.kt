@@ -22,4 +22,8 @@ object FeatureFlags {
         get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
     val RESTAURANTS_QA_PREVIEW_ENABLED: Boolean
         get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
+
+    // Phase H1 — Super App Home & Adaptive Sidebar
+    // Allows immediate restoration of legacy Home if disabled.
+    var SUPER_APP_HOME_ENABLED: Boolean = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
 }
