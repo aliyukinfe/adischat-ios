@@ -361,6 +361,7 @@ private fun RestaurantMenuBody(
                         onMenuItemClick = onMenuItemClick,
                         onQuickAddClick = onQuickAddClick,
                         onQuickDecrementClick = onQuickDecrementClick,
+                        brandColorHex = state.brandColorHex,
                         modifier = Modifier
                             .weight(1f)
                             .fillMaxWidth(),
@@ -564,6 +565,7 @@ private fun ContinuousCategoryMenuSplitView(
     onMenuItemClick: (MenuItemUiModel) -> Unit,
     onQuickAddClick: (MenuItemUiModel) -> Unit,
     onQuickDecrementClick: (MenuItemUiModel) -> Unit,
+    brandColorHex: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val extColors = RestaurantsLightTheme.colors
@@ -735,7 +737,7 @@ private fun ContinuousCategoryMenuSplitView(
                                         onCardClick = { onMenuItemClick(entry.item) },
                                         onQuickAddClick = { onQuickAddClick(entry.item) },
                                         onQuickDecrementClick = { onQuickDecrementClick(entry.item) },
-                                        brandColorHex = state.brandColorHex,
+                                        brandColorHex = brandColorHex,
                                     )
                                 }
                             }

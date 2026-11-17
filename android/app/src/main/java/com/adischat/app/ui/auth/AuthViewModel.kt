@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
-// ── UI state ──────────────────────────────────────────────────────────────────
+// - UI state -
 
 sealed class AuthState {
     object Idle    : AuthState()
@@ -22,7 +22,7 @@ sealed class AuthState {
     data class Error(val message: String) : AuthState()
 }
 
-// ── ViewModel ─────────────────────────────────────────────────────────────────
+// - ViewModel -
 
 class AuthViewModel : ViewModel() {
 
@@ -37,7 +37,7 @@ class AuthViewModel : ViewModel() {
     private var pendingEmail    = ""
     private var pendingPassword = ""
 
-    // ── Sign Up ───────────────────────────────────────────────────────────────
+    // - Sign Up -
 
     /** Step 1: validate locally, send email OTP, navigate to OTP screen. */
     fun signUp(name: String, phone: String, email: String, password: String) {
@@ -47,11 +47,11 @@ class AuthViewModel : ViewModel() {
         pendingPassword = password
         _state.value    = AuthState.Loading
         viewModelScope.launch {
-            val result = repo.sendEmailOtp(email)
-            _state.value = result.fold(
-                onSuccess = { devOtp -> AuthState.EmailOtpSent(email, devOtp) },
-                onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Failed to send code")) }
-            )
+        val result = repo.sendEmailOtp(email)
+        _state.value = result.fold(
+        onSuccess = { devOtp -> AuthState.EmailOtpSent(email, devOtp) },
+        onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Failed to send code")) }
+        )
         }
     }
 
@@ -59,23 +59,23 @@ class AuthViewModel : ViewModel() {
     fun verifySignUpOtp(otp: String) {
         _state.value = AuthState.Loading
         viewModelScope.launch {
-            // Verify OTP on the Worker
-            val verify = repo.verifyEmailOtp(pendingEmail, otp)
-            if (verify.isFailure) {
-                _state.value = AuthState.Error(CloudflareClient.friendlyErrorMessage(verify.exceptionOrNull(), "Invalid code"))
-                return@launch
-            }
-            // Create Firebase account and sync to D1
-            val signUp = repo.signUpWithEmail(
-                email    = pendingEmail,
-                password = pendingPassword,
-                name     = pendingName,
-                phone    = pendingPhone,
-            )
-            _state.value = signUp.fold(
-                onSuccess = { AuthState.Success(it) },
-                onFailure = { AuthState.Error(mapFirebaseError(it)) }
-            )
+        // Verify OTP on the Worker
+        val verify = repo.verifyEmailOtp(pendingEmail, otp)
+        if (verify.isFailure) {
+        _state.value = AuthState.Error(CloudflareClient.friendlyErrorMessage(verify.exceptionOrNull(), "Invalid code"))
+        return@launch
+        }
+        // Create Firebase account and sync to D1
+        val signUp = repo.signUpWithEmail(
+        email    = pendingEmail,
+        password = pendingPassword,
+        name     = pendingName,
+        phone    = pendingPhone,
+        )
+        _state.value = signUp.fold(
+        onSuccess = { AuthState.Success(it) },
+        onFailure = { AuthState.Error(mapFirebaseError(it)) }
+        )
         }
     }
 
@@ -83,56 +83,57 @@ class AuthViewModel : ViewModel() {
     fun resendEmailOtp() {
         _state.value = AuthState.Loading
         viewModelScope.launch {
-            val result = repo.sendEmailOtp(pendingEmail)
-            _state.value = result.fold(
-                onSuccess = { devOtp -> AuthState.EmailOtpSent(pendingEmail, devOtp) },
-                onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Failed to resend code")) }
-            )
+        val result = repo.sendEmailOtp(pendingEmail)
+        _state.value = result.fold(
+        onSuccess = { devOtp -> AuthState.EmailOtpSent(pendingEmail, devOtp) },
+        onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Failed to resend code")) }
+        )
         }
     }
 
-    // ── Login ─────────────────────────────────────────────────────────────────
+    // - Login -
 
     /** identifier can be email, username, or phone (9 digits, no +251). */
     fun login(identifier: String, password: String) {
         _state.value = AuthState.Loading
         viewModelScope.launch {
-            val result = repo.signInWithIdentifier(identifier, password)
-            _state.value = result.fold(
-                onSuccess = { AuthState.Success(it) },
-                onFailure = { AuthState.Error(mapFirebaseError(it)) }
-            )
+        val result = repo.signInWithIdentifier(identifier, password)
+        _state.value = result.fold(
+        onSuccess = { AuthState.Success(it) },
+        onFailure = { AuthState.Error(mapFirebaseError(it)) }
+        )
         }
     }
 
-    // ── Password reset ────────────────────────────────────────────────────────
+    // - Password reset -
 
     fun sendPasswordReset(email: String, onDone: (success: Boolean, msg: String) -> Unit) {
         viewModelScope.launch {
-            val result = repo.sendPasswordResetEmail(email)
-            result.fold(
-                onSuccess = { onDone(true,  "Reset link sent! Check your inbox.") },
-                onFailure = { onDone(false, CloudflareClient.friendlyErrorMessage(it, "Failed to send reset email")) }
-            )
+        val result = repo.sendPasswordResetEmail(email)
+        result.fold(
+        onSuccess = { onDone(true,  "Reset link sent! Check your inbox.") },
+        onFailure = { onDone(false, CloudflareClient.friendlyErrorMessage(it, "Failed to send reset email")) }
+        )
         }
     }
 
-    // ── Google Sign-In ────────────────────────────────────────────────────────
+    // - Google Sign-In -
 
     fun signInWithGoogle(idToken: String) {
         _state.value = AuthState.Loading
         viewModelScope.launch {
-            val result = repo.signInWithGoogle(idToken)
-            _state.value = result.fold(
-                onSuccess = { AuthState.Success(it) },
-                onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Google sign-in failed")) }
-            )
+        val result = repo.signInWithGoogle(idToken)
+        _state.value = result.fold(
+        onSuccess = { AuthState.Success(it) },
+        onFailure = { AuthState.Error(CloudflareClient.friendlyErrorMessage(it, "Google sign-in failed")) }
+        )
         }
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // - Helpers -
 
     fun resetState() { _state.value = AuthState.Idle }
+    fun showError(message: String) { _state.value = AuthState.Error(message) }
 
     private fun mapFirebaseError(error: Throwable?): String {
         if (error == null) return "Something went wrong"
@@ -140,19 +141,21 @@ class AuthViewModel : ViewModel() {
         if (friendly == CloudflareClient.CONNECTION_ERROR_MESSAGE) return friendly
         val msg = error.message
         return when {
-        msg == null                                                  -> "Something went wrong"
+        msg == null -> "Something went wrong"
         msg.contains("INVALID_LOGIN_CREDENTIALS", ignoreCase = true)
-            || msg.contains("invalid-credential", ignoreCase = true)
-            || msg.contains("wrong-password",     ignoreCase = true) -> "Incorrect email or password"
-        msg.contains("user-not-found",            ignoreCase = true) -> "No account with this email"
+        || msg.contains("invalid-credential", ignoreCase = true)
+        || msg.contains("wrong-password",     ignoreCase = true)
+        || msg.contains("user-not-found",     ignoreCase = true)
+        || msg.contains("Account not found",  ignoreCase = true)
+        || msg.contains("No account found",   ignoreCase = true)
+        || msg.contains("no user record",     ignoreCase = true) -> "Username or password incorrect"
         msg.contains("email-already-in-use",      ignoreCase = true) -> "An account already exists with this email"
-        msg.contains("too-many-requests",         ignoreCase = true) -> "Too many attempts. Please try again later."
-        msg.contains("network",                   ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
+        msg.contains("too-many-requests",      ignoreCase = true) -> "Too many attempts. Please try again later."
+        msg.contains("network",      ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
         msg.contains("unable to resolve host",    ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
-        msg.contains("timeout",                   ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
-        msg.contains("failed to connect",         ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
-        msg.contains("No account found",          ignoreCase = true) -> msg
-        else                                                          -> msg
+        msg.contains("timeout",      ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
+        msg.contains("failed to connect",      ignoreCase = true) -> CloudflareClient.CONNECTION_ERROR_MESSAGE
+        else -> msg
         }
     }
 }

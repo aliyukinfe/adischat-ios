@@ -297,16 +297,17 @@ private fun RestaurantWorkspaceScreenContent(
     val displayName = restaurant?.brandName
         ?: menuState.restaurantName.ifBlank { "Restaurant" }
 
+    val activeBrandColor = RestaurantsLightPalette.parseHexColor(
+        hex = restaurant?.brandColorHex ?: menuState.brandColorHex,
+        fallback = extColors.brandGreen,
+    )
+    val activeBrandTextColor = RestaurantsLightPalette.getContrastTextColor(activeBrandColor)
+
     Column(
         modifier = modifier
             .fillMaxSize()
             .background(extColors.mainBackground),
     ) {
-        val activeBrandColor = RestaurantsLightPalette.parseHexColor(
-            hex = restaurant?.brandColorHex ?: menuState.brandColorHex,
-            fallback = extColors.brandGreen,
-        )
-        val activeBrandTextColor = RestaurantsLightPalette.getContrastTextColor(activeBrandColor)
 
         RestaurantCompactWorkspaceHeader(
             restaurant = restaurant,
