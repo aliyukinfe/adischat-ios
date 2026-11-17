@@ -53,7 +53,7 @@ def validateIsolatedQaUrl = { String name, Set<String> allowedHosts, String requ
         throw new GradleException("$name must be an isolated HTTPS QA endpoint and not point to production")
     }
 }
-def validateRestaurantsQaEndpoints = { Set<String> allowedHosts, boolean requireOrderMutations ->
+def validateRestaurantsQaEndpoints = { Set<String> allowedHosts ->
     def restaurantsSupabaseUrl = qaValue("QA_RESTAURANTS_SUPABASE_URL")
     def restaurantsAnonKey = qaValue("QA_RESTAURANTS_SUPABASE_ANON_KEY") ?: qaValue("QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY")
     def restaurantsWorkerUrl = qaValue("QA_RESTAURANTS_WORKER_BASE_URL") ?: qaValue("QA_RESTAURANTS_IDENTITY_BRIDGE_URL")
@@ -80,9 +80,8 @@ def validateRestaurantsQaEndpoints = { Set<String> allowedHosts, boolean require
     if (!qaBool("QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED")) {
         throw new GradleException("QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED must be explicitly set to true in qa.local.properties for QA builds")
     }
-    def requiredOrderMutationsValue = requireOrderMutations ? "true" : "false"
-    if (!qaValue("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED").equalsIgnoreCase(requiredOrderMutationsValue)) {
-        throw new GradleException("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED must be explicitly set to $requiredOrderMutationsValue for this build")
+    if (!qaBool("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED")) {
+        throw new GradleException("QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED must be explicitly set to true in qa.local.properties for QA builds")
     }
 }
 def validateQaIsolation = {
@@ -110,7 +109,7 @@ def validateQaIsolation = {
         qaValue("QA_SHOP_ASSERTION_AUDIENCE") != "adishop-staging-edge") {
         throw new GradleException("QA Shop key and identity configuration must be separate and complete")
     }
-    validateRestaurantsQaEndpoints(allowedHosts, false)
+    validateRestaurantsQaEndpoints(allowedHosts)
 }
 def validateRestaurantsStagingIsolation = {
     if (!qaPropertiesFile.isFile()) {
@@ -121,7 +120,7 @@ def validateRestaurantsStagingIsolation = {
     ["QA_ADISCHAT_API_URL", "QA_MEDIA_BASE_URL"].each { name ->
         validateIsolatedQaUrl(name, allowedHosts, "adischat-api-staging.adischat.workers.dev")
     }
-    validateRestaurantsQaEndpoints(allowedHosts, true)
+    validateRestaurantsQaEndpoints(allowedHosts)
 }
 def validateReleaseIsolation = {
     def prodJsonFile = file("google-services.json")
@@ -216,7 +215,7 @@ android {
             buildConfigField "String", "RESTAURANTS_SUPABASE_PUBLISHABLE_KEY", "\"${qaValue('QA_RESTAURANTS_SUPABASE_ANON_KEY') ?: qaValue('QA_RESTAURANTS_SUPABASE_PUBLISHABLE_KEY')}\""
             buildConfigField "String", "RESTAURANTS_IDENTITY_BRIDGE_URL", "\"${qaValue('QA_RESTAURANTS_WORKER_BASE_URL') ?: qaValue('QA_RESTAURANTS_IDENTITY_BRIDGE_URL')}\""
             buildConfigField "boolean", "RESTAURANTS_IDENTITY_BRIDGE_ENABLED", "${qaBool('QA_RESTAURANTS_IDENTITY_BRIDGE_ENABLED')}"
-            buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "false"
+            buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "${qaBool('QA_RESTAURANTS_ORDER_MUTATIONS_ENABLED')}"
         }
         restaurantsStaging {
             initWith debug
