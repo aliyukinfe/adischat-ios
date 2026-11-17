@@ -116,7 +116,7 @@ object SuperAppDemoPromotions {
     val items: List<SuperAppPromotionItem> = listOf(
         SuperAppPromotionItem(
             id = "demo-dinein",
-            title = "Ethiopian dining",
+            title = "Restaurant menus",
             subtitle = "Explore menus and restaurant details in the app.",
             highlightBadge = "DEMO",
             categoryTag = "Restaurants",

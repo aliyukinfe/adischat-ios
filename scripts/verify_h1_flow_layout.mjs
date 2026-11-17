@@ -22,7 +22,8 @@ test('measured sidebar has content height and stays outside the scrolling feed',
 
 test('all promotional rows use stable height and measured flow-around placement', () => {
   assert.match(feed, /items\(visible\.take\(2\), key = \{ "lead-\$\{it\.id\}" \}\)/);
-  assert.match(feed, /items\(visible\.drop\(2\), key = \{ it\.id \}\) \{ item ->\s*FlowAroundRow\(sidebarBounds, 176\.dp\)/);
+  assert.match(feed, /items\(visible\.drop\(2\), key = \{ it\.id \}\) \{ item ->\s*FlowAroundRow\(sidebarBounds, 148\.dp\)/);
+  assert.ok(feed.indexOf('item(key = "welcome")') < feed.indexOf('items(visible.take(2)'));
   assert.match(feed, /rowTop < sidebar\.bottom && rowBottom > sidebar\.top/);
   assert.match(feed, /\.onGloballyPositioned/);
   assert.match(feed, /if \(besideSidebar != next\) besideSidebar = next/);
@@ -35,16 +36,16 @@ test('3, 5, and 8 sidebar items flow 10 cards both scroll directions at M33 widt
   assert.ok(narrowCardWidth >= 240);
   for (const count of [3, 5, 8]) {
     const sidebarBottom = 30 + 16 + count * 48 + (count - 1) * 6;
-    const cardTops = Array.from({ length: 10 }, (_, index) => index < 2 ? 8 + index * 184 : 500 + (index - 2) * 184);
+    const cardTops = Array.from({ length: 10 }, (_, index) => index < 2 ? 58 + index * 156 : 500 + (index - 2) * 156);
     for (const scroll of [0, 180, 460, 900, 1400, 900, 460, 180, 0]) {
       for (const top of cardTops) {
         const visibleTop = top - scroll;
-        assert.equal(beside(visibleTop, 176, 30, sidebarBottom), visibleTop < sidebarBottom && visibleTop + 176 > 30);
+        assert.equal(beside(visibleTop, 148, 30, sidebarBottom), visibleTop < sidebarBottom && visibleTop + 148 > 30);
       }
     }
-    assert.equal(beside(sidebarBottom + 1, 176, 30, sidebarBottom), false);
-    assert.equal(beside(sidebarBottom - 1, 176, 30, sidebarBottom), true);
-    if (count >= 5) assert.equal(beside(8 + 184, 176, 30, sidebarBottom), true);
+    assert.equal(beside(sidebarBottom + 1, 148, 30, sidebarBottom), false);
+    assert.equal(beside(sidebarBottom - 1, 148, 30, sidebarBottom), true);
+    if (count >= 5) assert.equal(beside(58 + 156, 148, 30, sidebarBottom), true);
   }
 });
 
