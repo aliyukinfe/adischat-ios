@@ -266,7 +266,9 @@ android {
             buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "false"
         }
         release {
-            signingConfig signingConfigs.release
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
