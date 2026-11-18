@@ -82,7 +82,10 @@ internal fun SellerCategoryPicker(
             categories.filter { it.isLeaf && it.sellerSelectable && categoryMatchesQuery(it, query) }
                 .sortedBy { categoryBreadcrumb(it, categories) }
         } else {
-            categories.filter { it.parentId == parentId }.sortedWith(compareBy({ it.displayOrder }, { it.name }))
+            categories.filter {
+                if (parentId.isNullOrBlank()) it.parentId.isNullOrBlank()
+                else it.parentId == parentId
+            }.sortedWith(compareBy({ it.displayOrder }, { it.name }))
         }
     }
     AlertDialog(
@@ -113,7 +116,10 @@ internal fun SellerCategoryPicker(
                     label = { Text("Search categories...") },
                 )
                 if (rows.isEmpty()) {
-                    Text("No matching category.", modifier = Modifier.padding(vertical = 20.dp))
+                    Text(
+                        if (categories.isEmpty()) "Categories are loading or unavailable." else "No matching category.",
+                        modifier = Modifier.padding(vertical = 20.dp),
+                    )
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
                         items(rows, key = { it.id }) { category ->

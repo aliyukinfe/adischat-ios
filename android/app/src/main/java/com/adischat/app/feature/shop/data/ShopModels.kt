@@ -394,18 +394,43 @@ data class ShopSellerProductOptionInput(
 )
 
 data class ShopSellerVariantInput(
-    val id: String? = null,
-    val title: String,
-    val sku: String? = null,
-    val barcode: String? = null,
-    val options: Map<String, String>,
-    val priceMinor: Int,
-    val compareAtPriceMinor: Int? = null,
-    val status: String = "active",
-    val quantityAvailable: Int,
-    val lowStockThreshold: Int = 3,
-    val manageInventory: Boolean = true,
-    val imageIds: List<String> = emptyList(),
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("title") val title: String,
+    @SerializedName("sku") val sku: String? = null,
+    @SerializedName("barcode") val barcode: String? = null,
+    @SerializedName("options") val options: Map<String, String>,
+    @SerializedName("priceMinor") val priceMinor: Int,
+    @SerializedName("compareAtPriceMinor") val compareAtPriceMinor: Int? = null,
+    @SerializedName("status") val status: String = "active",
+    @SerializedName("quantityAvailable") val quantityAvailable: Int,
+    @SerializedName("lowStockThreshold") val lowStockThreshold: Int = 3,
+    @SerializedName("manageInventory") val manageInventory: Boolean = true,
+    @SerializedName("imageIds") val imageIds: List<String> = emptyList(),
+)
+
+data class SellerVariantDraft(
+    @SerializedName("id") val id: String? = null,
+    @SerializedName("title") val title: String = "",
+    @SerializedName("sku") val sku: String = "",
+    @SerializedName("price") val price: String = "",
+    @SerializedName("stock") val stock: String = "0",
+    @SerializedName("active") val active: Boolean = false,
+    @SerializedName("compareAtPriceMinor") val compareAtPriceMinor: Int? = null,
+    @SerializedName("imageIds") val imageIds: List<String> = emptyList(),
+)
+
+data class SellerVariantEditorSnapshot(
+    @SerializedName("specificationText") val specificationText: Map<String, String> = emptyMap(),
+    @SerializedName("optionValues") val optionValues: Map<String, List<String>> = emptyMap(),
+    @SerializedName("optionDrafts") val optionDrafts: Map<String, String> = emptyMap(),
+    @SerializedName("enabledOptions") val enabledOptions: Map<String, Boolean> = emptyMap(),
+    @SerializedName("variantDrafts") val variantDrafts: Map<String, SellerVariantDraft> = emptyMap(),
+)
+
+data class SellerVariantOutputs(
+    @SerializedName("specifications") val specifications: List<ShopSellerSpecificationInput> = emptyList(),
+    @SerializedName("options") val options: List<ShopSellerProductOptionInput> = emptyList(),
+    @SerializedName("variants") val variants: List<ShopSellerVariantInput> = emptyList(),
 )
 
 data class ShopSellerProductDraftPayload(

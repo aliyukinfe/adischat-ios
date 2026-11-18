@@ -5349,8 +5349,9 @@ internal data class ProcessedSellerProductImage(
 internal fun processSellerProductImage(context: Context, uri: Uri): ProcessedSellerProductImage {
     val resolver = context.contentResolver
     val declaredType = resolver.getType(uri).orEmpty().lowercase()
-    if (declaredType !in setOf("image/jpeg", "image/png", "image/webp", "")) {
-        error("Use a JPEG, PNG or WebP image.")
+    val isLikelyImage = declaredType.isBlank() || declaredType.startsWith("image/") || declaredType == "application/octet-stream"
+    if (!isLikelyImage) {
+        error("Use a valid photo image (JPEG, PNG, WebP or HEIC).")
     }
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }

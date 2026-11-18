@@ -9,6 +9,7 @@ import android.graphics.Matrix
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.exifinterface.media.ExifInterface
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -505,7 +506,7 @@ private fun SellerProductEditor(
     val isSpecsReady = specificationErrors(false).isEmpty()
     val isListingReady = isBasicInfoReady && isCategoryReady && isMediaReady && isPricingReady && isVariantsReady && isSpecsReady
 
-    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)) { uris ->
         mediaMessage = null
         val selected = eligibleSellerMediaSelection(uris, uploadedImages.size)
         if (selected.isNotEmpty()) onUploadImages(selected, context.applicationContext)
@@ -725,10 +726,7 @@ private fun SellerProductEditor(
                 message = mediaMessage,
                 upload = mediaUpload,
                 onAdd = {
-                    specificationMessage = specificationErrors(false).firstOrNull()
-                    if (specificationMessage == null) {
-                        onSaveBeforeImagePick(currentPayload()) { imagePicker.launch("image/*") }
-                    }
+                    imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                 },
                 onRetry = onRetryUpload,
                 onDelete = onDeleteImage,

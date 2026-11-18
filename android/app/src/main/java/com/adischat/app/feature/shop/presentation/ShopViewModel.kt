@@ -1406,8 +1406,14 @@ class ShopViewModel(
     private fun selectedSellerProductStore(productId: String): String? {
         val state = _protectedState.value
         val storeId = state.sellerBusiness?.selectedStore?.id ?: return null
-        return storeId.takeIf { state.sellerProductsLoaded && state.sellerProductsStoreId == it &&
-            state.sellerProducts.any { product -> product.id == productId && product.storeId == it } }
+        if (state.selectedSellerProduct?.id == productId) {
+            val productStoreId = state.selectedSellerProduct?.storeId?.takeIf { it.isNotBlank() }
+            if (productStoreId != null && productStoreId != storeId) return null
+            return storeId
+        }
+        return storeId.takeIf {
+            state.sellerProducts.any { product -> product.id == productId && product.storeId == it }
+        }
     }
 
     fun saveSellerProduct(productId: String, payload: ShopSellerProductDraftPayload) {
@@ -1543,6 +1549,7 @@ class ShopViewModel(
         sellerMediaUploadJob = viewModelScope.launch {
             var completed = 0
             val failed = mutableListOf<Uri>()
+            var lastUploadError: String? = null
             try {
                 for (uri in selectedUris) {
                     if (!isActive || _protectedState.value.ownerUid != ownerUid ||
@@ -1550,10 +1557,11 @@ class ShopViewModel(
                     val processed = try {
                         withContext(Dispatchers.IO) { processSellerProductImage(context.applicationContext, uri) }
                     } catch (error: Exception) {
+                        lastUploadError = error.message
                         null
                     }
                     val uploaded = processed?.let { image ->
-                        sellerRepository.uploadProductMedia(
+                        val result = sellerRepository.uploadProductMedia(
                             productId = productId,
                             bytes = image.bytes,
                             mimeType = image.mimeType,
@@ -1561,7 +1569,11 @@ class ShopViewModel(
                             height = image.height,
                             altText = altText,
                             requestId = "android-seller-product-media-$productId-${UUID.randomUUID()}",
-                        ).isSuccess
+                        )
+                        if (result.isFailure) {
+                            lastUploadError = result.exceptionOrNull()?.message
+                        }
+                        result.isSuccess
                     } == true
                     if (uploaded) completed++ else failed += uri
                     _protectedState.value = _protectedState.value.copy(
@@ -1583,9 +1595,12 @@ class ShopViewModel(
                         )
                     }
                     failedSellerMediaUris[productId] = failed
+                    val failureMessage = if (failed.isNotEmpty()) {
+                        lastUploadError ?: "${failed.size} image uploads failed. Check connection or image format."
+                    } else null
                     _protectedState.value = _protectedState.value.copy(
                         sellerMediaUpload = com.adischat.app.feature.shop.data.ShopSellerMediaUploadState(
-                            productId, selectedUris.size, completed, failed.size, uploading = false,
+                            productId, selectedUris.size, completed, failed.size, uploading = false, message = failureMessage,
                         ),
                     )
                 }

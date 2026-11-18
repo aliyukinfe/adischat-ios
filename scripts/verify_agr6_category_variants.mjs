@@ -725,5 +725,65 @@ test('BuyerCartPresentation.kt and ShopCartScreen.kt implement AG-R6.5 cart vari
   assert.ok(shopCartCode.includes('cart.totals.discountMinor > 0'));
 });
 
+console.log('\n--- 7. AG-R6.7 Critical Production-App Regression Tests ---');
+
+test('ShopModels.kt defines SellerVariantDraft, SellerVariantEditorSnapshot, and SellerVariantOutputs with @SerializedName', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/data/ShopModels.kt'), 'utf8');
+  assert.ok(code.includes('data class SellerVariantDraft'));
+  assert.ok(code.includes('data class SellerVariantEditorSnapshot'));
+  assert.ok(code.includes('data class SellerVariantOutputs'));
+  assert.ok(code.includes('@SerializedName("sku") val sku: String?'));
+  assert.ok(code.includes('@SerializedName("variantDrafts")'));
+  assert.ok(code.includes('@SerializedName("specifications") val specifications'));
+});
+
+test('proguard-rules.pro preserves shop models, serialized names, and SellerVariant presentation classes', () => {
+  const rules = fs.readFileSync(path.join(REPO_ROOT, 'android/app/proguard-rules.pro'), 'utf8');
+  assert.ok(rules.includes('-keep class com.adischat.app.feature.shop.data.** { *; }'));
+  assert.ok(rules.includes('-keepclassmembers class com.adischat.app.feature.shop.data.** { *; }'));
+  assert.ok(rules.includes('-keep class com.adischat.app.feature.shop.presentation.SellerVariant* { *; }'));
+  assert.ok(rules.includes('-keepclassmembers class com.adischat.app.feature.shop.presentation.SellerVariant* { *; }'));
+});
+
+test('SellerVariantCatalogEditor.kt implements defensive JsonParser decoding in decodeSellerVariantOutputs', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('JsonParser.parseString(json).asJsonObject'));
+  assert.ok(code.includes('Gson().fromJson(el, ShopSellerVariantInput::class.java)'));
+  assert.ok(code.includes('if (json.isBlank()) return emptySet()'));
+});
+
+test('SellerCategoryPicker.kt handles null/blank parentId and shows clear state when categories empty', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerCategoryPicker.kt'), 'utf8');
+  assert.ok(code.includes('if (parentId.isNullOrBlank()) it.parentId.isNullOrBlank()'));
+  assert.ok(code.includes('if (categories.isEmpty()) "Categories are loading or unavailable."'));
+});
+
+test('ShopSellerProductsScreen.kt launches modern PickMultipleVisualMedia directly on add images', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerProductsScreen.kt'), 'utf8');
+  assert.ok(code.includes('ActivityResultContracts.PickMultipleVisualMedia(maxItems = 10)'));
+  assert.ok(code.includes('imagePicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))'));
+  assert.ok(!code.includes('onSaveBeforeImagePick(currentPayload()) { imagePicker.launch'));
+});
+
+test('ShopScreen.kt processSellerProductImage accepts HEIC/HEIF and all standard camera photo MIME types', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('declaredType.startsWith("image/")'));
+  assert.ok(code.includes('isLikelyImage'));
+  assert.ok(!code.includes('if (declaredType !in setOf("image/jpeg", "image/png", "image/webp", ""))'));
+});
+
+test('ShopViewModel.kt selectedSellerProductStore safely resolves active store for selected product', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopViewModel.kt'), 'utf8');
+  assert.ok(code.includes('state.selectedSellerProduct?.id == productId'));
+  assert.ok(code.includes('productStoreId != null && productStoreId != storeId'));
+  assert.ok(code.includes('uploadSellerProductMediaBatch'));
+});
+
+test('build.gradle version is incremented to 124 (1.0.124)', () => {
+  const gradle = fs.readFileSync(path.join(REPO_ROOT, 'android/app/build.gradle'), 'utf8');
+  assert.ok(gradle.includes('versionCode 124'));
+  assert.ok(gradle.includes('versionName "1.0.124"'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

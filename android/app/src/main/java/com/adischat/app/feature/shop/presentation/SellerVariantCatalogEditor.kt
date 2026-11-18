@@ -53,7 +53,11 @@ import com.adischat.app.feature.shop.data.ShopSellerSpecificationInput
 import com.adischat.app.feature.shop.data.ShopSellerVariantInput
 import com.adischat.app.ui.theme.AdisGebeyaColors
 import coil.compose.AsyncImage
+import com.adischat.app.feature.shop.data.SellerVariantDraft
+import com.adischat.app.feature.shop.data.SellerVariantEditorSnapshot
+import com.adischat.app.feature.shop.data.SellerVariantOutputs
 import com.google.gson.Gson
+import com.google.gson.JsonParser
 import com.google.gson.reflect.TypeToken
 
 internal fun variantValueCode(value: String): String = value.trim().uppercase()
@@ -130,48 +134,52 @@ internal fun generateVariantCombinations(options: List<ShopSellerProductOptionIn
     }
 }
 
-internal data class SellerVariantDraft(
-    val id: String? = null,
-    val title: String = "",
-    val sku: String = "",
-    val price: String = "",
-    val stock: String = "0",
-    val active: Boolean = false,
-    val compareAtPriceMinor: Int? = null,
-    val imageIds: List<String> = emptyList(),
-)
-
-internal data class SellerVariantEditorSnapshot(
-    val specificationText: Map<String, String> = emptyMap(),
-    val optionValues: Map<String, List<String>> = emptyMap(),
-    val optionDrafts: Map<String, String> = emptyMap(),
-    val enabledOptions: Map<String, Boolean> = emptyMap(),
-    val variantDrafts: Map<String, SellerVariantDraft> = emptyMap(),
-)
-
 internal fun encodeSellerVariantSnapshot(snapshot: SellerVariantEditorSnapshot): String = Gson().toJson(snapshot)
 
 internal fun decodeSellerVariantSnapshot(json: String?): SellerVariantEditorSnapshot? =
-    json?.let { runCatching { Gson().fromJson(it, SellerVariantEditorSnapshot::class.java) }.getOrNull() }
+    json?.takeIf { it.isNotBlank() }?.let {
+        runCatching {
+            Gson().fromJson<SellerVariantEditorSnapshot>(it, object : TypeToken<SellerVariantEditorSnapshot>() {}.type)
+        }.getOrNull()
+    }
 
 internal fun decodeSellerVariantSnapshots(json: String): Map<String, String> =
-    runCatching {
+    if (json.isBlank()) emptyMap()
+    else runCatching {
         Gson().fromJson<Map<String, String>>(json, object : TypeToken<Map<String, String>>() {}.type).orEmpty()
     }.getOrDefault(emptyMap())
 
 internal fun putSellerVariantSnapshot(json: String, categoryId: String, snapshot: SellerVariantEditorSnapshot): String =
     Gson().toJson(decodeSellerVariantSnapshots(json) + (categoryId to encodeSellerVariantSnapshot(snapshot)))
 
-internal data class SellerVariantOutputs(
-    val specifications: List<ShopSellerSpecificationInput> = emptyList(),
-    val options: List<ShopSellerProductOptionInput> = emptyList(),
-    val variants: List<ShopSellerVariantInput> = emptyList(),
-)
-
 internal fun encodeSellerVariantOutputs(outputs: SellerVariantOutputs): String = Gson().toJson(outputs)
 
-internal fun decodeSellerVariantOutputs(json: String): SellerVariantOutputs =
-    runCatching { Gson().fromJson(json, SellerVariantOutputs::class.java) }.getOrNull() ?: SellerVariantOutputs()
+internal fun decodeSellerVariantOutputs(json: String): SellerVariantOutputs {
+    if (json.isBlank()) return SellerVariantOutputs()
+    return try {
+        val root = JsonParser.parseString(json).asJsonObject
+        val specs = runCatching {
+            root.getAsJsonArray("specifications")?.mapNotNull { el ->
+                Gson().fromJson(el, ShopSellerSpecificationInput::class.java)
+            }
+        }.getOrNull().orEmpty()
+        val options = runCatching {
+            root.getAsJsonArray("options")?.mapNotNull { el ->
+                Gson().fromJson(el, ShopSellerProductOptionInput::class.java)
+            }
+        }.getOrNull().orEmpty()
+        val variants = runCatching {
+            root.getAsJsonArray("variants")?.mapNotNull { el ->
+                Gson().fromJson(el, ShopSellerVariantInput::class.java)
+            }
+        }.getOrNull().orEmpty()
+        SellerVariantOutputs(specifications = specs, options = options, variants = variants)
+    } catch (_: Exception) {
+        runCatching {
+            Gson().fromJson<SellerVariantOutputs>(json, object : TypeToken<SellerVariantOutputs>() {}.type)
+        }.getOrNull() ?: SellerVariantOutputs()
+    }
+}
 
 internal fun hasSellerCategoryDraft(json: String, snapshot: SellerVariantEditorSnapshot? = null): Boolean {
     val outputs = decodeSellerVariantOutputs(json)
@@ -228,6 +236,7 @@ internal fun findDuplicateSkus(drafts: Map<String, SellerVariantDraft>): Set<Str
 }
 
 internal fun findDuplicateSkusFromOutputs(json: String): Set<String> {
+    if (json.isBlank()) return emptySet()
     val outputs = decodeSellerVariantOutputs(json)
     val activeSkus = outputs.variants
         .filter { it.status == "active" }
