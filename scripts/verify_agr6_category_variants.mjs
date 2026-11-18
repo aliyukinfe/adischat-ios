@@ -779,10 +779,10 @@ test('ShopViewModel.kt selectedSellerProductStore safely resolves active store f
   assert.ok(code.includes('uploadSellerProductMediaBatch'));
 });
 
-test('build.gradle version is incremented to 124 (1.0.124)', () => {
+test('build.gradle version is incremented to 125 (1.0.125)', () => {
   const gradle = fs.readFileSync(path.join(REPO_ROOT, 'android/app/build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionCode 124'));
-  assert.ok(gradle.includes('versionName "1.0.124"'));
+  assert.ok(gradle.includes('versionCode 125'));
+  assert.ok(gradle.includes('versionName "1.0.125"'));
 });
 
 console.log('\n--- 8. AG-R6.8 Category Hierarchy & Product-Specific Attributes Tests ---');
@@ -1118,6 +1118,54 @@ test('agr6_9_promotions_and_submission_proposal.sql exists and contains promotio
   assert.ok(sql.includes('chk_shop_product_variants_promotional_pricing'));
   assert.ok(sql.includes('idx_shop_products_active_promotions'));
   assert.ok(sql.includes('v_agr6_9_promotions_and_submissions'));
+});
+
+console.log('\n--- 10. Super-App UI Refinements & Internal Testing Release Tests ---');
+
+test('MainScreen.kt implements unified navigation rail and floating home return button', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/main/MainScreen.kt'), 'utf8');
+  assert.ok(code.includes('compactSidebarSelectedService'));
+  assert.ok(code.includes('SmallFloatingActionButton'));
+  assert.ok(code.includes('Icons.Default.Home'));
+  assert.ok(code.includes('contentDescription = "Return Home"'));
+  assert.ok(code.includes('((activeSidebarService != null && activeSidebarService != SuperAppService.HOME) || centerOverlayActive || sellerAccountOpen)'));
+});
+
+test('SuperAppPromotionalFeed.kt implements modern DEMO CONCEPT cards with 14dp shape', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppPromotionalFeed.kt'), 'utf8');
+  assert.ok(code.includes('"DEMO CONCEPT"'));
+  assert.ok(code.includes('RoundedCornerShape(14.dp)'));
+  assert.ok(code.includes('FlowAroundRow(sidebarBounds, 158.dp)'));
+});
+
+test('CompactHomeSections.kt wires homePreviousPriceMinor to compareAtPriceMinor', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/CompactHomeSections.kt'), 'utf8');
+  assert.ok(code.includes('product.compareAtPriceMinor?.takeIf { it > product.priceMinor }'));
+});
+
+test('ShopScreen.kt implements refined ProductCard height and full checkout redesign', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  // ProductCard height
+  assert.ok(code.includes('cardHeight: androidx.compose.ui.unit.Dp = if (compact) 272.dp else 296.dp'));
+  // Checkout voucher by default
+  assert.ok(code.includes('Prepaid Store Voucher'));
+  assert.ok(code.includes('Text("Redeem", fontSize = 13.sp)'));
+  // Collapsible coupon
+  assert.ok(code.includes('couponExpanded'));
+  assert.ok(code.includes('"Have a coupon?"'));
+  // Cash on Delivery removal
+  assert.ok(code.includes('code != "cash_on_delivery" && code != "cod"'));
+  assert.ok(code.includes('eligiblePaymentMethods'));
+  assert.ok(code.includes('canPlaceOrder'));
+  assert.ok(code.includes('No authorized online payment method is enabled'));
+});
+
+test('SuperAppActivityScreen.kt gates Business Tab strictly to authorized accounts', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppActivityScreen.kt'), 'utf8');
+  assert.ok(code.includes('if (!isRestaurantCenterAuthorized && !isSellerAuthorized && !isPending)'));
+  assert.ok(code.includes('No Authorized Business Workspaces'));
+  assert.ok(code.includes('if (isRestaurantCenterAuthorized)'));
+  assert.ok(code.includes('if (isSellerAuthorized || isPending)'));
 });
 
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);

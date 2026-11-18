@@ -77,12 +77,16 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Person
@@ -3852,7 +3856,7 @@ private fun ProductCard(
     onToggleFavorite: (ShopProductDto) -> Unit,
     saved: Boolean,
     compact: Boolean = false,
-    cardHeight: androidx.compose.ui.unit.Dp = if (compact) 266.dp else 290.dp,
+    cardHeight: androidx.compose.ui.unit.Dp = if (compact) 272.dp else 296.dp,
 ) {
     Card(
         modifier = modifier
@@ -4172,9 +4176,16 @@ private fun CheckoutScreen(
 ) {
     val checkout = protectedState.checkout
     var addressFlow by remember(checkout?.id) { mutableStateOf(CheckoutAddressFlow(checkout?.id.orEmpty())) }
+    val eligiblePaymentMethods = remember(checkout?.paymentMethods) {
+        checkout?.paymentMethods?.filter {
+            val code = it.code.lowercase().trim()
+            code != "cash_on_delivery" && code != "cod"
+        }.orEmpty()
+    }
     var selectedPaymentMethod by remember { mutableStateOf("") }
     var couponInput by remember { mutableStateOf("") }
     var voucherInput by remember { mutableStateOf("") }
+    var couponExpanded by remember { mutableStateOf(!checkout?.couponCode.isNullOrBlank()) }
     LaunchedEffect(Unit) { onLoadAddresses() }
     LaunchedEffect(protectedState.addresses, checkout) {
         if (addressFlow.selectedAddressId.isBlank()) {
@@ -4183,10 +4194,13 @@ private fun CheckoutScreen(
         }
         if (checkout != null && (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0))) {
             selectedPaymentMethod = "voucher_prepaid"
-        } else if (selectedPaymentMethod.isBlank() || selectedPaymentMethod == "voucher_prepaid") {
-            selectedPaymentMethod = checkout?.paymentMethods?.firstOrNull { it.code != "voucher_prepaid" }?.code
-                ?: checkout?.paymentMethods?.firstOrNull()?.code.orEmpty()
+        } else if (selectedPaymentMethod.isBlank() || selectedPaymentMethod == "voucher_prepaid" || selectedPaymentMethod.lowercase() in setOf("cash_on_delivery", "cod")) {
+            selectedPaymentMethod = eligiblePaymentMethods.firstOrNull { it.code != "voucher_prepaid" }?.code
+                ?: eligiblePaymentMethods.firstOrNull()?.code.orEmpty()
         }
+    }
+    LaunchedEffect(checkout?.couponCode) {
+        if (!checkout?.couponCode.isNullOrBlank()) couponExpanded = true
     }
 
     LazyColumn(
@@ -4258,58 +4272,18 @@ private fun CheckoutScreen(
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Discounts & Vouchers", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
 
-                        // Coupon Section
+                        // 1. Prepaid Store Voucher (Visible by default)
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Discount Coupon", color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            if (!checkout.couponCode.isNullOrBlank()) {
-                                Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("${checkout.couponCode} (- ${formatEtb(checkout.couponDiscountMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                    }
-                                    TextButton(onClick = { onRemoveDiscount("coupon") }, contentPadding = PaddingValues(0.dp)) {
-                                        Text("Remove", color = ShopMuted, fontSize = 12.sp)
-                                    }
-                                }
-                            } else {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(
-                                        value = couponInput,
-                                        onValueChange = { couponInput = it.uppercase() },
-                                        placeholder = { Text("Enter coupon code", fontSize = 13.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = ShopGreen,
-                                            unfocusedBorderColor = ShopLine,
-                                        ),
-                                    )
-                                    Button(
-                                        onClick = {
-                                            onApplyCoupon(couponInput.trim())
-                                            couponInput = ""
-                                        },
-                                        enabled = couponInput.isNotBlank() && !protectedState.loading,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
-                                    ) {
-                                        Text("Apply", fontSize = 13.sp)
-                                    }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Prepaid Store Voucher", color = ShopInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                if (checkout.voucherAppliedMinor > 0) {
+                                    Text("Applied", color = ShopGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
                             }
-                        }
-
-                        HorizontalDivider(color = ShopLine)
-
-                        // Voucher Section
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Prepaid Store Voucher", color = ShopMuted, fontSize = 13.sp, fontWeight = FontWeight.Medium)
                             if (!checkout.voucherCode.isNullOrBlank()) {
                                 Row(
                                     Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
@@ -4319,7 +4293,7 @@ private fun CheckoutScreen(
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("${checkout.voucherCode} (- ${formatEtb(checkout.voucherAppliedMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("${checkout.voucherCode} (- ${formatEtb(checkout.voucherAppliedMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                     }
                                     TextButton(onClick = { onRemoveDiscount("voucher") }, contentPadding = PaddingValues(0.dp)) {
                                         Text("Remove", color = ShopMuted, fontSize = 12.sp)
@@ -4353,12 +4327,100 @@ private fun CheckoutScreen(
                                 }
                             }
                         }
+
+                        HorizontalDivider(color = ShopLine)
+
+                        // 2. Coupon Section (Collapsible)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            if (!checkout.couponCode.isNullOrBlank()) {
+                                Text("Discount Coupon", color = ShopInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("${checkout.couponCode} (- ${formatEtb(checkout.couponDiscountMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                    TextButton(onClick = { onRemoveDiscount("coupon") }, contentPadding = PaddingValues(0.dp)) {
+                                        Text("Remove", color = ShopMuted, fontSize = 12.sp)
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { couponExpanded = !couponExpanded }
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.LocalOffer,
+                                            contentDescription = null,
+                                            tint = ShopGreen,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                        Text(
+                                            "Have a coupon?",
+                                            color = ShopInk,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = if (couponExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (couponExpanded) "Collapse" else "Expand",
+                                        tint = ShopMuted,
+                                        modifier = Modifier.size(20.dp),
+                                    )
+                                }
+                                if (couponExpanded) {
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        OutlinedTextField(
+                                            value = couponInput,
+                                            onValueChange = { couponInput = it.uppercase() },
+                                            placeholder = { Text("Enter coupon code", fontSize = 13.sp) },
+                                            singleLine = true,
+                                            modifier = Modifier.weight(1f),
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = ShopGreen,
+                                                unfocusedBorderColor = ShopLine,
+                                            ),
+                                        )
+                                        Button(
+                                            onClick = {
+                                                onApplyCoupon(couponInput.trim())
+                                                couponInput = ""
+                                            },
+                                            enabled = couponInput.isNotBlank() && !protectedState.loading,
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
+                                        ) {
+                                            Text("Apply", fontSize = 13.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
                         InfoRow("Subtotal", formatEtb(checkout.subtotalMinor))
                         if (checkout.couponDiscountMinor > 0) {
@@ -4369,20 +4431,40 @@ private fun CheckoutScreen(
                         }
                         InfoRow("Shipping", if (checkout.shippingMinor > 0) formatEtb(checkout.shippingMinor) else "Not configured")
                         InfoRow("Tax", formatEtb(checkout.taxMinor))
-                        HorizontalDivider(color = ShopLine)
+                        HorizontalDivider(color = ShopLine, modifier = Modifier.padding(vertical = 2.dp))
                         val payableMinor = if (checkout.isFullyCoveredByVoucher) 0 else if (checkout.remainingPayableMinor > 0) checkout.remainingPayableMinor else checkout.grandTotalMinor
-                        InfoRow("Total payable", formatEtb(payableMinor))
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(ShopGreenSoft)
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Total payable", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text(formatEtb(payableMinor), color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        }
                         if (checkout.isFullyCoveredByVoucher || (payableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(8.dp),
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(15.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("100% Covered by Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                Text("100% Covered by Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                             }
                         }
-                        checkout.expiresAt?.let { Text("Reserved until ${formatMarketplaceDateTime(it)}", color = ShopMuted, fontSize = 12.sp) }
+                        checkout.expiresAt?.let {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier.padding(top = 2.dp)
+                            ) {
+                                Icon(Icons.Default.Schedule, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(13.dp))
+                                Text("Reserved until ${formatMarketplaceDateTime(it)}", color = ShopMuted, fontSize = 11.5.sp)
+                            }
+                        }
                     }
                 }
             }
@@ -4405,10 +4487,10 @@ private fun CheckoutScreen(
                                 }
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
                             }
-                        } else if (checkout.paymentMethods.isEmpty()) {
-                            ErrorCardMessage("No payment method is enabled yet. Online payments are not configured and Cash on Delivery is disabled by platform rules.")
+                        } else if (eligiblePaymentMethods.isEmpty()) {
+                            ErrorCardMessage("No authorized online payment method is enabled. Online payment gateways are pending activation and Cash on Delivery is disabled by marketplace policy.")
                         } else {
-                            checkout.paymentMethods.forEach { method ->
+                            eligiblePaymentMethods.forEach { method ->
                                 val selected = selectedPaymentMethod == method.code
                                 Row(
                                     Modifier
@@ -4427,10 +4509,15 @@ private fun CheckoutScreen(
                     }
                 }
             }
+            val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&
+                (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0) || (selectedPaymentMethod.isNotBlank() && eligiblePaymentMethods.any { it.code == selectedPaymentMethod })) &&
+                !addressFlow.formOpen &&
+                !protectedState.loading
+
             item {
                 Button(
                     onClick = { onConfirm(checkout.id, addressFlow.selectedAddressId, selectedPaymentMethod) },
-                    enabled = addressFlow.selectedAddressId.isNotBlank() && (selectedPaymentMethod.isNotBlank() || checkout.isFullyCoveredByVoucher) && !addressFlow.formOpen && !protectedState.loading,
+                    enabled = canPlaceOrder,
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = ShopGreen, disabledContainerColor = ShopLine, disabledContentColor = ShopMuted),

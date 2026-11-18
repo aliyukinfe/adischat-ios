@@ -517,87 +517,154 @@ fun SuperAppActivityScreen(
                     }
                 }
 
-                // Card 1: Restaurant Center
-                item {
-                    val orangeBorder = if (isRestaurantCenterAuthorized) orangeAccent.copy(alpha = 0.4f) else cardBorder
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = cardBg,
-                        border = BorderStroke(1.dp, orangeBorder),
-                        shadowElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(orangeAccent.copy(alpha = 0.18f)),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Restaurant,
-                                            contentDescription = null,
-                                            tint = orangeAccent,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                    Column {
-                                        Text(
-                                            text = "Restaurant Center",
-                                            color = textColor,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                        )
-                                        Text(
-                                            text = if (isRestaurantCenterAuthorized) "Dining Operations & KDS" else "Partner Dining Portal",
-                                            color = mutedColor,
-                                            fontSize = 10.sp,
-                                        )
-                                    }
-                                }
+                val isPending = sellerStatus in setOf("submitted", "under_review")
 
+                if (!isRestaurantCenterAuthorized && !isSellerAuthorized && !isPending) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = cardBg,
+                            border = BorderStroke(1.dp, cardBorder),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
                                 Box(
                                     modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(
-                                            if (isRestaurantCenterAuthorized) orangeAccent.copy(alpha = 0.15f)
-                                            else mutedColor.copy(alpha = 0.12f)
-                                        )
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        .size(44.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(mutedColor.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(
-                                        text = if (isRestaurantCenterAuthorized) "AUTHORIZED" else "PARTNER ROLE REQUIRED",
-                                        color = if (isRestaurantCenterAuthorized) orangeAccent else mutedColor,
-                                        fontSize = 8.5.sp,
-                                        fontWeight = FontWeight.Bold,
+                                    Icon(
+                                        imageVector = Icons.Default.Business,
+                                        contentDescription = null,
+                                        tint = mutedColor,
+                                        modifier = Modifier.size(24.dp),
                                     )
                                 }
+                                Text(
+                                    text = "No Authorized Business Workspaces",
+                                    color = textColor,
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = "Business management portals (Restaurant Center & Seller Center) are available only to verified business partners and authorized accounts.",
+                                    color = mutedColor,
+                                    fontSize = 12.sp,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    lineHeight = 16.sp,
+                                )
+                                Button(
+                                    onClick = onOpenSellerCenter,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = mintAccent,
+                                        contentColor = Color.Black,
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().height(36.dp),
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(
+                                            text = "Apply for AdisGebeya Seller Account",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(13.dp),
+                                        )
+                                    }
+                                }
                             }
+                        }
+                    }
+                }
 
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = if (isRestaurantCenterAuthorized) {
-                                    "Manage restaurant branches, dining menus, live orders, waiter calls, and kitchen display system (KDS)."
-                                } else {
-                                    "Access requires an active verified Restaurant Owner or Manager role. If your establishment is an AdisChat dining partner, ask your restaurant administrator to invite your account."
-                                },
-                                color = if (isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
-                                fontSize = 11.5.sp,
-                                lineHeight = 16.sp,
-                            )
-                            Spacer(Modifier.height(10.dp))
+                // Card 1: Restaurant Center (shown ONLY to authorized accounts)
+                if (isRestaurantCenterAuthorized) {
+                    item {
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = cardBg,
+                            border = BorderStroke(1.dp, orangeAccent.copy(alpha = 0.4f)),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(orangeAccent.copy(alpha = 0.18f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Restaurant,
+                                                contentDescription = null,
+                                                tint = orangeAccent,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = "Restaurant Center",
+                                                color = textColor,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Text(
+                                                text = "Dining Operations & KDS",
+                                                color = mutedColor,
+                                                fontSize = 10.sp,
+                                            )
+                                        }
+                                    }
 
-                            if (isRestaurantCenterAuthorized) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(orangeAccent.copy(alpha = 0.15f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
+                                    ) {
+                                        Text(
+                                            text = "AUTHORIZED",
+                                            color = orangeAccent,
+                                            fontSize = 8.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = "Manage restaurant branches, dining menus, live orders, waiter calls, and kitchen display system (KDS).",
+                                    color = if (isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp,
+                                )
+                                Spacer(Modifier.height(10.dp))
+
                                 Button(
                                     onClick = onOpenRestaurantCenter,
                                     colors = ButtonDefaults.buttonColors(
@@ -625,139 +692,119 @@ fun SuperAppActivityScreen(
                                         )
                                     }
                                 }
-                            } else {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532),
-                                    modifier = Modifier.fillMaxWidth(),
-                                ) {
-                                    Text(
-                                        text = "Role verification enforced by backend workspace memberships.",
-                                        color = mutedColor,
-                                        fontSize = 10.sp,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                                    )
-                                }
                             }
                         }
                     }
                 }
 
-                // Card 2: AdisGebeya Seller Center
-                item {
-                    val isPending = sellerStatus in setOf("submitted", "under_review")
-                    val goldBorder = if (isSellerAuthorized) goldAccent.copy(alpha = 0.4f) else cardBorder
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = cardBg,
-                        border = BorderStroke(1.dp, goldBorder),
-                        shadowElevation = 2.dp,
-                        modifier = Modifier.fillMaxWidth(),
-                    ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                            ) {
+                // Card 2: AdisGebeya Seller Center (shown to authorized sellers or pending applicants)
+                if (isSellerAuthorized || isPending) {
+                    item {
+                        val goldBorder = if (isSellerAuthorized) goldAccent.copy(alpha = 0.4f) else cardBorder
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = cardBg,
+                            border = BorderStroke(1.dp, goldBorder),
+                            shadowElevation = 2.dp,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(goldAccent.copy(alpha = 0.18f)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Storefront,
+                                                contentDescription = null,
+                                                tint = goldAccent,
+                                                modifier = Modifier.size(20.dp),
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = "AdisGebeya Seller Center",
+                                                color = textColor,
+                                                fontSize = 14.sp,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Text(
+                                                text = if (isSellerAuthorized) "Marketplace Merchant Portal" else "Merchant Onboarding",
+                                                color = mutedColor,
+                                                fontSize = 10.sp,
+                                            )
+                                        }
+                                    }
+
+                                    val (badgeText, badgeColor) = when {
+                                        isSellerAuthorized -> "ACTIVE SELLER" to goldAccent
+                                        else -> "UNDER REVIEW" to Color(0xFF60A5FA)
+                                    }
                                     Box(
                                         modifier = Modifier
-                                            .size(36.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(goldAccent.copy(alpha = 0.18f)),
-                                        contentAlignment = Alignment.Center,
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(badgeColor.copy(alpha = 0.15f))
+                                            .padding(horizontal = 6.dp, vertical = 2.dp),
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Storefront,
-                                            contentDescription = null,
-                                            tint = goldAccent,
-                                            modifier = Modifier.size(20.dp),
-                                        )
-                                    }
-                                    Column {
                                         Text(
-                                            text = "AdisGebeya Seller Center",
-                                            color = textColor,
-                                            fontSize = 14.sp,
+                                            text = badgeText,
+                                            color = badgeColor,
+                                            fontSize = 8.5.sp,
                                             fontWeight = FontWeight.Bold,
                                         )
-                                        Text(
-                                            text = if (isSellerAuthorized) "Marketplace Merchant Portal" else "Merchant Onboarding",
-                                            color = mutedColor,
-                                            fontSize = 10.sp,
-                                        )
                                     }
                                 }
 
-                                val (badgeText, badgeColor) = when {
-                                    isSellerAuthorized -> "ACTIVE SELLER" to goldAccent
-                                    isPending -> "UNDER REVIEW" to Color(0xFF60A5FA)
-                                    else -> "APPLICATION OPEN" to mintAccent
-                                }
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(badgeColor.copy(alpha = 0.15f))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        text = badgeText,
-                                        color = badgeColor,
-                                        fontSize = 8.5.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                }
-                            }
-
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                text = when {
-                                    isSellerAuthorized ->
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    text = if (isSellerAuthorized) {
                                         "Merchant dashboard for marketplace vendors. Monitor store status, product catalog, sales, and payouts."
-                                    isPending ->
+                                    } else {
                                         "Your merchant application has been submitted and is currently being reviewed by the AdisGebeya onboarding team."
-                                    else ->
-                                        "Sell products on AdisGebeya to local customers. Complete a verified seller application with integrated delivery and payments."
-                                },
-                                color = if (isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
-                                fontSize = 11.5.sp,
-                                lineHeight = 16.sp,
-                            )
-                            Spacer(Modifier.height(10.dp))
+                                    },
+                                    color = if (isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
+                                    fontSize = 11.5.sp,
+                                    lineHeight = 16.sp,
+                                )
+                                Spacer(Modifier.height(10.dp))
 
-                            Button(
-                                onClick = onOpenSellerCenter,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isSellerAuthorized) goldAccent else mintAccent,
-                                    contentColor = Color.Black,
-                                ),
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                modifier = Modifier.fillMaxWidth().height(36.dp),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                Button(
+                                    onClick = onOpenSellerCenter,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSellerAuthorized) goldAccent else mintAccent,
+                                        contentColor = Color.Black,
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    modifier = Modifier.fillMaxWidth().height(36.dp),
                                 ) {
-                                    Text(
-                                        text = when {
-                                            isSellerAuthorized -> "Open Seller Center"
-                                            isPending -> "Check Application Status"
-                                            else -> "Apply for Seller Account"
-                                        },
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = null,
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(13.dp),
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Text(
+                                            text = if (isSellerAuthorized) "Open Seller Center" else "Check Application Status",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                            contentDescription = null,
+                                            tint = Color.Black,
+                                            modifier = Modifier.size(13.dp),
+                                        )
+                                    }
                                 }
                             }
                         }

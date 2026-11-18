@@ -188,6 +188,8 @@ fun MainScreen(
     }
 
     val onSelectSidebarService: (SuperAppService) -> Unit = { targetService ->
+        restaurantCenterNativeOpen = false
+        sellerAccountOpen = false
         if (targetService == SuperAppService.HOME) {
             onGoHome()
         } else {
@@ -497,10 +499,8 @@ fun MainScreen(
         val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME
 
         val shouldShowCompactSidebar = FeatureFlags.SUPER_APP_HOME_ENABLED &&
-            activeSidebarService != null &&
-            activeSidebarService != SuperAppService.HOME &&
+            ((activeSidebarService != null && activeSidebarService != SuperAppService.HOME) || centerOverlayActive || sellerAccountOpen) &&
             !keyboardOpen &&
-            !restaurantCenterNativeOpen &&
             restaurantsQaRoute == null &&
             pendingRestaurantQrToken == null
 
@@ -932,11 +932,17 @@ fun MainScreen(
                 }
             }
 
+            val compactSidebarSelectedService = when {
+                centerOverlayActive -> SuperAppService.RESTAURANTS
+                sellerAccountOpen -> SuperAppService.ADISGEBEYA
+                else -> activeSidebarService
+            }
+
             if (shouldShowCompactSidebar && activeSidebarService == SuperAppService.PROMOTIONS) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     renderCoreScreenContent()
                     SuperAppCompactSidebar(
-                        selectedService = activeSidebarService,
+                        selectedService = compactSidebarSelectedService,
                         onSelectService = onSelectSidebarService,
                         onExpandHome = onGoHome,
                         totalUnreadChat = totalUnread,
@@ -947,17 +953,45 @@ fun MainScreen(
                             if (promotionsRailBounds != next) promotionsRailBounds = next
                         },
                     )
+                    SmallFloatingActionButton(
+                        onClick = onGoHome,
+                        containerColor = Color(0xFF0F766E),
+                        contentColor = Color.White,
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Home,
+                            contentDescription = "Return Home",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
             } else if (shouldShowCompactSidebar) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     SuperAppCompactSidebar(
-                        selectedService = activeSidebarService,
+                        selectedService = compactSidebarSelectedService,
                         onSelectService = onSelectSidebarService,
                         onExpandHome = onGoHome,
                         totalUnreadChat = totalUnread,
                     )
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         renderCoreScreenContent()
+                        SmallFloatingActionButton(
+                            onClick = onGoHome,
+                            containerColor = Color(0xFF0F766E),
+                            contentColor = Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Home,
+                                contentDescription = "Return Home",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
             } else {

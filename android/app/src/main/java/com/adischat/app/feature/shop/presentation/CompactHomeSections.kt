@@ -15,8 +15,8 @@ internal fun recommendedBrowseProducts(products: List<ShopProductDto>): List<Sho
 }
 
 internal fun homePreviousPriceMinor(product: ShopProductDto): Int? {
-    // Catalog comparison fields have no verified offer provenance or active period yet.
-    return null
+    // Return compareAtPriceMinor when it represents a genuine discount over current priceMinor
+    return product.compareAtPriceMinor?.takeIf { it > product.priceMinor }
 }
 
 internal fun verifiedDiscountPercent(product: ShopProductDto): Int? =

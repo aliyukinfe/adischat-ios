@@ -130,7 +130,7 @@ fun SuperAppPromotionalFeed(
             }
         }
         items(visible, key = { it.id }) { item ->
-            FlowAroundRow(sidebarBounds, 148.dp) {
+            FlowAroundRow(sidebarBounds, 158.dp) {
                 DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
             }
         }
@@ -142,14 +142,14 @@ private fun DemoPromotionCard(item: SuperAppPromotionItem, isLight: Boolean, onC
     val ink = if (isLight) Color(0xFF0F172A) else Color.White
     val muted = if (isLight) Color(0xFF475569) else Color(0xFFCBD5E1)
     Surface(
-        modifier = Modifier.fillMaxWidth().height(144.dp).clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth().height(154.dp).clickable(onClick = onClick),
+        shape = RoundedCornerShape(14.dp),
         color = if (isLight) Color.White else Color(0xFF171C24),
         shadowElevation = 3.dp,
         border = BorderStroke(1.dp, if (isLight) Color(0xFFE2E8F0) else Color(0xFF334155)),
     ) {
         Column {
-            Box(Modifier.fillMaxWidth().height(70.dp)) {
+            Box(Modifier.fillMaxWidth().height(76.dp)) {
                 AsyncImage(
                     model = item.imageUrl,
                     contentDescription = item.title,
@@ -157,16 +157,20 @@ private fun DemoPromotionCard(item: SuperAppPromotionItem, isLight: Boolean, onC
                     modifier = Modifier.fillMaxSize(),
                 )
                 Text(
-                    "DEMO",
-                    color = Color(0xFF052E26),
-                    fontSize = 10.sp,
+                    "DEMO CONCEPT",
+                    color = Color(0xFF064E3B),
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.align(Alignment.TopStart).padding(7.dp).background(Color(0xFF6EE7B7), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(Color(0xFF6EE7B7), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
                 )
             }
-            Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(item.title, color = ink, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item.subtitle, color = muted, fontSize = 11.sp, maxLines = 2, lineHeight = 13.sp, overflow = TextOverflow.Ellipsis)
+                Text(item.subtitle, color = muted, fontSize = 11.sp, maxLines = 2, lineHeight = 14.sp, overflow = TextOverflow.Ellipsis)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         if (item.targetService == SuperAppService.ADISGEBEYA || item.targetService == SuperAppService.RESTAURANTS) "Prices in app" else "Demo only",
