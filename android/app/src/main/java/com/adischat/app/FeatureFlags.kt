@@ -24,6 +24,6 @@ object FeatureFlags {
         get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
 
     // Phase H1 — Super App Home & Adaptive Sidebar
-    // Allows immediate restoration of legacy Home if disabled.
-    var SUPER_APP_HOME_ENABLED: Boolean = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
+    // Production release and QA builds both run unified Super App navigation.
+    var SUPER_APP_HOME_ENABLED: Boolean = true
 }
