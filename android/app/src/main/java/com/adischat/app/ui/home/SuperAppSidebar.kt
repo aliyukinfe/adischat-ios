@@ -182,6 +182,7 @@ fun SuperAppCompactSidebar(
     onSelectService: (SuperAppService) -> Unit,
     onExpandHome: () -> Unit,
     totalUnreadChat: Int = 0,
+    contentHeightOnly: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val isLight = (selectedService == SuperAppService.ADISGEBEYA || selectedService == SuperAppService.RESTAURANTS) ||
@@ -194,7 +195,7 @@ fun SuperAppCompactSidebar(
     Surface(
         modifier = modifier
             .width(52.dp)
-            .fillMaxHeight(),
+            .then(if (contentHeightOnly) Modifier.wrapContentHeight() else Modifier.fillMaxHeight()),
         shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
         color = bgColor,
         tonalElevation = 2.dp,
@@ -203,7 +204,7 @@ fun SuperAppCompactSidebar(
     ) {
         Column(
             modifier = Modifier
-                .fillMaxHeight()
+                .then(if (contentHeightOnly) Modifier.wrapContentHeight() else Modifier.fillMaxHeight())
                 .statusBarsPadding()
                 .padding(vertical = 4.dp, horizontal = 2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -240,7 +241,7 @@ fun SuperAppCompactSidebar(
 
             Column(
                 modifier = Modifier
-                    .verticalScroll(rememberScrollState()),
+                    .then(if (contentHeightOnly) Modifier else Modifier.verticalScroll(rememberScrollState())),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {

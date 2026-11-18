@@ -33,7 +33,7 @@ test('direct Chat, Shop, and Restaurants switching retains service state', () =>
 test('H1 Home sidebar dispatches each service once', () => {
   const block = home.split('if (com.adischat.app.FeatureFlags.SUPER_APP_HOME_ENABLED) {')[1]?.split('return')[0];
   assert.ok(block);
-  assert.match(block, /onSelectSidebarService\(service\)/);
+  assert.match(block, /onSelectService = onSelectSidebarService/);
   assert.doesNotMatch(block, /onOpenShop\(\)|onOpenRestaurants\(\)|onGoChat\(\)/);
 });
 

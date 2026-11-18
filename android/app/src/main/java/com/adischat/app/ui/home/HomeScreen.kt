@@ -58,6 +58,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -160,6 +161,7 @@ fun HomeScreen(
     onOpenRestaurantsQa: () -> Unit = {},
     onOpenRestaurantCenter: () -> Unit = {},
     onSelectSidebarService: (SuperAppService) -> Unit = {},
+    onOpenSearchResult: (HomeSearchHit) -> Unit = {},
 ) {
     val vm: UserViewModel = viewModel()
     val scope = rememberCoroutineScope()
@@ -195,15 +197,15 @@ fun HomeScreen(
     }
 
     if (com.adischat.app.FeatureFlags.SUPER_APP_HOME_ENABLED) {
-        SuperAppHomeScreen(
-            userName = displayName,
-            selectedService = null,
-            totalUnreadChat = totalUnread,
-            onOpenSearch = onGoDiscover,
-            onSelectService = { service ->
-                onSelectSidebarService(service)
-            },
-        )
+        key(appUser?.uid) {
+            SuperAppHomeScreen(
+                userUid = appUser?.uid,
+                selectedService = null,
+                totalUnreadChat = totalUnread,
+                onSelectService = onSelectSidebarService,
+                onOpenSearchResult = onOpenSearchResult,
+            )
+        }
         return
     }
 

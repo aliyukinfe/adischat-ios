@@ -78,6 +78,8 @@ fun RestaurantsCustomerRootScreen(
     onOpenQaPreview: (() -> Unit)? = null,
     initialQrToken: String? = null,
     onInitialQrTokenConsumed: () -> Unit = {},
+    initialSearchRestaurantId: String? = null,
+    onInitialSearchRestaurantConsumed: () -> Unit = {},
 ) {
     val allowed = FeatureFlags.RESTAURANTS_DINE_IN_ENABLED &&
         RestaurantsAppIntegrationGuards.isCustomerDineInFlowAllowed(environment)
@@ -248,6 +250,12 @@ fun RestaurantsCustomerRootScreen(
             isOrdersSheetOpen = false
             selectedOrderIdInSheet = null
             coordinator.loadDiscover()
+        }
+
+        LaunchedEffect(initialSearchRestaurantId, currentFirebaseUid) {
+            val restaurantId = initialSearchRestaurantId?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
+            coordinator.openRestaurantProfile(restaurantId)
+            onInitialSearchRestaurantConsumed()
         }
 
         LaunchedEffect(flowState.destination) {

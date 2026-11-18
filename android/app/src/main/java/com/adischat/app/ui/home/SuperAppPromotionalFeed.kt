@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -49,15 +51,16 @@ internal fun overlapsSidebar(rowTop: Float, rowBottom: Float, sidebar: Rect?): B
     sidebar == null || (rowTop < sidebar.bottom && rowBottom > sidebar.top)
 
 @Composable
-private fun FlowAroundRow(
+internal fun FlowAroundRow(
     sidebarBounds: Rect?,
     height: Dp,
+    besideStart: Dp = 114.dp,
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
     var besideSidebar by remember { mutableStateOf(true) }
     val startPadding by animateDpAsState(
-        targetValue = if (besideSidebar) 114.dp else 12.dp,
+        targetValue = if (besideSidebar) besideStart else 12.dp,
         animationSpec = tween(160),
         label = "flowAroundSidebar",
     )
@@ -79,12 +82,11 @@ private fun FlowAroundRow(
 
 @Composable
 fun SuperAppPromotionalFeed(
-    userName: String,
     onSelectService: (SuperAppService) -> Unit,
-    onOpenSearch: () -> Unit = {},
     modifier: Modifier = Modifier,
     promotions: List<SuperAppPromotionItem> = SuperAppDemoPromotions.items,
     sidebarBounds: Rect? = null,
+    listState: LazyListState = rememberLazyListState(),
 ) {
     val isLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val background = if (isLight) Color(0xFFF8FAFC) else Color(0xFF0B0D12)
@@ -99,17 +101,10 @@ fun SuperAppPromotionalFeed(
 
     LazyColumn(
         modifier = modifier.fillMaxSize().background(background),
+        state = listState,
         contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        item(key = "welcome") {
-            FlowAroundRow(sidebarBounds, 42.dp) {
-                Column {
-                    Text("AdisChat", color = Color(0xFF10B981), fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("Welcome, ${userName.ifBlank { "Akab" }}", color = ink, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
-        }
         items(visible.take(2), key = { "lead-${it.id}" }) { item ->
             FlowAroundRow(sidebarBounds, 148.dp) {
                 DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
@@ -125,21 +120,6 @@ fun SuperAppPromotionalFeed(
                     maxLines = 2,
                     modifier = Modifier.fillMaxWidth(),
                 )
-            }
-        }
-        item(key = "search") {
-            FlowAroundRow(sidebarBounds, 52.dp) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().height(48.dp).clickable(onClick = onOpenSearch),
-                    shape = RoundedCornerShape(8.dp),
-                    color = if (isLight) Color.White else Color(0xFF171C24),
-                    border = BorderStroke(1.dp, if (isLight) Color(0xFFE2E8F0) else Color(0xFF334155)),
-                ) {
-                    Row(Modifier.padding(horizontal = 10.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Default.Search, contentDescription = null, tint = muted)
-                        Text("Search", color = muted, fontSize = 13.sp)
-                    }
-                }
             }
         }
         item(key = "categories") {

@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
@@ -63,6 +64,7 @@ import coil.compose.AsyncImage
 fun SuperAppPromotionsScreen(
     onBack: () -> Unit,
     onSelectService: (SuperAppService) -> Unit,
+    sidebarBounds: Rect? = null,
     modifier: Modifier = Modifier,
     promotions: List<SuperAppPromotionItem> = SuperAppDemoPromotions.items,
 ) {
@@ -75,7 +77,7 @@ fun SuperAppPromotionsScreen(
     val coralAccent = Color(0xFFF87171)
 
     var selectedCategory by remember { mutableStateOf("All") }
-    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Vouchers", "Deals") }
+    val categories = remember { listOf("All", "Restaurants", "AdisGebeya", "Chat", "Promotions") }
 
     val filtered = remember(selectedCategory, promotions) {
         if (selectedCategory == "All") promotions
@@ -87,6 +89,7 @@ fun SuperAppPromotionsScreen(
         containerColor = bgColor,
         topBar = {
             TopAppBar(
+                modifier = Modifier.padding(start = 52.dp),
                 title = {
                     Column {
                         Text(
@@ -96,7 +99,7 @@ fun SuperAppPromotionsScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            text = "Exclusive AdisChat Super App Deals",
+                            text = "Demo concepts, not live offers",
                             color = mutedColor,
                             fontSize = 11.sp,
                         )
@@ -120,13 +123,13 @@ fun SuperAppPromotionsScreen(
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 14.dp),
+                .padding(innerPadding),
             contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // QA Notice banner
             item {
+                FlowAroundRow(sidebarBounds, 70.dp, besideStart = 62.dp) {
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = Color(0xFFFEF3C7).copy(alpha = if (isLight) 0.9f else 0.15f),
@@ -152,10 +155,12 @@ fun SuperAppPromotionsScreen(
                         )
                     }
                 }
+                }
             }
 
             // Categories
             item {
+                FlowAroundRow(sidebarBounds, 48.dp, besideStart = 62.dp) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
@@ -183,10 +188,12 @@ fun SuperAppPromotionsScreen(
                         }
                     }
                 }
+                }
             }
 
             // Items list
             items(filtered, key = { it.id }) { item ->
+                FlowAroundRow(sidebarBounds, 182.dp, besideStart = 62.dp) {
                 Surface(
                     shape = RoundedCornerShape(16.dp),
                     color = cardBg,
@@ -194,6 +201,7 @@ fun SuperAppPromotionsScreen(
                     shadowElevation = 2.dp,
                     modifier = Modifier
                         .fillMaxWidth()
+                        .height(176.dp)
                         .clickable { onSelectService(item.targetService) },
                 ) {
                     Column(
@@ -313,6 +321,7 @@ fun SuperAppPromotionsScreen(
                             }
                         }
                     }
+                }
                 }
             }
         }

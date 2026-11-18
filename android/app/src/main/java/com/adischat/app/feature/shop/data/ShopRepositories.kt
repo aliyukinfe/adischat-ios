@@ -226,6 +226,16 @@ class StoreRepository(private val api: ShopSupabaseApi? = ShopSupabaseClient.api
         else if (ShopReviewedMedia.enabled) service.reviewedStores().map(ShopReviewedMedia::store)
         else service.stores()
     }.orEmpty()
+
+    suspend fun searchApprovedStores(query: String): List<ShopStoreDto> {
+        val safeTerm = query.trim().take(80)
+            .replace(Regex("[^\\p{L}\\p{N}\\s-]"), " ")
+            .replace(Regex("\\s+"), " ").trim()
+        require(safeTerm.length >= 2)
+        val service = api ?: error("Marketplace is unavailable.")
+        return if (BuildConfig.QA_BUILD) service.qaStores("ilike.*$safeTerm*")
+        else approvedStores().filter { it.name.contains(safeTerm, ignoreCase = true) }.take(12)
+    }
 }
 
 object ShopSessionMemory {

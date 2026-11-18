@@ -116,6 +116,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.adischat.app.data.model.CommunityRoom
+import com.adischat.app.ui.home.HomeSearchTarget
 import com.adischat.app.data.model.AdisLinkTarget
 import com.adischat.app.data.model.AdisLinks
 import com.adischat.app.data.model.Conversation
@@ -241,6 +242,8 @@ fun ChatScreen(
     onAdisLinkConsumed: () -> Unit = {},
     pendingNotificationConversationId: String? = null,
     onNotificationConversationConsumed: () -> Unit = {},
+    pendingHomeSearchTarget: HomeSearchTarget? = null,
+    onHomeSearchTargetConsumed: () -> Unit = {},
     onOpenUrl: (String) -> Unit = {},
 ) {
     val vm      : ChatViewModel = viewModel()
@@ -282,6 +285,16 @@ fun ChatScreen(
         vm.openConversationByNotification(id)
         onNotificationConversationConsumed()
         }
+    }
+
+    LaunchedEffect(pendingHomeSearchTarget, me?.uid) {
+        if (me == null) return@LaunchedEffect
+        when (val target = pendingHomeSearchTarget) {
+            is HomeSearchTarget.Chat -> vm.openConversationByNotification(target.conversation.id)
+            is HomeSearchTarget.Community -> vm.openCommunity(target.room)
+            else -> return@LaunchedEffect
+        }
+        onHomeSearchTargetConsumed()
     }
 
     // Let the FCM service know which conversation is on screen so it can suppress

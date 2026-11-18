@@ -10,7 +10,7 @@ interface ShopSupabaseApi {
     suspend fun qaCategories(): List<ShopCategoryDto>
 
     @GET("rest/v1/shop_qa_public_stores?select=id,name,description,city,created_at&limit=12")
-    suspend fun qaStores(): List<ShopStoreDto>
+    suspend fun qaStores(@Query("name") nameFilter: String? = null): List<ShopStoreDto>
 
     @POST("rest/v1/rpc/adishop_qa_catalog_page")
     suspend fun qaCatalogPage(@Body request: @JvmSuppressWildcards Map<String, Any?>): List<ShopProductDto>

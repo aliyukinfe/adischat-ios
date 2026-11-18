@@ -23,7 +23,7 @@ test('measured sidebar has content height and stays outside the scrolling feed',
 test('all promotional rows use stable height and measured flow-around placement', () => {
   assert.match(feed, /items\(visible\.take\(2\), key = \{ "lead-\$\{it\.id\}" \}\)/);
   assert.match(feed, /items\(visible\.drop\(2\), key = \{ it\.id \}\) \{ item ->\s*FlowAroundRow\(sidebarBounds, 148\.dp\)/);
-  assert.ok(feed.indexOf('item(key = "welcome")') < feed.indexOf('items(visible.take(2)'));
+  assert.doesNotMatch(feed, /item\(key = "welcome"\)/);
   assert.match(feed, /rowTop < sidebar\.bottom && rowBottom > sidebar\.top/);
   assert.match(feed, /\.onGloballyPositioned/);
   assert.match(feed, /if \(besideSidebar != next\) besideSidebar = next/);

@@ -20,9 +20,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,8 @@ import com.adischat.app.ui.home.SuperAppCompactSidebar
 import com.adischat.app.ui.home.SuperAppPromotionsScreen
 import com.adischat.app.ui.home.SuperAppSavedScreen
 import com.adischat.app.ui.home.SuperAppActivityScreen
+import com.adischat.app.ui.home.HomeSearchHit
+import com.adischat.app.ui.home.HomeSearchTarget
 import com.adischat.app.feature.restaurants.data.RestaurantsRepository
 import com.adischat.app.feature.shop.data.SellerRepository
 import com.adischat.app.feature.shop.presentation.sellerFeaturesUnlocked
@@ -150,6 +155,9 @@ fun MainScreen(
     var selected by rememberSaveable { mutableIntStateOf(0) }
     var activeBottomTab by rememberSaveable { mutableStateOf<Int?>(null) } // null = Home in Super App mode
     var activeSidebarService by rememberSaveable { mutableStateOf<SuperAppService?>(null) }
+    var promotionsRailBounds by remember { mutableStateOf<Rect?>(null) }
+    var pendingHomeChatTarget by remember { mutableStateOf<HomeSearchTarget?>(null) }
+    var pendingHomeRestaurantId by remember { mutableStateOf<String?>(null) }
     val saveableStateHolder = rememberSaveableStateHolder()
 
     var shopRoute by rememberSaveable { mutableStateOf<ShopRoute?>(null) }
@@ -162,6 +170,8 @@ fun MainScreen(
     var restaurantsQaRoute by rememberSaveable { mutableStateOf<RestaurantsQaRoute?>(null) }
 
     val onGoHome: () -> Unit = {
+        pendingHomeChatTarget = null
+        pendingHomeRestaurantId = null
         activeSidebarService = null
         activeBottomTab = null
         selected = 0
@@ -201,6 +211,27 @@ fun MainScreen(
         }
     }
 
+    val onOpenHomeSearchResult: (HomeSearchHit) -> Unit = { hit ->
+        when (val target = hit.target) {
+            is HomeSearchTarget.Chat, is HomeSearchTarget.Community -> {
+                pendingHomeChatTarget = target
+                onSelectSidebarService(SuperAppService.CHAT)
+            }
+            is HomeSearchTarget.Product -> {
+                shopRoute = ShopRoute.Product(target.product)
+                onSelectSidebarService(SuperAppService.ADISGEBEYA)
+            }
+            is HomeSearchTarget.Store -> {
+                shopRoute = ShopRoute.Store(target.store)
+                onSelectSidebarService(SuperAppService.ADISGEBEYA)
+            }
+            is HomeSearchTarget.Restaurant -> {
+                pendingHomeRestaurantId = target.restaurantId
+                onSelectSidebarService(SuperAppService.RESTAURANTS)
+            }
+        }
+    }
+
     var isRestaurantCenterEligible by remember { mutableStateOf(false) }
     var isSellerEligible by remember { mutableStateOf(false) }
     var sellerApplicationStatus by remember { mutableStateOf<String?>("not_started") }
@@ -209,6 +240,8 @@ fun MainScreen(
     LaunchedEffect(currentUser?.uid) {
         val uid = currentUser?.uid
         if (lastUid != null && lastUid != uid) {
+            pendingHomeChatTarget = null
+            pendingHomeRestaurantId = null
             restaurantsCustomerOpen = false
             pendingRestaurantQrToken = null
             restaurantCenterNativeOpen = false
@@ -501,6 +534,8 @@ fun MainScreen(
                             SuperAppService.HOME -> Unit
                             SuperAppService.CHAT -> {
                                 ChatScreen(
+                                    pendingHomeSearchTarget = pendingHomeChatTarget,
+                                    onHomeSearchTargetConsumed = { pendingHomeChatTarget = null },
                                     pendingAdisLink = pendingAdisLink,
                                     onAdisLinkConsumed = onAdisLinkConsumed,
                                     pendingNotificationConversationId = pendingNotificationConversationId,
@@ -526,6 +561,8 @@ fun MainScreen(
                             }
                             SuperAppService.RESTAURANTS -> {
                                 RestaurantsCustomerRootScreen(
+                                    initialSearchRestaurantId = pendingHomeRestaurantId,
+                                    onInitialSearchRestaurantConsumed = { pendingHomeRestaurantId = null },
                                     initialQrToken = pendingRestaurantQrToken,
                                     onInitialQrTokenConsumed = { pendingRestaurantQrToken = null },
                                     onBackToHome = {
@@ -547,6 +584,7 @@ fun MainScreen(
                                 SuperAppPromotionsScreen(
                                     onBack = onGoHome,
                                     onSelectService = onSelectSidebarService,
+                                    sidebarBounds = promotionsRailBounds,
                                 )
                             }
                             null -> Unit
@@ -624,6 +662,7 @@ fun MainScreen(
                                     }
                                 },
                                 onSelectSidebarService = onSelectSidebarService,
+                                onOpenSearchResult = onOpenHomeSearchResult,
                             )
                             0 -> SuperAppSavedScreen(
                                 onGoHome = onGoHome,
@@ -893,7 +932,23 @@ fun MainScreen(
                 }
             }
 
-            if (shouldShowCompactSidebar) {
+            if (shouldShowCompactSidebar && activeSidebarService == SuperAppService.PROMOTIONS) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    renderCoreScreenContent()
+                    SuperAppCompactSidebar(
+                        selectedService = activeSidebarService,
+                        onSelectService = onSelectSidebarService,
+                        onExpandHome = onGoHome,
+                        totalUnreadChat = totalUnread,
+                        contentHeightOnly = true,
+                        modifier = Modifier.onGloballyPositioned { coordinates ->
+                            val position = coordinates.positionInRoot()
+                            val next = Rect(position.x, position.y, position.x + coordinates.size.width, position.y + coordinates.size.height)
+                            if (promotionsRailBounds != next) promotionsRailBounds = next
+                        },
+                    )
+                }
+            } else if (shouldShowCompactSidebar) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     SuperAppCompactSidebar(
                         selectedService = activeSidebarService,
