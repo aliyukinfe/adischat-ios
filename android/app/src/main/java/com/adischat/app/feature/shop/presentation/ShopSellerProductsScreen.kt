@@ -204,6 +204,7 @@ import com.adischat.app.feature.shop.data.ShopSellerProductDto
 import com.adischat.app.feature.shop.data.ShopSellerSpecificationInput
 import com.adischat.app.feature.shop.data.ShopSellerProductOptionInput
 import com.adischat.app.feature.shop.data.ShopSellerVariantInput
+import com.adischat.app.feature.shop.data.SellerVariantOutputs
 import com.adischat.app.feature.shop.data.ShopStoreDto
 import com.adischat.app.feature.shop.data.ShopSellingUnitDto
 import com.adischat.app.ui.theme.AdisGebeyaColors
