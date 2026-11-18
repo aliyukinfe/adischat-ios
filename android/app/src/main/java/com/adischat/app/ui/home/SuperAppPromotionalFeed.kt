@@ -105,23 +105,6 @@ fun SuperAppPromotionalFeed(
         contentPadding = PaddingValues(top = 8.dp, bottom = 80.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        items(visible.take(2), key = { "lead-${it.id}" }) { item ->
-            FlowAroundRow(sidebarBounds, 148.dp) {
-                DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
-            }
-        }
-        item(key = "demo-notice") {
-            FlowAroundRow(sidebarBounds, 48.dp) {
-                Text(
-                    "DEMO PREVIEW  |  Not live offers",
-                    color = if (isLight) Color(0xFF065F46) else Color(0xFF6EE7B7),
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 2,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-        }
         item(key = "categories") {
             FlowAroundRow(sidebarBounds, 44.dp) {
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -142,11 +125,11 @@ fun SuperAppPromotionalFeed(
             FlowAroundRow(sidebarBounds, 40.dp) {
                 Column {
                     Text("Discover", color = ink, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                    Text("${visible.size} demo concepts", color = muted, fontSize = 11.sp)
+                    Text("${visible.size} demo concepts, not live offers", color = muted, fontSize = 11.sp)
                 }
             }
         }
-        items(visible.drop(2), key = { it.id }) { item ->
+        items(visible, key = { it.id }) { item ->
             FlowAroundRow(sidebarBounds, 148.dp) {
                 DemoPromotionCard(item, isLight, onClick = { onSelectService(item.targetService) })
             }

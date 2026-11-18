@@ -243,16 +243,20 @@ fun RestaurantsCustomerRootScreen(
             onInitialQrTokenConsumed()
         }
 
+        var discoverInitialized by remember(currentFirebaseUid) { mutableStateOf(false) }
         LaunchedEffect(currentFirebaseUid) {
+            discoverInitialized = false
             coordinator.reconcileAccountState()
             isCartSheetOpen = false
             checkoutStep = CheckoutSheetStep.CART_REVIEW
             isOrdersSheetOpen = false
             selectedOrderIdInSheet = null
             coordinator.loadDiscover()
+            discoverInitialized = true
         }
 
-        LaunchedEffect(initialSearchRestaurantId, currentFirebaseUid) {
+        LaunchedEffect(initialSearchRestaurantId, currentFirebaseUid, discoverInitialized) {
+            if (!discoverInitialized) return@LaunchedEffect
             val restaurantId = initialSearchRestaurantId?.trim()?.takeIf { it.isNotEmpty() } ?: return@LaunchedEffect
             coordinator.openRestaurantProfile(restaurantId)
             onInitialSearchRestaurantConsumed()

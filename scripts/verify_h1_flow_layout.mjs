@@ -21,13 +21,26 @@ test('measured sidebar has content height and stays outside the scrolling feed',
 });
 
 test('all promotional rows use stable height and measured flow-around placement', () => {
-  assert.match(feed, /items\(visible\.take\(2\), key = \{ "lead-\$\{it\.id\}" \}\)/);
-  assert.match(feed, /items\(visible\.drop\(2\), key = \{ it\.id \}\) \{ item ->\s*FlowAroundRow\(sidebarBounds, 148\.dp\)/);
+  assert.match(feed, /items\(visible, key = \{ it\.id \}\) \{ item ->\s*FlowAroundRow\(sidebarBounds, 148\.dp\)/);
+  assert.doesNotMatch(feed, /visible\.take\(2\)|visible\.drop\(2\)/);
   assert.doesNotMatch(feed, /item\(key = "welcome"\)/);
   assert.match(feed, /rowTop < sidebar\.bottom && rowBottom > sidebar\.top/);
   assert.match(feed, /\.onGloballyPositioned/);
   assert.match(feed, /if \(besideSidebar != next\) besideSidebar = next/);
   assert.match(feed, /animateDpAsState/);
+});
+
+test('search, categories, discovery count, and all ten cards have one stable order', () => {
+  assert.ok(screen.indexOf('BasicTextField(') > screen.indexOf('SuperAppPromotionalFeed('));
+  const categories = feed.indexOf('item(key = "categories")');
+  const heading = feed.indexOf('item(key = "section-title")');
+  const cards = feed.indexOf('items(visible, key = { it.id })');
+  assert.ok(categories >= 0 && categories < heading && heading < cards);
+  assert.equal((feed.match(/items\(visible, key = \{ it\.id \}\)/g) ?? []).length, 1);
+  assert.match(feed, /\$\{visible\.size\} demo concepts, not live offers/);
+  const first = model.indexOf('id = "demo-dinein"');
+  const second = model.indexOf('id = "demo-audio"');
+  assert.ok(first >= 0 && first < second);
 });
 
 test('3, 5, and 8 sidebar items flow 10 cards both scroll directions at M33 width', () => {
@@ -36,7 +49,7 @@ test('3, 5, and 8 sidebar items flow 10 cards both scroll directions at M33 widt
   assert.ok(narrowCardWidth >= 240);
   for (const count of [3, 5, 8]) {
     const sidebarBottom = 30 + 16 + count * 48 + (count - 1) * 6;
-    const cardTops = Array.from({ length: 10 }, (_, index) => index < 2 ? 58 + index * 156 : 500 + (index - 2) * 156);
+    const cardTops = Array.from({ length: 10 }, (_, index) => 168 + index * 156);
     for (const scroll of [0, 180, 460, 900, 1400, 900, 460, 180, 0]) {
       for (const top of cardTops) {
         const visibleTop = top - scroll;
@@ -45,7 +58,7 @@ test('3, 5, and 8 sidebar items flow 10 cards both scroll directions at M33 widt
     }
     assert.equal(beside(sidebarBottom + 1, 148, 30, sidebarBottom), false);
     assert.equal(beside(sidebarBottom - 1, 148, 30, sidebarBottom), true);
-    if (count >= 5) assert.equal(beside(58 + 156, 148, 30, sidebarBottom), true);
+    assert.equal(beside(cardTops[0], 148, 30, sidebarBottom), count >= 3);
   }
 });
 
@@ -53,7 +66,7 @@ test('ten demo concepts have no invented prices or discount claims', () => {
   const block = model.split('object SuperAppDemoPromotions {')[1];
   assert.equal((block.match(/highlightBadge = "DEMO"|"DEMO", "/g) ?? []).length, 10);
   assert.doesNotMatch(block, /originalPriceLabel\s*=|promoPriceLabel\s*=|ETB\s*\d|\d+% OFF|FREE DELIVERY/);
-  assert.match(feed, /DEMO PREVIEW  \|  Not live offers/);
+  assert.match(feed, /demo concepts, not live offers/);
 });
 
 test('Home controls remain present across tabs and services', () => {

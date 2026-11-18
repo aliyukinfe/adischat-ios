@@ -37,6 +37,14 @@ test('each result opens its exact native destination', () => {
   assert.match(chat, /vm\.openConversationByNotification\(target\.conversation\.id\)/);
   assert.match(chat, /vm\.openCommunity\(target\.room\)/);
   assert.match(restaurantRoot, /coordinator\.openRestaurantProfile\(restaurantId\)/);
+  const restaurantInit = restaurantRoot.split('LaunchedEffect(currentFirebaseUid) {')[1]?.split('LaunchedEffect(flowState.destination) {')[0];
+  assert.ok(restaurantInit);
+  assert.ok(restaurantInit.indexOf('coordinator.reconcileAccountState()') < restaurantInit.indexOf('coordinator.loadDiscover()'));
+  assert.match(restaurantInit, /coordinator\.loadDiscover\(\)\s*discoverInitialized = true/);
+  assert.match(restaurantRoot, /LaunchedEffect\(initialSearchRestaurantId, currentFirebaseUid, discoverInitialized\)/);
+  assert.match(restaurantRoot, /if \(!discoverInitialized\) return@LaunchedEffect/);
+  assert.match(restaurantRoot, /coordinator\.openRestaurantProfile\(restaurantId\)\s*onInitialSearchRestaurantConsumed\(\)/);
+  assert.match(restaurantRoot, /LaunchedEffect\(initialQrToken, currentFirebaseUid\)/);
 });
 
 test('search uses six existing read sources and does not mutate domain state', () => {
