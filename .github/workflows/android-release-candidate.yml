@@ -1,0 +1,61 @@
+name: Build AdisChat Android Release Candidate
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+    inputs:
+      clean_build:
+        description: 'Run clean before build'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-release-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare production environment
+        env:
+          ADISHOP_PUB_KEY: ${{ secrets.ADISHOP_SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          set -euo pipefail
+          test -f android/app/google-services.json || { echo 'Production google-services.json is missing'; exit 1; }
+          PUB_KEY="${ADISHOP_PUB_KEY:-sb_publishable_GqKe_CHk8GQ0oO3SQNbHHQ_0L71yj8x}"
+          printf '\nADISHOP_SUPABASE_PUBLISHABLE_KEY=%s\n' "$PUB_KEY" >> android/local.properties
+          if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
+            echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" || true
+          fi
+          test -d "$ANDROID_HOME/platforms/android-36" || { echo 'Android SDK 36 is unavailable'; exit 1; }
+
+      - name: Build Release Candidate APK
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          if [ "${{ inputs.clean_build }}" = "true" ]; then
+            ./gradlew clean :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+          else
+            ./gradlew :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+          fi
+
+      - name: Upload Release Candidate APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adischat-release-candidate-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
