@@ -42,15 +42,23 @@ jobs:
           fi
           test -d "$ANDROID_HOME/platforms/android-36" || { echo 'Android SDK 36 is unavailable'; exit 1; }
 
-      - name: Build Release Candidate APK
+      - name: Build Release Candidate AAB and APK
         working-directory: android
         run: |
           chmod +x ./gradlew
           if [ "${{ inputs.clean_build }}" = "true" ]; then
-            ./gradlew clean :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+            ./gradlew clean :app:bundleRelease :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
           else
-            ./gradlew :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+            ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
           fi
+
+      - name: Upload Release Candidate AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adischat-release-candidate-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Upload Release Candidate APK Artifact
         uses: actions/upload-artifact@v4
