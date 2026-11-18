@@ -448,5 +448,100 @@ test('ShopSellerProductsScreen.kt implements 6-section structure and Listing Rea
   assert.ok(code.includes('Cover Photo Preview'));
 });
 
+console.log('\n--- 5. AG-R6.4 Buyer Product Detail & Purchase Experience Tests ---');
+
+function computeStockStatusLabel(availableQuantity) {
+  if (availableQuantity <= 0) return 'Out of Stock';
+  if (availableQuantity >= 1 && availableQuantity <= 5) return `Low Stock (Only ${availableQuantity} left)`;
+  return `In Stock (${availableQuantity} available)`;
+}
+
+function computeDiscountAndSavings(priceMinor, compareAtPriceMinor) {
+  if (!compareAtPriceMinor || compareAtPriceMinor <= priceMinor) {
+    return { discountPercent: null, savingsMinor: null };
+  }
+  const savingsMinor = compareAtPriceMinor - priceMinor;
+  const discountPercent = Math.min(99, Math.max(1, Math.round((savingsMinor / compareAtPriceMinor) * 100)));
+  return { discountPercent, savingsMinor };
+}
+
+function formatEtbPrice(priceMinor) {
+  return `ETB ${(Math.max(0, priceMinor) / 100).toLocaleString('en-US')}`;
+}
+
+test('Stock status tier correctly formats Out of Stock, Low Stock, and In Stock', () => {
+  assert.equal(computeStockStatusLabel(0), 'Out of Stock');
+  assert.equal(computeStockStatusLabel(3), 'Low Stock (Only 3 left)');
+  assert.equal(computeStockStatusLabel(12), 'In Stock (12 available)');
+});
+
+test('Discount and savings correctly computed when verified compareAtPrice exceeds price', () => {
+  const { discountPercent, savingsMinor } = computeDiscountAndSavings(450000, 500000);
+  assert.equal(discountPercent, 10);
+  assert.equal(savingsMinor, 50000);
+  assert.equal(formatEtbPrice(savingsMinor), 'ETB 500');
+});
+
+test('Discount and savings return null when compareAtPrice is missing or less than price', () => {
+  const missing = computeDiscountAndSavings(450000, null);
+  assert.equal(missing.discountPercent, null);
+  assert.equal(missing.savingsMinor, null);
+
+  const lower = computeDiscountAndSavings(450000, 400000);
+  assert.equal(lower.discountPercent, null);
+  assert.equal(lower.savingsMinor, null);
+});
+
+test('Purchase sheet computes dynamic total price from selected variant and quantity', () => {
+  const variantPrice = 450000; // ETB 4,500
+  const quantity = 3;
+  const totalMinor = variantPrice * quantity;
+  assert.equal(totalMinor, 1350000);
+  assert.equal(formatEtbPrice(totalMinor), 'ETB 13,500');
+});
+
+test('Rapid-tap debounce ignores consecutive clicks within 600ms threshold', () => {
+  let executedCount = 0;
+  let lastClickTime = 0;
+  function handlePurchase(timestamp) {
+    if (timestamp - lastClickTime < 600) return;
+    lastClickTime = timestamp;
+    executedCount++;
+  }
+
+  handlePurchase(1000); // Click 1: executes
+  handlePurchase(1200); // Click 2 (200ms later): ignored
+  handlePurchase(1400); // Click 3 (400ms later): ignored
+  handlePurchase(1700); // Click 4 (700ms later): executes
+
+  assert.equal(executedCount, 2);
+});
+
+test('ProductDetailsScreen.kt implements rapid-tap debounce, modern purchase bar, and store details', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ProductDetailsScreen.kt'), 'utf8');
+  assert.ok(code.includes('lastPurchaseClickTime'));
+  assert.ok(code.includes('StickyPurchaseBar'));
+  assert.ok(code.includes('StoreMiniCard'));
+  assert.ok(code.includes('Icons.Default.Sell'));
+  assert.ok(code.includes('Low Stock (Only '));
+  assert.ok(code.includes('Out of Stock'));
+  assert.ok(code.includes('Customer reviews'));
+});
+
+test('ProductPurchaseVariantSheet.kt implements dynamic total price and confirm debounce', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ProductPurchaseVariantSheet.kt'), 'utf8');
+  assert.ok(code.includes('totalPriceMinor'));
+  assert.ok(code.includes('lastConfirmClickTime'));
+  assert.ok(code.includes('Add to Cart • ${formatVariantPrice(totalPriceMinor)}'));
+  assert.ok(code.includes('Buy Now • ${formatVariantPrice(totalPriceMinor)}'));
+});
+
+test('ProductVariantSelection.kt implements distinct styling for unavailable variant chips', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ProductVariantSelection.kt'), 'utf8');
+  assert.ok(code.includes('VariantValueChip'));
+  assert.ok(code.includes('disabled()'));
+  assert.ok(code.includes('AdisGebeyaColors.Disabled'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

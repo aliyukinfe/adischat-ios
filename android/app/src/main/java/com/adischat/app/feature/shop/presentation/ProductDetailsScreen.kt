@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
@@ -216,7 +217,11 @@ internal fun ProductDetailsScreen(
         else -> product.stockStatus.orEmpty().contains("out", ignoreCase = true)
     }
     val requiresSelection = buyerSelectableConfigurationRequired(product)
+    var lastPurchaseClickTime by remember(product.id) { mutableStateOf(0L) }
     fun purchase(action: ProductPurchaseAction) {
+        val now = System.currentTimeMillis()
+        if (now - lastPurchaseClickTime < 600L) return
+        lastPurchaseClickTime = now
         if (requiresSelection) purchaseAction = action
         else {
             val directVariant = selectedVariant ?: directPurchaseVariant(product)
@@ -642,51 +647,127 @@ internal fun ProductSummary(
     val displayPriceMinor = selectedVariant?.priceMinor ?: product.priceMinor
     val oldPrice = selectedVariant?.compareAtPriceMinor ?: homePreviousPriceMinor(product)
     val savings = oldPrice?.minus(displayPriceMinor)?.takeIf { it > 0 }
+    val discountPercent = if (oldPrice != null && oldPrice > displayPriceMinor) {
+        (((oldPrice - displayPriceMinor).toDouble() / oldPrice) * 100).roundToInt().coerceIn(1, 99)
+    } else verifiedDiscountPercent(product)
+
     ProductSectionCard(modifier) {
-        product.store?.name?.takeIf { it.isNotBlank() }?.let {
-            Text(it, color = ProductGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            product.store?.name?.takeIf { it.isNotBlank() }?.let { storeName ->
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(storeName, color = ProductGreen, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    storeApprovalDescription(product.store?.approvalStatus)?.let { desc ->
+                        Icon(Icons.Default.Verified, contentDescription = desc, tint = ProductGreen, modifier = Modifier.size(15.dp))
+                    }
+                }
+            }
+            product.brand?.takeIf { it.isNotBlank() }?.let { brandName ->
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = ProductGreenSoft,
+                    modifier = Modifier.padding(start = 4.dp),
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    ) {
+                        Icon(Icons.Default.Sell, contentDescription = null, tint = ProductGreen, modifier = Modifier.size(11.dp))
+                        Text(brandName, color = ProductGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
         }
-        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
+
+        Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val priceLabel = if (selectedVariant != null) {
                 productPrice(selectedVariant.priceMinor)
             } else {
                 product.priceMaxMinor?.takeIf { product.hasVariants && it > product.priceMinor }
-                    ?.let { "${productPrice(product.priceMinor)} - ${productPrice(it).removePrefix("ETB ")}" }
+                    ?.let { "${productPrice(product.priceMinor)} – ${productPrice(it).removePrefix("ETB ")}" }
                     ?: productPrice(product.priceMinor)
             }
-            Text(priceLabel, color = ProductGreen, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+            Text(priceLabel, color = ProductGreen, fontSize = 24.sp, fontWeight = FontWeight.Bold)
             oldPrice?.let {
                 Text(productPrice(it), color = ProductMuted, fontSize = 13.sp, textDecoration = TextDecoration.LineThrough)
             }
-        }
-        Text(product.title, color = ProductText, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium)
-        if (!selectedVariant?.sku.isNullOrBlank()) {
-            Text("SKU: ${selectedVariant?.sku}", color = ProductMuted, fontSize = 12.sp, fontWeight = FontWeight.Normal)
-        }
-        if ((product.reviewCount ?: 0) > 0 || (product.soldCount ?: 0) > 0) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                if ((product.reviewCount ?: 0) > 0) {
-                    Icon(Icons.Default.Star, contentDescription = null, tint = ProductGold, modifier = Modifier.size(17.dp))
+            discountPercent?.takeIf { it > 0 }?.let { pct ->
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = ProductError,
+                    contentColor = ProductWhite,
+                ) {
                     Text(
-                        "${"%.1f".format(product.averageRating ?: 0.0)} (${product.reviewCount} reviews)",
-                        color = ProductText,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
+                        "-${pct}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
                     )
-                }
-                if ((product.soldCount ?: 0) > 0) {
-                    Text("${product.soldCount} sold", color = ProductMuted, fontSize = 13.sp)
                 }
             }
         }
+
         savings?.let {
-            Text("Save ${productPrice(it)}", color = ProductOrange, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+            Text("Save ${productPrice(it)}", color = ProductOrange, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
-        val stockLabel = when {
-            selectedVariant != null -> if (selectedVariant.availableQuantity <= 0) "Out of Stock" else "${selectedVariant.availableQuantity} in stock"
-            else -> product.stockStatus
+
+        Text(product.title, color = ProductText, fontSize = 19.sp, lineHeight = 24.sp, fontWeight = FontWeight.SemiBold)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            val stockLabel = when {
+                selectedVariant != null -> when {
+                    selectedVariant.availableQuantity <= 0 -> "Out of Stock"
+                    selectedVariant.availableQuantity in 1..5 -> "Low Stock (Only ${selectedVariant.availableQuantity} left)"
+                    else -> "In Stock (${selectedVariant.availableQuantity} available)"
+                }
+                product.variants.isNotEmpty() -> when {
+                    product.variants.none { it.status == "active" && it.availableQuantity > 0 } -> "Out of Stock"
+                    else -> "Options Available"
+                }
+                else -> product.stockStatus?.ifBlank { "In Stock" } ?: "In Stock"
+            }
+            StockPill(stockLabel)
+
+            if (!selectedVariant?.sku.isNullOrBlank()) {
+                Text("SKU: ${selectedVariant?.sku}", color = ProductMuted, fontSize = 12.sp)
+            }
         }
-        StockPill(stockLabel)
+
+        if ((product.reviewCount ?: 0) > 0 || (product.soldCount ?: 0) > 0) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if ((product.reviewCount ?: 0) > 0) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Icon(Icons.Default.Star, contentDescription = null, tint = ProductGold, modifier = Modifier.size(16.dp))
+                        Text(
+                            "${"%.1f".format(product.averageRating ?: 0.0)}",
+                            color = ProductText,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            "(${product.reviewCount} reviews)",
+                            color = ProductMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+                if ((product.soldCount ?: 0) > 0) {
+                    if ((product.reviewCount ?: 0) > 0) {
+                        Text("•", color = ProductMuted, fontSize = 12.sp)
+                    }
+                    Text("${product.soldCount} sold", color = ProductMuted, fontSize = 12.sp)
+                }
+            }
+        }
+
         ExpandableProductText(
             text = product.shortDescription,
             collapsedLines = 3,
@@ -744,22 +825,37 @@ internal fun ProductReviewSummary(product: ShopProductDto, modifier: Modifier = 
     ProductSectionCard(modifier) {
         ProductSectionTitle("Customer reviews")
         if ((product.reviewCount ?: 0) <= 0) {
-            Text("No customer reviews yet.", color = ProductMuted, fontSize = 14.sp)
+            Text(
+                "No customer reviews yet. Ratings and reviews will appear here after verified purchases.",
+                color = ProductMuted,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+            )
         } else {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("${"%.1f".format(product.averageRating ?: 0.0)}", color = ProductText, fontSize = 36.sp, fontWeight = FontWeight.Bold)
-                Column {
-                    Row {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text(
+                    "${"%.1f".format(product.averageRating ?: 0.0)}",
+                    color = ProductText,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        val score = (product.averageRating ?: 0.0).roundToInt()
                         repeat(5) { index ->
                             Icon(
                                 Icons.Default.Star,
                                 contentDescription = null,
-                                tint = if (index < (product.averageRating ?: 0.0).roundToInt()) ProductGold else ProductBorder,
-                                modifier = Modifier.size(18.dp),
+                                tint = if (index < score) ProductGold else ProductBorder,
+                                modifier = Modifier.size(16.dp),
                             )
                         }
                     }
-                    Text("${product.reviewCount} reviews", color = ProductMuted, fontSize = 12.sp)
+                    Text(
+                        "${product.reviewCount} customer reviews",
+                        color = ProductMuted,
+                        fontSize = 12.sp,
+                    )
                 }
             }
         }
@@ -783,40 +879,62 @@ internal fun StoreMiniCard(
     Card(
         modifier = modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(containerColor = ProductSurface),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, ProductBorder),
         elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
     ) {
-        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(52.dp).clip(RoundedCornerShape(15.dp)).background(ProductGreenSoft), contentAlignment = Alignment.Center) {
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(48.dp).clip(RoundedCornerShape(14.dp)).background(ProductGreenSoft),
+                contentAlignment = Alignment.Center,
+            ) {
                 if (store.logoUrl.isNullOrBlank()) {
-                    Icon(Icons.Default.Storefront, contentDescription = null, tint = ProductGreen)
+                    Icon(Icons.Default.Storefront, contentDescription = null, tint = ProductGreen, modifier = Modifier.size(24.dp))
                 } else {
                     AsyncImage(store.logoUrl, store.name, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
                 }
             }
-            Spacer(Modifier.width(11.dp))
-            Column(Modifier.weight(1f)) {
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(store.name ?: "Marketplace store", color = ProductText, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        store.name ?: "Marketplace store",
+                        color = ProductText,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                     storeApprovalDescription(store.approvalStatus)?.let { description ->
                         Spacer(Modifier.width(4.dp))
-                        Icon(Icons.Default.Verified, contentDescription = description, tint = ProductGreen, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Verified, contentDescription = description, tint = ProductGreen, modifier = Modifier.size(15.dp))
                     }
                 }
-                store.averageStoreRating?.let {
-                    Text("${"%.1f".format(it)} store rating", color = ProductMuted, fontSize = 12.sp)
+                val ratingText = store.averageStoreRating?.let { "${"%.1f".format(it)} store rating" }
+                val locationText = store.city?.takeIf(String::isNotBlank)
+                val subText = listOfNotNull(ratingText, locationText).joinToString(" • ")
+                if (subText.isNotBlank()) {
+                    Text(subText, color = ProductMuted, fontSize = 12.sp)
                 }
             }
-            IconButton(onClick = onChatSeller) {
-                Icon(Icons.Default.Message, contentDescription = "Chat with seller", tint = ProductGreen)
+            IconButton(
+                onClick = onChatSeller,
+                modifier = Modifier.size(40.dp).clip(CircleShape).background(ProductGreenSoft),
+            ) {
+                Icon(Icons.Default.Message, contentDescription = "Chat with seller", tint = ProductGreen, modifier = Modifier.size(18.dp))
             }
+            Spacer(Modifier.width(6.dp))
             OutlinedButton(
                 onClick = onVisitStore,
-                shape = RoundedCornerShape(13.dp),
-                contentPadding = PaddingValues(horizontal = 12.dp),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, ProductGreen),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                modifier = Modifier.height(36.dp),
             ) {
-                Text("Visit", color = ProductGreen, fontWeight = FontWeight.SemiBold)
+                Text("Visit", color = ProductGreen, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
             }
         }
     }
@@ -941,39 +1059,64 @@ internal fun StickyPurchaseBar(
     onChat: () -> Unit,
     onAddToCart: () -> Unit,
     onBuyNow: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         color = ProductSurface,
-        shadowElevation = 10.dp,
+        shadowElevation = 8.dp,
     ) {
         Column(Modifier.navigationBarsPadding()) {
             HorizontalDivider(color = ProductBorder)
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                PurchaseIconAction(Icons.Default.Storefront, "Visit store", "Store", onStore)
-                PurchaseIconAction(Icons.Default.Message, "Chat with seller", "Chat", onChat)
+                PurchaseIconAction(
+                    icon = Icons.Default.Storefront,
+                    description = "Visit store",
+                    label = "Store",
+                    onClick = onStore,
+                )
+                PurchaseIconAction(
+                    icon = Icons.Default.Message,
+                    description = "Chat with seller",
+                    label = "Chat",
+                    onClick = onChat,
+                )
                 OutlinedButton(
                     onClick = onAddToCart,
                     enabled = !outOfStock,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (outOfStock) ProductMuted else ProductGreen),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.5.dp,
+                        if (outOfStock) ProductBorder else ProductGreen,
+                    ),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = ProductGreen,
+                        disabledContentColor = ProductMuted,
+                    ),
                 ) {
-                    val label = if (outOfStock) "Out of stock" else "Add to Cart"
-                    Text(label, color = if (outOfStock) ProductMuted else ProductGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    val label = if (outOfStock) "Out of Stock" else "Add to Cart"
+                    Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
                 Button(
                     onClick = onBuyNow,
                     enabled = !outOfStock,
-                    modifier = Modifier.weight(1f).height(50.dp),
-                    shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ProductGreen),
+                    modifier = Modifier.weight(1f).height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = ProductGreen,
+                        disabledContainerColor = ProductBorder,
+                        contentColor = ProductWhite,
+                        disabledContentColor = ProductMuted,
+                    ),
                 ) {
-                    Text(if (outOfStock) "Unavailable" else "Buy Now", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    Text(if (outOfStock) "Unavailable" else "Buy Now", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 }
             }
         }
@@ -1023,12 +1166,23 @@ internal fun ProductSectionTitle(text: String) {
 @Composable
 private fun StockPill(stockStatus: String?) {
     val label = stockStatus.orEmpty().replace("_", " ").replaceFirstChar { it.uppercase() }.ifBlank { "Available" }
-    val available = !label.contains("out", ignoreCase = true)
-    Surface(color = if (available) ProductGreenSoft else AdisGebeyaColors.ErrorSoft, shape = RoundedCornerShape(999.dp)) {
+    val isOut = label.contains("out", ignoreCase = true)
+    val isLow = label.contains("low", ignoreCase = true) || label.contains("only", ignoreCase = true)
+    val bgColor = when {
+        isOut -> AdisGebeyaColors.ErrorSoft
+        isLow -> AdisGebeyaColors.SoftOrange
+        else -> ProductGreenSoft
+    }
+    val textColor = when {
+        isOut -> ProductError
+        isLow -> AdisGebeyaColors.Warning
+        else -> ProductGreen
+    }
+    Surface(color = bgColor, shape = RoundedCornerShape(999.dp)) {
         Text(
             label,
-            color = if (available) ProductGreen else ProductError,
-            modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+            color = textColor,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
             fontSize = 12.sp,
             fontWeight = FontWeight.SemiBold,
         )

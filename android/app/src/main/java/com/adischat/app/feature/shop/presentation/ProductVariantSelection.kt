@@ -124,7 +124,7 @@ private fun VariantValueChip(
     val borderColor = when {
         selected -> AdisGebeyaColors.Primary
         enabled -> AdisGebeyaColors.Border
-        else -> AdisGebeyaColors.Border.copy(alpha = .55f)
+        else -> AdisGebeyaColors.Border.copy(alpha = .40f)
     }
     val interactionModifier = if (enabled) {
         Modifier.clickable(onClick = onClick)
@@ -135,10 +135,16 @@ private fun VariantValueChip(
         modifier = Modifier
             .widthIn(min = 52.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(if (selected) AdisGebeyaColors.PrimaryLight else AdisGebeyaColors.Surface)
-            .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+            .background(
+                when {
+                    selected -> AdisGebeyaColors.PrimaryLight
+                    enabled -> AdisGebeyaColors.Surface
+                    else -> AdisGebeyaColors.SecondarySurface.copy(alpha = 0.5f)
+                }
+            )
+            .border(if (selected) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(12.dp))
             .then(interactionModifier)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 9.dp),
         horizontalArrangement = Arrangement.spacedBy(7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -148,7 +154,11 @@ private fun VariantValueChip(
         }
         Text(
             value.displayValue,
-            color = if (enabled) AdisGebeyaColors.PrimaryText else AdisGebeyaColors.Disabled,
+            color = when {
+                selected -> AdisGebeyaColors.Primary
+                enabled -> AdisGebeyaColors.PrimaryText
+                else -> AdisGebeyaColors.Disabled
+            },
             fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
         )

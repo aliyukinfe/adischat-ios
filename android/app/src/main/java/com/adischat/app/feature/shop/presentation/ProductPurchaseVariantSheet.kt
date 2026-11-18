@@ -146,22 +146,52 @@ internal fun ProductPurchaseVariantSheet(
                 ProductQuantitySelector(quantity = quantity, maximum = maximum, onQuantity = { quantity = it })
             }
             val canConfirm = selectedVariant != null && selectedVariant.availableQuantity >= quantity && quantity > 0
+            val totalPriceMinor = (selectedVariant?.priceMinor ?: product.priceMinor) * quantity
+            var lastConfirmClickTime by remember(product.id, action) { androidx.compose.runtime.mutableStateOf(0L) }
+            val onConfirmDebounced = {
+                val now = System.currentTimeMillis()
+                if (now - lastConfirmClickTime >= 600L) {
+                    lastConfirmClickTime = now
+                    selectedVariant?.let { onConfirm(it.id, quantity) }
+                }
+            }
             if (action == ProductPurchaseAction.ADD_TO_CART) {
                 OutlinedButton(
-                    onClick = { selectedVariant?.let { onConfirm(it.id, quantity) } },
+                    onClick = { onConfirmDebounced() },
                     enabled = canConfirm,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(15.dp),
-                    border = BorderStroke(1.dp, AdisGebeyaColors.Primary),
-                ) { Text("Add to Cart", fontWeight = FontWeight.SemiBold) }
+                    border = BorderStroke(1.5.dp, if (canConfirm) AdisGebeyaColors.Primary else AdisGebeyaColors.Border),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AdisGebeyaColors.Primary,
+                        disabledContentColor = AdisGebeyaColors.Disabled,
+                    ),
+                ) {
+                    Text(
+                        if (canConfirm) "Add to Cart • ${formatVariantPrice(totalPriceMinor)}" else "Add to Cart",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                }
             } else {
                 Button(
-                    onClick = { selectedVariant?.let { onConfirm(it.id, quantity) } },
+                    onClick = { onConfirmDebounced() },
                     enabled = canConfirm,
                     modifier = Modifier.fillMaxWidth().height(52.dp),
                     shape = RoundedCornerShape(15.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = AdisGebeyaColors.Primary),
-                ) { Text("Buy Now", fontWeight = FontWeight.SemiBold) }
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = AdisGebeyaColors.Primary,
+                        disabledContainerColor = AdisGebeyaColors.Border,
+                        contentColor = AdisGebeyaColors.OnColor,
+                        disabledContentColor = AdisGebeyaColors.Disabled,
+                    ),
+                ) {
+                    Text(
+                        if (canConfirm) "Buy Now • ${formatVariantPrice(totalPriceMinor)}" else "Buy Now",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 15.sp,
+                    )
+                }
             }
         }
     }
