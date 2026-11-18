@@ -52,6 +52,68 @@ import com.google.gson.reflect.TypeToken
 internal fun variantValueCode(value: String): String = value.trim().uppercase()
     .replace(Regex("[^A-Z0-9]+"), "_").trim('_').take(64).ifBlank { "VALUE" }
 
+internal object CategoryVariantPresets {
+    val SHOE_EU_SIZES = listOf("36", "37", "38", "39", "40", "41", "42", "43", "44", "45", "46")
+    val KIDS_SHOE_SIZES = listOf("28", "29", "30", "31", "32", "33", "34", "35", "36", "37", "38")
+    val TROUSER_SIZES = listOf(
+        "28", "30", "32", "34", "36", "38", "40", "42",
+        "30/30", "32/30", "32/32", "34/32", "36/32",
+    )
+    val APPAREL_ALPHA_SIZES = listOf("XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL")
+    val FURNITURE_SIZES = listOf("Single", "Double", "Queen", "King", "Custom")
+
+    val KIDS_SHOE_CATEGORY_IDS = setOf(
+        "2ba3dd18-474b-4544-8ea1-c1b3a3e97279", // KIDS_SHOES
+    )
+    val FOOTWEAR_CATEGORY_IDS = setOf(
+        "b9b2956d-425b-4049-850e-9b2a88125acc", // MENS_SHOES
+        "08b0d893-223c-42c5-86cd-1e01e07bc82b", // WOMENS_SHOES
+        "83af6f95-e949-489e-8a11-f6d68602e1b1", // SPORTS_SHOES
+        "586ab99f-66fc-4c03-8464-ee2f902eccdd", // SHOES_BAGS_ACCESSORIES
+    )
+    val TROUSER_CATEGORY_IDS = setOf(
+        "7a56e0f2-2b60-4543-8a52-512e969cc253", // TROUSERS
+    )
+    val APPAREL_CATEGORY_IDS = setOf(
+        "db8c93f5-e3a0-46eb-8778-713d4c9b23c3", // JACKETS
+        "4b75f4e5-3b88-46e2-8069-33082443228c", // SHIRTS
+        "68f28559-2640-4b65-84d8-e36532c82931", // T_SHIRTS
+        "9035a12e-ad49-455f-82b8-9ffaf02655ca", // DRESSES
+        "679f286d-3bdb-48ea-8a0f-593fdca66c50", // MENS_CLOTHING
+        "c185bdc9-f022-44de-8fa7-6158e177b070", // WOMENS_CLOTHING
+        "00000000-0000-4000-8000-000000000102", // FASHION_CLOTHING
+    )
+    val FURNITURE_CATEGORY_IDS = setOf(
+        "97385dba-3aaf-4fcd-8bf7-6cd7f54e8e6f", // FURNITURE
+        "5abfc134-cb63-4006-83a4-bf8940695771", // BEDDING
+        "00000000-0000-4000-8000-000000000103", // HOME_FURNITURE_GARDEN
+    )
+
+    fun resolveSuggestions(
+        categoryId: String,
+        categoryCode: String?,
+        attributeCode: String,
+        defaultSuggestions: List<String>,
+    ): List<String> {
+        val attr = attributeCode.trim().uppercase()
+        if (attr != "SIZE" && attr != "SHOE_SIZE" && attr != "CLOTHING_SIZE" && attr != "DIMENSIONS") {
+            return defaultSuggestions
+        }
+        val id = categoryId.trim().lowercase()
+        val code = categoryCode?.trim()?.uppercase().orEmpty()
+
+        return when {
+            id in KIDS_SHOE_CATEGORY_IDS || code == "KIDS_SHOES" || code.contains("KIDS_SHOE") -> KIDS_SHOE_SIZES
+            id in FOOTWEAR_CATEGORY_IDS || code.contains("SHOE") || code.contains("FOOTWEAR") || attr == "SHOE_SIZE" -> SHOE_EU_SIZES
+            id in TROUSER_CATEGORY_IDS || code == "TROUSERS" || code.contains("PANTS") || code.contains("JEANS") -> TROUSER_SIZES
+            id in FURNITURE_CATEGORY_IDS || code.contains("FURNITURE") || code.contains("BEDDING") || code.contains("MATTRESS") -> FURNITURE_SIZES
+            id in APPAREL_CATEGORY_IDS || code.contains("CLOTHING") || code.contains("JACKET") || code.contains("SHIRT") || code.contains("DRESS") || code.contains("APPAREL") || attr == "CLOTHING_SIZE" -> APPAREL_ALPHA_SIZES
+            defaultSuggestions.isNotEmpty() -> defaultSuggestions
+            else -> APPAREL_ALPHA_SIZES
+        }
+    }
+}
+
 internal fun generateVariantCombinations(options: List<ShopSellerProductOptionInput>): List<Map<String, String>> {
     if (options.isEmpty()) return listOf(emptyMap())
     return options.fold(listOf(emptyMap())) { combinations, option ->
@@ -153,6 +215,7 @@ internal fun SellerVariantCatalogEditor(
     onSnapshotChanged: (SellerVariantEditorSnapshot) -> Unit,
     onChanged: (List<ShopSellerSpecificationInput>, List<ShopSellerProductOptionInput>, List<ShopSellerVariantInput>) -> Unit,
     modifier: Modifier = Modifier,
+    categoryCode: String? = null,
 ) {
     val specificationText = remember(product.id, categoryId, attributes) {
         mutableStateMapOf<String, String>().apply {
@@ -321,9 +384,15 @@ internal fun SellerVariantCatalogEditor(
                             }
                         }
                     }
-                    if (attribute.suggestions.isNotEmpty()) {
+                    val effectiveSuggestions = CategoryVariantPresets.resolveSuggestions(
+                        categoryId = categoryId,
+                        categoryCode = categoryCode,
+                        attributeCode = attribute.code,
+                        defaultSuggestions = attribute.suggestions,
+                    )
+                    if (effectiveSuggestions.isNotEmpty()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                            items(attribute.suggestions.filterNot { suggestion -> selected.any { it.equals(suggestion, true) } }, key = { it }) { suggestion ->
+                            items(effectiveSuggestions.filterNot { suggestion -> selected.any { it.equals(suggestion, true) } }, key = { it }) { suggestion ->
                                 FilterChip(
                                     selected = false,
                                     onClick = {

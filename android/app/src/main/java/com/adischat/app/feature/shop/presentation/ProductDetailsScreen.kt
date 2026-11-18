@@ -104,6 +104,7 @@ import coil.compose.AsyncImage
 import com.adischat.app.feature.shop.data.ShopProductDto
 import com.adischat.app.feature.shop.data.ShopProductImageDto
 import com.adischat.app.feature.shop.data.ShopCategoryDto
+import com.adischat.app.feature.shop.data.ShopPublicVariantDto
 import com.adischat.app.ui.theme.AdisGebeyaColors
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -120,6 +121,36 @@ private val ProductBorder = AdisGebeyaColors.Border
 private val ProductError = AdisGebeyaColors.Error
 private val ProductGold = AdisGebeyaColors.Warning
 private val ProductWhite = AdisGebeyaColors.OnColor
+
+internal fun findVerifiedVariantImageIndex(
+    images: List<ShopProductImageDto>,
+    selectedVariant: ShopPublicVariantDto?,
+    selectedColor: String? = null,
+    allVariants: List<ShopPublicVariantDto> = emptyList(),
+): Int? {
+    if (images.isEmpty()) return null
+    val variantImageIds = selectedVariant?.imageIds.orEmpty().filter { it.isNotBlank() }.toSet()
+    if (variantImageIds.isNotEmpty()) {
+        val idx = images.indexOfFirst { it.id in variantImageIds }
+        if (idx >= 0) return idx
+    }
+    val colorVal = selectedColor ?: selectedVariant?.options?.get("COLOR")
+        ?: selectedVariant?.options?.get("COLOUR")
+        ?: selectedVariant?.options?.get("color")
+    if (!colorVal.isNullOrBlank()) {
+        val matchingVariant = allVariants.firstOrNull { v ->
+            v.imageIds.isNotEmpty() &&
+                (v.options["COLOR"].equals(colorVal, ignoreCase = true) ||
+                 v.options["COLOUR"].equals(colorVal, ignoreCase = true) ||
+                 v.options["color"].equals(colorVal, ignoreCase = true))
+        }
+        if (matchingVariant != null) {
+            val idx = images.indexOfFirst { it.id in matchingVariant.imageIds }
+            if (idx >= 0) return idx
+        }
+    }
+    return null
+}
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -168,16 +199,36 @@ internal fun ProductDetailsScreen(
     val recent = remember(product.id, recentlyViewedProducts) {
         recentlyViewedProducts.distinctBy { it.id }.filter { it.id != product.id }.take(10)
     }
-    val outOfStock = if (product.variants.isNotEmpty()) product.variants.none { it.status == "active" && it.availableQuantity > 0 }
-    else product.stockStatus.orEmpty().contains("out", ignoreCase = true)
+    val requiredOptionCodes = remember(product.options) { product.options.sortedBy { it.position }.map { it.code } }
+    val selectedVariant = remember(product.variants, requiredOptionCodes, purchaseOptionValues.toMap(), purchaseVariantId) {
+        if (requiredOptionCodes.isEmpty()) {
+            product.variants.singleOrNull { it.id == purchaseVariantId && it.status == "active" }
+                ?: directPurchaseVariant(product)
+        } else {
+            resolveExactVariant(product.variants, requiredOptionCodes, purchaseOptionValues)
+        }
+    }
+    val selectedVariantOutOfStock = selectedVariant != null && selectedVariant.availableQuantity <= 0
+    val allVariantsOutOfStock = product.variants.isNotEmpty() && product.variants.none { it.status == "active" && it.availableQuantity > 0 }
+    val outOfStock = when {
+        selectedVariant != null -> selectedVariantOutOfStock
+        product.variants.isNotEmpty() -> allVariantsOutOfStock
+        else -> product.stockStatus.orEmpty().contains("out", ignoreCase = true)
+    }
     val requiresSelection = buyerSelectableConfigurationRequired(product)
     fun purchase(action: ProductPurchaseAction) {
         if (requiresSelection) purchaseAction = action
         else {
-            val directVariantId = directPurchaseVariant(product)?.id
+            val directVariant = selectedVariant ?: directPurchaseVariant(product)
+            if (directVariant != null && directVariant.availableQuantity <= 0) return
+            val directVariantId = directVariant?.id
             if (action == ProductPurchaseAction.ADD_TO_CART) onAddToCart(directVariantId, 1)
             else onBuyNow(directVariantId, 1)
         }
+    }
+    val activeColor = purchaseOptionValues["COLOR"] ?: purchaseOptionValues["COLOUR"] ?: purchaseOptionValues["color"]
+    val targetImageIndex = remember(images, selectedVariant?.id, activeColor) {
+        findVerifiedVariantImageIndex(images, selectedVariant, activeColor, product.variants)
     }
     var fullscreenImage by remember(product.id) { mutableStateOf<Int?>(null) }
     BackHandler(enabled = fullscreenImage != null) { fullscreenImage = null }
@@ -234,15 +285,32 @@ internal fun ProductDetailsScreen(
                         images = images,
                         discountPercent = verifiedDiscountPercent(product),
                         onImageClick = { fullscreenImage = it },
+                        targetImageIndex = targetImageIndex,
                     )
                 }
-                item { ProductSummary(product, Modifier.padding(horizontal = 12.dp)) }
+                item {
+                    ProductSummary(
+                        product = product,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        selectedVariant = selectedVariant,
+                    )
+                }
                 item { ProductHighlights(product, Modifier.padding(horizontal = 12.dp)) }
                 if (com.adischat.app.feature.shop.data.ShopBenefitFlags.buyerBadgesEnabled) {
                     item { VerifiedBenefitDetails(product.verifiedBenefits, Modifier.padding(horizontal = 12.dp)) }
                 }
                 item { DeliveryBenefits(Modifier.padding(horizontal = 12.dp)) }
-                item { ProductOptionsSummary(product, Modifier.padding(horizontal = 12.dp)) }
+                item {
+                    ProductOptionsSummary(
+                        product = product,
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        selectedValues = purchaseOptionValues,
+                        onSelectOption = { code, value ->
+                            purchaseOptionValues[code] = value
+                            clearInvalidDependentSelections(product.variants, code, purchaseOptionValues)
+                        },
+                    )
+                }
                 item {
                     StoreMiniCard(
                         product = product,
@@ -300,11 +368,18 @@ internal fun ProductImageGallery(
     images: List<ShopProductImageDto>,
     discountPercent: Int?,
     onImageClick: (Int) -> Unit,
+    targetImageIndex: Int? = null,
 ) {
     val pagerState = rememberPagerState(pageCount = { images.size.coerceAtLeast(1) })
     val scope = rememberCoroutineScope()
     val screenHeight = LocalConfiguration.current.screenHeightDp
     val galleryHeight = (screenHeight * 0.42f).roundToInt().coerceIn(280, 420).dp
+
+    LaunchedEffect(targetImageIndex) {
+        if (targetImageIndex != null && targetImageIndex in images.indices && pagerState.currentPage != targetImageIndex) {
+            pagerState.animateScrollToPage(targetImageIndex)
+        }
+    }
 
     Column(Modifier.fillMaxWidth().background(ProductSurface)) {
         Box(Modifier.fillMaxWidth().height(galleryHeight).background(ProductSurface)) {
@@ -559,23 +634,35 @@ private fun ProductImage(url: String?, description: String?, modifier: Modifier)
 }
 
 @Composable
-internal fun ProductSummary(product: ShopProductDto, modifier: Modifier = Modifier) {
-    val oldPrice = homePreviousPriceMinor(product)
-    val savings = oldPrice?.minus(product.priceMinor)
+internal fun ProductSummary(
+    product: ShopProductDto,
+    modifier: Modifier = Modifier,
+    selectedVariant: ShopPublicVariantDto? = null,
+) {
+    val displayPriceMinor = selectedVariant?.priceMinor ?: product.priceMinor
+    val oldPrice = selectedVariant?.compareAtPriceMinor ?: homePreviousPriceMinor(product)
+    val savings = oldPrice?.minus(displayPriceMinor)?.takeIf { it > 0 }
     ProductSectionCard(modifier) {
         product.store?.name?.takeIf { it.isNotBlank() }?.let {
             Text(it, color = ProductGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
         Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(9.dp)) {
-            val priceLabel = product.priceMaxMinor?.takeIf { product.hasVariants && it > product.priceMinor }
-                ?.let { "${productPrice(product.priceMinor)} - ${productPrice(it).removePrefix("ETB ")}" }
-                ?: productPrice(product.priceMinor)
+            val priceLabel = if (selectedVariant != null) {
+                productPrice(selectedVariant.priceMinor)
+            } else {
+                product.priceMaxMinor?.takeIf { product.hasVariants && it > product.priceMinor }
+                    ?.let { "${productPrice(product.priceMinor)} - ${productPrice(it).removePrefix("ETB ")}" }
+                    ?: productPrice(product.priceMinor)
+            }
             Text(priceLabel, color = ProductGreen, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
             oldPrice?.let {
                 Text(productPrice(it), color = ProductMuted, fontSize = 13.sp, textDecoration = TextDecoration.LineThrough)
             }
         }
         Text(product.title, color = ProductText, fontSize = 20.sp, lineHeight = 25.sp, fontWeight = FontWeight.Medium)
+        if (!selectedVariant?.sku.isNullOrBlank()) {
+            Text("SKU: ${selectedVariant?.sku}", color = ProductMuted, fontSize = 12.sp, fontWeight = FontWeight.Normal)
+        }
         if ((product.reviewCount ?: 0) > 0 || (product.soldCount ?: 0) > 0) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 if ((product.reviewCount ?: 0) > 0) {
@@ -592,10 +679,14 @@ internal fun ProductSummary(product: ShopProductDto, modifier: Modifier = Modifi
                 }
             }
         }
-        savings?.takeIf { it > 0 }?.let {
+        savings?.let {
             Text("Save ${productPrice(it)}", color = ProductOrange, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
         }
-        StockPill(product.stockStatus)
+        val stockLabel = when {
+            selectedVariant != null -> if (selectedVariant.availableQuantity <= 0) "Out of Stock" else "${selectedVariant.availableQuantity} in stock"
+            else -> product.stockStatus
+        }
+        StockPill(stockLabel)
         ExpandableProductText(
             text = product.shortDescription,
             collapsedLines = 3,

@@ -168,16 +168,31 @@ internal fun ProductHighlights(product: ShopProductDto, modifier: Modifier = Mod
 }
 
 @Composable
-internal fun ProductOptionsSummary(product: ShopProductDto, modifier: Modifier = Modifier) {
-    val options = product.options.mapNotNull { option ->
-        option.values.mapNotNull { it.displayValue.ifBlank { it.value }.takeIf(String::isNotBlank) }
-            .distinct().takeIf(List<String>::isNotEmpty)?.let { option.name to it.joinToString(", ") }
-    }
-    if (options.isEmpty()) return
+internal fun ProductOptionsSummary(
+    product: ShopProductDto,
+    modifier: Modifier = Modifier,
+    selectedValues: Map<String, String> = emptyMap(),
+    onSelectOption: ((String, String) -> Unit)? = null,
+) {
+    if (product.options.isEmpty()) return
     ProductSectionCard(modifier) {
         ProductSectionTitle("Available options")
-        options.forEach { (label, value) -> ProductInformationRow(attributeIcon(label), label, value) }
-        Text("Choose options after tapping Add to Cart or Buy Now.", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp, lineHeight = 16.sp)
+        if (onSelectOption != null) {
+            ProductVariantSelector(
+                options = product.options,
+                variants = product.variants,
+                selectedValues = selectedValues,
+                onSelect = onSelectOption,
+                allowConfigurationSwitch = true,
+            )
+        } else {
+            val options = product.options.mapNotNull { option ->
+                option.values.mapNotNull { it.displayValue.ifBlank { it.value }.takeIf(String::isNotBlank) }
+                    .distinct().takeIf(List<String>::isNotEmpty)?.let { option.name to it.joinToString(", ") }
+            }
+            options.forEach { (label, value) -> ProductInformationRow(attributeIcon(label), label, value) }
+            Text("Choose options after tapping Add to Cart or Buy Now.", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp, lineHeight = 16.sp)
+        }
     }
 }
 

@@ -651,6 +651,7 @@ private fun SellerProductEditor(
                     else -> SellerVariantCatalogEditor(
                             product = product,
                             categoryId = selectedCategoryId,
+                            categoryCode = selectedCategory?.code,
                             attributes = dynamicAttributes,
                             productImages = uploadedImages,
                             baseStock = stock.toIntOrNull() ?: 0,

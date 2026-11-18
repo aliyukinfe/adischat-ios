@@ -117,6 +117,7 @@ data class ShopProductOptionDto(
 data class ShopPublicVariantDto(
     val id: String = "",
     val title: String = "",
+    @SerializedName("sku") val sku: String? = null,
     val options: Map<String, String> = emptyMap(),
     @SerializedName(value = "price_minor", alternate = ["priceMinor"]) val priceMinor: Int = 0,
     @SerializedName(value = "compare_at_price_minor", alternate = ["compareAtPriceMinor"]) val compareAtPriceMinor: Int? = null,
