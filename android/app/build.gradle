@@ -182,12 +182,16 @@ android {
 
     signingConfigs {
         release {
-            def storeFilePath = keystoreProperties['ADISCHAT_UPLOAD_STORE_FILE']
+            def storeFilePath = keystoreProperties['ADISCHAT_UPLOAD_STORE_FILE'] ?: System.getenv('ADISCHAT_UPLOAD_STORE_FILE')
             if (storeFilePath) {
-                storeFile file(storeFilePath)
-                keyAlias keystoreProperties['ADISCHAT_UPLOAD_KEY_ALIAS']
-                storePassword keystoreProperties['ADISCHAT_UPLOAD_STORE_PASSWORD']
-                keyPassword keystoreProperties['ADISCHAT_UPLOAD_KEY_PASSWORD']
+                def sf = file(storeFilePath)
+                if (!sf.exists() && rootProject.file(storeFilePath).exists()) {
+                    sf = rootProject.file(storeFilePath)
+                }
+                storeFile sf
+                keyAlias keystoreProperties['ADISCHAT_UPLOAD_KEY_ALIAS'] ?: System.getenv('ADISCHAT_UPLOAD_KEY_ALIAS') ?: "upload"
+                storePassword keystoreProperties['ADISCHAT_UPLOAD_STORE_PASSWORD'] ?: System.getenv('ADISCHAT_UPLOAD_STORE_PASSWORD')
+                keyPassword keystoreProperties['ADISCHAT_UPLOAD_KEY_PASSWORD'] ?: System.getenv('ADISCHAT_UPLOAD_KEY_PASSWORD') ?: (keystoreProperties['ADISCHAT_UPLOAD_STORE_PASSWORD'] ?: System.getenv('ADISCHAT_UPLOAD_STORE_PASSWORD'))
             }
         }
     }
@@ -266,8 +270,10 @@ android {
             buildConfigField "boolean", "RESTAURANTS_QA_ORDER_MUTATIONS_ENABLED", "false"
         }
         release {
-            if (signingConfigs.release.storeFile != null) {
+            if (signingConfigs.release.storeFile != null && signingConfigs.release.storeFile.exists()) {
                 signingConfig signingConfigs.release
+            } else if (gradle.startParameter.taskNames.any { it.toLowerCase().contains("release") }) {
+                throw new GradleException("Release build requires a valid signing configuration with an existing storeFile! Check ADISCHAT_UPLOAD_STORE_FILE.")
             }
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

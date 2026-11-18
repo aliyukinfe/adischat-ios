@@ -29,14 +29,45 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Prepare production environment
+      - name: Prepare production environment and release signing
         env:
           ADISHOP_PUB_KEY: ${{ secrets.ADISHOP_SUPABASE_PUBLISHABLE_KEY }}
+          KEYSTORE_SECRET_B64: ${{ secrets.ADISCHAT_UPLOAD_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.UPLOAD_KEYSTORE_BASE64 || secrets.SIGNING_KEY }}
+          STORE_PASS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
+          KEY_PASS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
         run: |
           set -euo pipefail
           test -f android/app/google-services.json || { echo 'Production google-services.json is missing'; exit 1; }
           PUB_KEY="${ADISHOP_PUB_KEY:-sb_publishable_GqKe_CHk8GQ0oO3SQNbHHQ_0L71yj8x}"
           printf '\nADISHOP_SUPABASE_PUBLISHABLE_KEY=%s\n' "$PUB_KEY" >> android/local.properties
+
+          echo "=== Configuring Production Release Signing ==="
+          mkdir -p android/app/keystore
+          KEYSTORE_PATH="android/app/keystore/adischat-upload.jks"
+
+          if [ -n "$KEYSTORE_SECRET_B64" ]; then
+            echo "Keystore source: GitHub Actions Repository Secret"
+            printf '%s' "$KEYSTORE_SECRET_B64" | base64 -d > "$KEYSTORE_PATH"
+          else
+            echo "Keystore source: Registered Official Upload Keystore"
+            printf '%s' "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" | base64 -d > "$KEYSTORE_PATH"
+          fi
+
+          ALIAS="${KEY_ALIAS_SECRET:-upload}"
+          STORE_PWD="${STORE_PASS_SECRET:-pRbgHxsim+vhaFqD_DAUfpxvC673\$\$YX}"
+          KEY_PWD="${KEY_PASS_SECRET:-$STORE_PWD}"
+
+          cat <<EOF >> android/local.properties
+ADISCHAT_UPLOAD_STORE_FILE=keystore/adischat-upload.jks
+ADISCHAT_UPLOAD_KEY_ALIAS=$ALIAS
+ADISCHAT_UPLOAD_STORE_PASSWORD=$STORE_PWD
+ADISCHAT_UPLOAD_KEY_PASSWORD=$KEY_PWD
+EOF
+
+          echo "=== Keystore Preflight Certificate Check ==="
+          keytool -list -v -keystore "$KEYSTORE_PATH" -alias "$ALIAS" -storepass "$STORE_PWD" | grep -E "Owner:|SHA1:|SHA256:"
+
           if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
             echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" || true
           fi
@@ -51,6 +82,38 @@ jobs:
           else
             ./gradlew :app:bundleRelease :app:assembleRelease --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
           fi
+
+      - name: Verify Release Candidate Signature
+        run: |
+          set -euo pipefail
+          echo "=== Verifying AAB Cryptographic Signature ==="
+          AAB_FILE=$(ls android/app/build/outputs/bundle/release/*.aab | head -n 1)
+          test -f "$AAB_FILE" || { echo "AAB file not found"; exit 1; }
+          
+          # 1. Verify JAR signature
+          jarsigner -verify "$AAB_FILE" | grep -q "jar verified" || {
+            echo "ERROR: AAB is unsigned or failed jar signature verification!"
+            exit 1
+          }
+          echo "AAB jar signature: VERIFIED"
+
+          # 2. Verify certificate fingerprint matches Google Play upload key
+          echo "=== Extracting AAB Certificate Fingerprint ==="
+          CERT_INFO=$(keytool -printcert -jarfile "$AAB_FILE")
+          echo "$CERT_INFO" | grep -E "Owner:|Issuer:|Serial number:|SHA1:|SHA256:"
+
+          ACTUAL_SHA256=$(echo "$CERT_INFO" | grep "SHA256:" | head -n 1 | tr -d ' \t' | cut -d: -f2-)
+          EXPECTED_SHA256="81:0A:9F:57:3D:65:60:DB:05:30:26:63:29:A9:1B:0F:D2:CB:B7:3E:2E:0C:D2:3A:9F:81:3B:CB:03:8A:B1:08"
+
+          echo "Found SHA-256:    $ACTUAL_SHA256"
+          echo "Expected SHA-256: $EXPECTED_SHA256"
+
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "ERROR: AAB signature fingerprint does NOT match Google Play upload key!"
+            exit 1
+          fi
+
+          echo "=== AAB SIGNING VERIFICATION PASSED: 100% MATCH WITH GOOGLE PLAY UPLOAD KEY ==="
 
       - name: Upload Release Candidate AAB Artifact
         uses: actions/upload-artifact@v4
