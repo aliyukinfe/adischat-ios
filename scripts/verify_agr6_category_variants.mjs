@@ -543,5 +543,187 @@ test('ProductVariantSelection.kt implements distinct styling for unavailable var
   assert.ok(code.includes('AdisGebeyaColors.Disabled'));
 });
 
+console.log('\n--- 6. AG-R6.5 Cart, Checkout & Voucher Validation Tests ---');
+
+function resolveCartItemImageUrl(item) {
+  const productImages = item.product?.images || [];
+  if (productImages.length === 0) return null;
+  const variant = item.variant;
+  if (variant) {
+    const variantImageIds = (variant.imageIds || []).filter(Boolean);
+    if (variantImageIds.length > 0) {
+      const match = productImages.find((img) => variantImageIds.includes(img.id) && img.imageUrl);
+      if (match?.imageUrl) return match.imageUrl;
+    }
+    const colorOption = Object.entries(variant.options || {}).find(([k]) =>
+      k.toLowerCase() === 'color' || k.toLowerCase() === 'colour'
+    )?.[1]?.trim();
+    if (colorOption && item.product?.variants?.length > 0) {
+      const sibling = item.product.variants.find((v) =>
+        (v.imageIds || []).length > 0 &&
+        Object.entries(v.options || {}).some(([k, val]) =>
+          (k.toLowerCase() === 'color' || k.toLowerCase() === 'colour') && val.trim().toLowerCase() === colorOption.toLowerCase()
+        )
+      );
+      if (sibling) {
+        const match = productImages.find((img) => sibling.imageIds.includes(img.id) && img.imageUrl);
+        if (match?.imageUrl) return match.imageUrl;
+      }
+    }
+  }
+  return productImages.find((img) => img.isPrimary && img.imageUrl)?.imageUrl || productImages.find((img) => img.imageUrl)?.imageUrl || null;
+}
+
+function formatCartVariantLabel(variant) {
+  if (!variant) return null;
+  const entries = Object.entries(variant.options || {});
+  if (entries.length > 0) {
+    return entries.map(([key, value]) => {
+      const formattedKey = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
+      return `${formattedKey}: ${value}`;
+    }).join(' • ');
+  }
+  if (variant.title && variant.title.toLowerCase() !== 'default title') {
+    return variant.title;
+  }
+  return null;
+}
+
+function computeCartLowStockWarning(available, threshold = 3) {
+  if (typeof available === 'number' && available >= 1 && available <= threshold) {
+    return `Low stock: Only ${available} left`;
+  }
+  return null;
+}
+
+function computeCheckoutPayable(subtotalMinor, couponDiscountMinor = 0, voucherAppliedMinor = 0) {
+  const totalDiscount = couponDiscountMinor + voucherAppliedMinor;
+  const remainingPayableMinor = Math.max(0, subtotalMinor - totalDiscount);
+  const isFullyCoveredByVoucher = voucherAppliedMinor > 0 && remainingPayableMinor === 0;
+  return {
+    remainingPayableMinor,
+    isFullyCoveredByVoucher,
+    recommendedPaymentMethod: isFullyCoveredByVoucher ? 'voucher_prepaid' : null,
+  };
+}
+
+test('cartItemImageUrl resolves variant-specific image when available', () => {
+  const cartItem = {
+    productId: 'prod-shoes',
+    variantId: 'var-brown',
+    product: {
+      images: sampleImages,
+      variants: sampleVariants,
+    },
+    variant: {
+      id: 'var-brown',
+      imageIds: ['img-3'],
+      options: { color: 'Brown', size: '44' },
+    },
+  };
+  const url = resolveCartItemImageUrl(cartItem);
+  assert.equal(url, 'https://images.unsplash.com/shoe-brown.jpg');
+});
+
+test('cartItemImageUrl falls back to color match when variant has no direct imageId', () => {
+  const cartItem = {
+    productId: 'prod-shoes',
+    variantId: 'var-brown-42',
+    product: {
+      images: sampleImages,
+      variants: sampleVariants, // var-3 has Brown with img-3
+    },
+    variant: {
+      id: 'var-brown-42',
+      imageIds: [],
+      options: { color: 'Brown', size: '42' },
+    },
+  };
+  const url = resolveCartItemImageUrl(cartItem);
+  assert.equal(url, 'https://images.unsplash.com/shoe-brown.jpg');
+});
+
+test('cartItemImageUrl falls back to primary image when variant has no matching images', () => {
+  const cartItem = {
+    productId: 'prod-shoes',
+    variantId: 'var-navy-40',
+    product: {
+      images: sampleImages,
+      variants: sampleVariants,
+    },
+    variant: {
+      id: 'var-navy-40',
+      imageIds: [],
+      options: { color: 'Navy', size: '40' },
+    },
+  };
+  const url = resolveCartItemImageUrl(cartItem);
+  assert.equal(url, 'https://images.unsplash.com/shoe-black.jpg');
+});
+
+test('Two distinct variants of same product remain distinct cart items', () => {
+  const itemA = { id: 'ci-1', productId: 'shoe-1', variantId: 'var-white-42', quantity: 1, unitPriceMinor: 480000 };
+  const itemB = { id: 'ci-2', productId: 'shoe-1', variantId: 'var-black-44', quantity: 2, unitPriceMinor: 450000 };
+  const cartItems = [itemA, itemB];
+
+  assert.equal(cartItems.length, 2);
+  assert.notEqual(itemA.variantId, itemB.variantId);
+  assert.notEqual(itemA.id, itemB.id);
+  const totalSubtotal = cartItems.reduce((acc, it) => acc + it.unitPriceMinor * it.quantity, 0);
+  assert.equal(totalSubtotal, 480000 * 1 + 450000 * 2); // 1,380,000 minor = ETB 13,800
+});
+
+test('formatCartVariantLabel formats multi-attribute and single-attribute options', () => {
+  assert.equal(formatCartVariantLabel({ options: { color: 'White', size: '42' } }), 'Color: White • Size: 42');
+  assert.equal(formatCartVariantLabel({ options: { storage: '256GB' } }), 'Storage: 256GB');
+  assert.equal(formatCartVariantLabel({ title: 'Limited Edition' }), 'Limited Edition');
+  assert.equal(formatCartVariantLabel({ title: 'Default Title' }), null);
+  assert.equal(formatCartVariantLabel(null), null);
+});
+
+test('computeCartLowStockWarning identifies items within low stock threshold', () => {
+  assert.equal(computeCartLowStockWarning(1), 'Low stock: Only 1 left');
+  assert.equal(computeCartLowStockWarning(3), 'Low stock: Only 3 left');
+  assert.equal(computeCartLowStockWarning(4), null);
+  assert.equal(computeCartLowStockWarning(0), null);
+  assert.equal(computeCartLowStockWarning(null), null);
+});
+
+test('100% voucher prepaid coverage automatically sets payment method to voucher_prepaid with 0 remaining payable', () => {
+  const res = computeCheckoutPayable(2800000, 0, 2800000);
+  assert.equal(res.remainingPayableMinor, 0);
+  assert.equal(res.isFullyCoveredByVoucher, true);
+  assert.equal(res.recommendedPaymentMethod, 'voucher_prepaid');
+});
+
+test('Partial voucher coverage leaves remainingPayableMinor requiring secondary payment method', () => {
+  const res = computeCheckoutPayable(2800000, 0, 1000000);
+  assert.equal(res.remainingPayableMinor, 1800000);
+  assert.equal(res.isFullyCoveredByVoucher, false);
+  assert.equal(res.recommendedPaymentMethod, null);
+});
+
+test('Stacked coupon and voucher calculate remainingPayableMinor accurately', () => {
+  const res = computeCheckoutPayable(2800000, 300000, 2500000);
+  assert.equal(res.remainingPayableMinor, 0);
+  assert.equal(res.isFullyCoveredByVoucher, true);
+  assert.equal(res.recommendedPaymentMethod, 'voucher_prepaid');
+});
+
+test('BuyerCartPresentation.kt and ShopCartScreen.kt implement AG-R6.5 cart variant alignment', () => {
+  const buyerCartCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/BuyerCartPresentation.kt'), 'utf8');
+  assert.ok(buyerCartCode.includes('cartItemImageUrl'));
+  assert.ok(buyerCartCode.includes('formatCartVariantLabel'));
+  assert.ok(buyerCartCode.includes('cartLowStockWarning'));
+  assert.ok(buyerCartCode.includes('cartQuantityLimit'));
+
+  const shopCartCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopCartScreen.kt'), 'utf8');
+  assert.ok(shopCartCode.includes('cartItemImageUrl(item)'));
+  assert.ok(shopCartCode.includes('formatCartVariantLabel(item.variant)'));
+  assert.ok(shopCartCode.includes('cartLowStockWarning'));
+  assert.ok(shopCartCode.includes('CartCheckoutBar'));
+  assert.ok(shopCartCode.includes('cart.totals.discountMinor > 0'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

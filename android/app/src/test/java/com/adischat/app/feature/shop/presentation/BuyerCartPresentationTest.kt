@@ -3,6 +3,7 @@ package com.adischat.app.feature.shop.presentation
 import com.adischat.app.feature.shop.data.ShopCartItemDto
 import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopProductDto
+import com.adischat.app.feature.shop.data.ShopProductImageDto
 import com.adischat.app.feature.shop.data.ShopProductStoreDto
 import com.adischat.app.feature.shop.data.ShopPublicVariantDto
 import okhttp3.MediaType.Companion.toMediaType
@@ -101,6 +102,89 @@ class BuyerCartPresentationTest {
         assertTrue(cartHasConfirmedUnavailableQuantity(cart, mapOf("item" to 0)))
         assertTrue(cartHasConfirmedUnavailableQuantity(cart, mapOf("item" to 1)))
         assertFalse(cartHasConfirmedUnavailableQuantity(cart, mapOf("item" to 2)))
+    }
+
+    @Test fun cartItemImageUrlPrioritizesVariantImageThenColorThenPrimary() {
+        val imgPrimary = ShopProductImageDto(id = "img-1", imageUrl = "https://cdn.example.com/primary.jpg", isPrimary = true)
+        val imgWhite = ShopProductImageDto(id = "img-white", imageUrl = "https://cdn.example.com/white.jpg")
+        val imgBrown = ShopProductImageDto(id = "img-brown", imageUrl = "https://cdn.example.com/brown.jpg")
+
+        val product = ShopProductDto(
+            id = "prod-shoes",
+            images = listOf(imgPrimary, imgWhite, imgBrown),
+            variants = listOf(
+                ShopPublicVariantDto(id = "var-white", imageIds = listOf("img-white"), options = mapOf("color" to "White")),
+                ShopPublicVariantDto(id = "var-brown", imageIds = listOf("img-brown"), options = mapOf("color" to "Brown")),
+            ),
+        )
+
+        // 1. Direct variant imageIds match
+        val itemWhite = ShopCartItemDto(
+            id = "ci-1",
+            productId = "prod-shoes",
+            variantId = "var-white",
+            product = product,
+            variant = ShopPublicVariantDto(id = "var-white", imageIds = listOf("img-white"), options = mapOf("color" to "White")),
+        )
+        assertEquals("https://cdn.example.com/white.jpg", cartItemImageUrl(itemWhite))
+
+        // 2. Color fallback match
+        val itemWhiteNoImgId = ShopCartItemDto(
+            id = "ci-2",
+            productId = "prod-shoes",
+            variantId = "var-white-42",
+            product = product,
+            variant = ShopPublicVariantDto(id = "var-white-42", imageIds = emptyList(), options = mapOf("color" to "White", "size" to "42")),
+        )
+        assertEquals("https://cdn.example.com/white.jpg", cartItemImageUrl(itemWhiteNoImgId))
+
+        // 3. Fallback to primary image when variant has no matching image or color
+        val itemNoColor = ShopCartItemDto(
+            id = "ci-3",
+            productId = "prod-shoes",
+            variantId = "var-neutral",
+            product = product,
+            variant = ShopPublicVariantDto(id = "var-neutral", options = mapOf("material" to "Leather")),
+        )
+        assertEquals("https://cdn.example.com/primary.jpg", cartItemImageUrl(itemNoColor))
+
+        // 4. Fallback to null when no product images exist
+        val itemNoImages = ShopCartItemDto(id = "ci-4", productId = "prod-none", product = ShopProductDto(id = "prod-none"))
+        assertEquals(null, cartItemImageUrl(itemNoImages))
+    }
+
+    @Test fun formatCartVariantLabelFormatsOptionsAndTitles() {
+        assertEquals("Color: White • Size: 42", formatCartVariantLabel(ShopPublicVariantDto(options = linkedMapOf("color" to "White", "size" to "42"))))
+        assertEquals("Size: XL", formatCartVariantLabel(ShopPublicVariantDto(options = mapOf("size" to "XL"))))
+        assertEquals("Special Edition", formatCartVariantLabel(ShopPublicVariantDto(title = "Special Edition")))
+        assertEquals(null, formatCartVariantLabel(ShopPublicVariantDto(title = "Default Title")))
+        assertEquals(null, formatCartVariantLabel(null))
+    }
+
+    @Test fun cartLowStockWarningDetectsThreshold() {
+        assertEquals("Low stock: Only 1 left", cartLowStockWarning(1))
+        assertEquals("Low stock: Only 3 left", cartLowStockWarning(3))
+        assertEquals(null, cartLowStockWarning(4))
+        assertEquals(null, cartLowStockWarning(0))
+        assertEquals(null, cartLowStockWarning(null))
+    }
+
+    @Test fun cartQuantityLimitFallsBackToVariantWhenDetailIsNull() {
+        val item = ShopCartItemDto(
+            id = "ci-1",
+            productId = "prod-1",
+            variantId = "var-1",
+            variant = ShopPublicVariantDto(id = "var-1", availableQuantity = 7, status = "active")
+        )
+        // detail is null: uses variant.availableQuantity
+        assertEquals(7, cartQuantityLimit(item, null))
+
+        // authoritative detail takes precedence
+        val authoritativeDetail = ShopProductDto(
+            id = "prod-1",
+            variants = listOf(ShopPublicVariantDto(id = "var-1", availableQuantity = 3, status = "active"))
+        )
+        assertEquals(3, cartQuantityLimit(item, authoritativeDetail))
     }
 
     private fun item(id: String, storeId: String, storeName: String) = ShopCartItemDto(

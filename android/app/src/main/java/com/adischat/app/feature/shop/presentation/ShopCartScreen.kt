@@ -71,7 +71,7 @@ internal fun CartScreen(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
             if (cart != null && cart.items.isNotEmpty()) {
-                CartCheckoutBar(cart = cart, pending = mutationPending || unavailable, onCheckout = onCheckout)
+                CartCheckoutBar(cart = cart, pending = mutationPending, unavailable = unavailable, onCheckout = onCheckout)
             }
         },
     ) { innerPadding ->
@@ -131,14 +131,18 @@ private fun CartItemRow(item: ShopCartItemDto, available: Int?, busy: Boolean, s
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Box(Modifier.size(82.dp).clip(RoundedCornerShape(12.dp)).background(AdisGebeyaColors.SecondarySurface).clickable { onProduct(cartProductForDetails(item)) }) {
-                val imageUrl = item.product?.images?.firstOrNull { it.isPrimary == true }?.imageUrl ?: item.product?.images?.firstOrNull()?.imageUrl
+                val imageUrl = cartItemImageUrl(item)
                 ShopAssetImage(imageUrl, item.product?.title, Modifier.fillMaxSize(), iconSize = 28.dp)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text(item.product?.title ?: "AdisGebeya product", modifier = Modifier.clickable { onProduct(cartProductForDetails(item)) }, color = AdisGebeyaColors.PrimaryText, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                item.variant?.options?.values?.takeIf { it.isNotEmpty() }?.let { values ->
-                    Text(values.joinToString(" • "), color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val variantLabel = formatCartVariantLabel(item.variant)
+                if (!variantLabel.isNullOrBlank()) {
+                    Text(variantLabel, color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                item.variant?.sku?.takeIf { it.isNotBlank() }?.let { sku ->
+                    Text("SKU: $sku", color = AdisGebeyaColors.Disabled, fontSize = 11.sp, maxLines = 1)
                 }
                 val unitSymbol = item.unitSnapshot?.symbol?.takeIf { it.isNotBlank() }
                 Text(
@@ -147,7 +151,15 @@ private fun CartItemRow(item: ShopCartItemDto, available: Int?, busy: Boolean, s
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (available != null) Text(cartAvailabilityMessage(item, available) ?: "$available available", color = if (cartAvailabilityMessage(item, available) != null) AdisGebeyaColors.Error else AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+                val availabilityWarning = cartAvailabilityMessage(item, available)
+                val lowStockWarning = if (availabilityWarning == null) cartLowStockWarning(available) else null
+                if (availabilityWarning != null) {
+                    Text(availabilityWarning, color = AdisGebeyaColors.Error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                } else if (lowStockWarning != null) {
+                    Text(lowStockWarning, color = AdisGebeyaColors.Warning, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                } else if (available != null) {
+                    Text("$available available", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Surface(shape = RoundedCornerShape(10.dp), color = AdisGebeyaColors.SecondarySurface) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -169,26 +181,54 @@ private fun CartItemRow(item: ShopCartItemDto, available: Int?, busy: Boolean, s
 }
 
 @Composable
-private fun CartCheckoutBar(cart: ShopCartDto, pending: Boolean, onCheckout: () -> Unit) {
+private fun CartCheckoutBar(cart: ShopCartDto, pending: Boolean, unavailable: Boolean = false, onCheckout: () -> Unit) {
     Surface(color = AdisGebeyaColors.Surface, shadowElevation = 8.dp) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Column(Modifier.weight(1f)) {
-                Text("Subtotal", color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp)
-                Text(formatEtb(cart.totals.subtotalMinor), color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Column(Modifier.fillMaxWidth()) {
+            if (unavailable) {
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .background(AdisGebeyaColors.ErrorSoft)
+                        .padding(horizontal = 14.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        "Some items are out of stock or exceed inventory. Adjust quantities to checkout.",
+                        color = AdisGebeyaColors.Error,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                }
             }
-            Button(
-                onClick = onCheckout,
-                enabled = !pending,
-                modifier = Modifier.height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AdisGebeyaColors.Primary),
-                contentPadding = PaddingValues(horizontal = 22.dp),
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Checkout (${cart.items.size})", fontWeight = FontWeight.SemiBold)
+                Column(Modifier.weight(1f)) {
+                    if (cart.totals.discountMinor > 0) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Subtotal:", color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp)
+                            Text(formatEtb(cart.totals.subtotalMinor), color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp)
+                            Text("Discount:", color = AdisGebeyaColors.Success, fontSize = 11.sp)
+                            Text("- " + formatEtb(cart.totals.discountMinor), color = AdisGebeyaColors.Success, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        val payable = (cart.totals.subtotalMinor - cart.totals.discountMinor).coerceAtLeast(0)
+                        Text(formatEtb(payable), color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    } else {
+                        Text("Subtotal", color = AdisGebeyaColors.SecondaryText, fontSize = 11.sp)
+                        Text(formatEtb(cart.totals.subtotalMinor), color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+                Button(
+                    onClick = onCheckout,
+                    enabled = !pending && !unavailable,
+                    modifier = Modifier.height(50.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AdisGebeyaColors.Primary),
+                    contentPadding = PaddingValues(horizontal = 22.dp),
+                ) {
+                    Text("Checkout (${cart.items.size})", fontWeight = FontWeight.SemiBold)
+                }
             }
         }
     }

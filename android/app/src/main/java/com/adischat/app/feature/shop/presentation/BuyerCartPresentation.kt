@@ -3,6 +3,7 @@ package com.adischat.app.feature.shop.presentation
 import com.adischat.app.feature.shop.data.ShopCartItemDto
 import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopProductDto
+import com.adischat.app.feature.shop.data.ShopPublicVariantDto
 import com.adischat.app.feature.shop.data.ShopStateReducers
 import com.google.gson.JsonParser
 import retrofit2.HttpException
@@ -29,12 +30,18 @@ internal fun canStartCartMutation(busyIds: Set<String>, itemId: String? = null):
     CART_MUTATION_BUSY_ID !in busyIds && (itemId == null || itemId.isNotBlank() && itemId !in busyIds)
 
 internal fun cartQuantityLimit(item: ShopCartItemDto, detail: ShopProductDto?): Int? {
-    if (detail == null || detail.id != item.productId) return null
-    return if (item.variantId != null) {
-        detail.variants.firstOrNull { it.id == item.variantId && it.status == "active" }?.availableQuantity
-    } else if (!detail.hasVariants && detail.variants.isEmpty()) {
-        detail.aggregateAvailableQuantity ?: detail.aggregateAvailable
-    } else null
+    if (detail != null) {
+        if (detail.id != item.productId) return null
+        return if (item.variantId != null) {
+            detail.variants.firstOrNull { it.id == item.variantId && it.status == "active" }?.availableQuantity
+        } else if (!detail.hasVariants && detail.variants.isEmpty()) {
+            detail.aggregateAvailableQuantity ?: detail.aggregateAvailable
+        } else null
+    }
+    if (item.variant != null && item.variantId != null && item.variant.id == item.variantId && item.variant.status == "active") {
+        return item.variant.availableQuantity
+    }
+    return null
 }
 
 internal fun cartQuantityLimitMessage(item: ShopCartItemDto, requested: Int, detail: ShopProductDto?): String? {
@@ -48,6 +55,57 @@ internal fun cartAvailabilityMessage(item: ShopCartItemDto, available: Int?): St
     available <= 0 -> "Out of stock"
     item.quantity > available -> "Only $available ${if (available == 1) "item" else "items"} available"
     else -> null
+}
+
+internal fun cartLowStockWarning(available: Int?, threshold: Int = 3): String? {
+    if (available != null && available in 1..threshold) {
+        return "Low stock: Only $available left"
+    }
+    return null
+}
+
+internal fun cartItemImageUrl(item: ShopCartItemDto): String? {
+    val productImages = item.product?.images.orEmpty()
+    if (productImages.isEmpty()) return null
+    val variant = item.variant
+    if (variant != null) {
+        val variantImageIds = variant.imageIds.filter { it.isNotBlank() }.toSet()
+        if (variantImageIds.isNotEmpty()) {
+            val matchingImage = productImages.firstOrNull { it.id in variantImageIds && !it.imageUrl.isNullOrBlank() }
+            if (matchingImage?.imageUrl != null) return matchingImage.imageUrl
+        }
+        val colorOption = variant.options.entries.firstOrNull { (k, _) ->
+            k.equals("color", ignoreCase = true) || k.equals("colour", ignoreCase = true)
+        }?.value?.trim()
+        if (!colorOption.isNullOrBlank() && item.product?.variants?.isNotEmpty() == true) {
+            val matchingVariant = item.product.variants.firstOrNull { v ->
+                v.imageIds.isNotEmpty() && v.options.entries.any { (k, vVal) ->
+                    (k.equals("color", ignoreCase = true) || k.equals("colour", ignoreCase = true)) &&
+                        vVal.trim().equals(colorOption, ignoreCase = true)
+                }
+            }
+            if (matchingVariant != null) {
+                val matchingImage = productImages.firstOrNull { it.id in matchingVariant.imageIds && !it.imageUrl.isNullOrBlank() }
+                if (matchingImage?.imageUrl != null) return matchingImage.imageUrl
+            }
+        }
+    }
+    return productImages.firstOrNull { it.isPrimary == true && !it.imageUrl.isNullOrBlank() }?.imageUrl
+        ?: productImages.firstOrNull { !it.imageUrl.isNullOrBlank() }?.imageUrl
+}
+
+internal fun formatCartVariantLabel(variant: ShopPublicVariantDto?): String? {
+    if (variant == null) return null
+    if (variant.options.isNotEmpty()) {
+        return variant.options.entries.joinToString(" • ") { (key, value) ->
+            val formattedKey = key.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            "$formattedKey: $value"
+        }
+    }
+    if (variant.title.isNotBlank() && !variant.title.equals("Default Title", ignoreCase = true)) {
+        return variant.title
+    }
+    return null
 }
 
 internal fun cartProductForDetails(item: ShopCartItemDto): ShopProductDto =
