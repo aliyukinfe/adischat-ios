@@ -107,6 +107,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -470,7 +472,17 @@ private fun SellerProductEditor(
     var showUnitPicker by rememberSaveable(product.id) { mutableStateOf(false) }
     var shortDescription by rememberSaveable(product.id) { mutableStateOf(product.shortDescription.orEmpty()) }
     var description by rememberSaveable(product.id) { mutableStateOf(product.description.orEmpty()) }
-    var price by rememberSaveable(product.id) { mutableStateOf(if (product.priceMinor > 0) (product.priceMinor / 100).toString() else "") }
+    val initialRegularPrice = if (product.compareAtPriceMinor != null && product.compareAtPriceMinor > product.priceMinor) {
+        (product.compareAtPriceMinor / 100).toString()
+    } else if (product.priceMinor > 0) {
+        (product.priceMinor / 100).toString()
+    } else ""
+    val initialDiscount = if (product.compareAtPriceMinor != null && product.compareAtPriceMinor > product.priceMinor) {
+        computeDiscountPercent(product.compareAtPriceMinor / 100, product.priceMinor / 100)?.toString().orEmpty()
+    } else ""
+
+    var price by rememberSaveable(product.id) { mutableStateOf(initialRegularPrice) }
+    var discountPercent by rememberSaveable(product.id) { mutableStateOf(initialDiscount) }
     var stock by rememberSaveable(product.id) { mutableStateOf(product.inventory.firstOrNull { it.variantId == null }?.quantityAvailable?.takeIf { it > 0 }?.toString().orEmpty()) }
     var shipping by rememberSaveable(product.id) { mutableStateOf(product.shippingDetails?.get("notes")?.toString().orEmpty()) }
     var returns by rememberSaveable(product.id) { mutableStateOf(product.returnPolicy?.get("notes")?.toString().orEmpty()) }
@@ -479,6 +491,17 @@ private fun SellerProductEditor(
     var variantOutputsJson by rememberSaveable(product.id) { mutableStateOf("") }
     var mediaMessage by rememberSaveable(product.id) { mutableStateOf<String?>(null) }
     var specificationMessage by rememberSaveable(product.id) { mutableStateOf<String?>(null) }
+    var validationErrors by rememberSaveable(product.id) { mutableStateOf(emptyMap<String, String>()) }
+    var showSuccessDialog by rememberSaveable(product.id) { mutableStateOf(false) }
+    var submittedTitle by rememberSaveable(product.id) { mutableStateOf("") }
+    var submittedCategoryBreadcrumb by rememberSaveable(product.id) { mutableStateOf("") }
+    var submittedPriceLabel by rememberSaveable(product.id) { mutableStateOf("") }
+
+    val fullCategories = remember(categories) { CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories) }
+    val selectedCategory = fullCategories.firstOrNull { it.id == selectedCategoryId } ?: categories.firstOrNull { it.id == selectedCategoryId }
+    val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
+    val categoryBreadcrumbText = selectedCategory?.let { CategoryHierarchyDefinition.canonicalBreadcrumb(it, fullCategories) }
+
     fun specificationErrors(requireRequired: Boolean): List<String> {
         val snapshot = decodeSellerVariantSnapshot(decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId])
         val values = snapshot?.specificationText ?: product.specificationValues.associate { value ->
@@ -488,10 +511,28 @@ private fun SellerProductEditor(
     }
     fun currentPayload(): ShopSellerProductDraftPayload {
         val saveableCategoryId = CategoryHierarchyDefinition.resolveSaveableCategoryId(selectedCategoryId, categories)
+        val resolvedProductType = if (productTypeDescription.isNotBlank()) {
+            productTypeDescription
+        } else {
+            selectedCategory?.name.orEmpty()
+        }
         return sellerProductDraftPayload(SellerProductFormValues(
-            title, brand, saveableCategoryId, selectedSellingUnitCode, minimumOrderQuantity,
-            productTypeDescription, shortDescription, description, price, stock, shipping, returns,
-            specs, variantOutputsJson, product.images.map { it.id }.toSet(),
+            title = title,
+            brand = brand,
+            categoryId = saveableCategoryId,
+            sellingUnitCode = selectedSellingUnitCode,
+            minimumOrderQuantity = minimumOrderQuantity,
+            productTypeDescription = resolvedProductType,
+            shortDescription = shortDescription,
+            description = description,
+            price = price,
+            stock = stock,
+            shipping = shipping,
+            returns = returns,
+            specs = specs,
+            variantOutputsJson = variantOutputsJson,
+            imageIds = product.images.map { it.id }.toSet(),
+            discountPercent = discountPercent,
         ))
     }
     val uploadedImages = product.images
@@ -555,14 +596,19 @@ private fun SellerProductEditor(
             number = 1,
             title = "Basic Information",
             subtitle = "Product title, brand, descriptions, and policies",
-            isComplete = isBasicInfoReady,
+            isComplete = isBasicInfoReady && !validationErrors.containsKey("title") && !validationErrors.containsKey("description"),
         ) {
             OutlinedTextField(
                 value = title,
-                onValueChange = { title = it },
+                onValueChange = {
+                    title = it
+                    if (validationErrors.containsKey("title")) validationErrors = validationErrors - "title"
+                },
                 label = { Text("Product name *") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = validationErrors.containsKey("title"),
+                supportingText = validationErrors["title"]?.let { err -> { Text(err, color = SellerProductRed) } },
                 colors = shopOutlinedTextFieldColors(),
             )
             OutlinedTextField(
@@ -583,10 +629,15 @@ private fun SellerProductEditor(
             )
             OutlinedTextField(
                 value = description,
-                onValueChange = { description = it },
+                onValueChange = {
+                    description = it
+                    if (validationErrors.containsKey("description")) validationErrors = validationErrors - "description"
+                },
                 label = { Text("Full description *") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 4,
+                isError = validationErrors.containsKey("description"),
+                supportingText = validationErrors["description"]?.let { err -> { Text(err, color = SellerProductRed) } },
                 colors = shopOutlinedTextFieldColors(),
             )
             OutlinedTextField(
@@ -616,28 +667,52 @@ private fun SellerProductEditor(
         }
 
         // Section 2: Category & Attributes
-        val fullCategories = remember(categories) { CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories) }
-        val selectedCategory = fullCategories.firstOrNull { it.id == selectedCategoryId } ?: categories.firstOrNull { it.id == selectedCategoryId }
-        val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
         SellerSectionCard(
             number = 2,
             title = "Category & Attributes",
             subtitle = "Catalog classification, selling unit, and minimum order",
-            isComplete = isCategoryReady,
+            isComplete = isCategoryReady && !validationErrors.containsKey("category") && !validationErrors.containsKey("sellingUnit"),
         ) {
             Text("Product Category *", color = SellerProductText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             OutlinedButton(
                 onClick = { showCategoryPicker = true },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
+                border = if (validationErrors.containsKey("category")) androidx.compose.foundation.BorderStroke(1.dp, SellerProductRed) else null,
             ) {
                 Text(
-                    selectedCategory?.let { CategoryHierarchyDefinition.canonicalBreadcrumb(it, fullCategories) } ?: "Choose the most specific category",
+                    categoryBreadcrumbText ?: "Choose the most specific category",
                     modifier = Modifier.weight(1f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
+                    color = if (selectedCategory != null) SellerProductText else SellerProductMuted,
                 )
                 Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+            if (validationErrors.containsKey("category")) {
+                Text(validationErrors["category"].orEmpty(), color = SellerProductRed, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
+            }
+            if (selectedCategory != null) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = SellerProductSoft,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductLine),
+                    modifier = Modifier.padding(top = 2.dp),
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Icon(Icons.Default.Verified, contentDescription = null, tint = SellerProductGreen, modifier = Modifier.size(14.dp))
+                        Text(
+                            "Exact classification: ${selectedCategory.name}",
+                            fontSize = 12.sp,
+                            color = SellerProductText,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                }
             }
             if (showCategoryPicker) {
                 SellerCategoryPicker(
@@ -646,6 +721,9 @@ private fun SellerProductEditor(
                     onDismiss = { showCategoryPicker = false },
                     onSelect = {
                         showCategoryPicker = false
+                        if (validationErrors.containsKey("category")) {
+                            validationErrors = validationErrors - "category"
+                        }
                         if (selectedCategoryId != it.id) {
                             val currentSnapshot = decodeSellerVariantSnapshot(
                                 decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId],
@@ -653,6 +731,7 @@ private fun SellerProductEditor(
                             if (hasSellerCategoryDraft(variantOutputsJson, currentSnapshot)) pendingCategoryId = it.id
                             else {
                                 selectedCategoryId = it.id
+                                productTypeDescription = it.name
                                 variantOutputsJson = ""
                             }
                         }
@@ -667,6 +746,8 @@ private fun SellerProductEditor(
                     confirmButton = {
                         TextButton(onClick = {
                             selectedCategoryId = nextId
+                            val nextCat = fullCategories.firstOrNull { it.id == nextId } ?: categories.firstOrNull { it.id == nextId }
+                            productTypeDescription = nextCat?.name.orEmpty()
                             variantOutputsJson = ""
                             pendingCategoryId = null
                         }) { Text("Change category") }
@@ -680,9 +761,13 @@ private fun SellerProductEditor(
                 onClick = { showUnitPicker = true },
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
+                border = if (validationErrors.containsKey("sellingUnit")) androidx.compose.foundation.BorderStroke(1.dp, SellerProductRed) else null,
             ) {
                 Text(selectedUnit?.let { "${it.name} (${it.symbol})" } ?: "Choose selling unit", modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, contentDescription = null)
+            }
+            if (validationErrors.containsKey("sellingUnit")) {
+                Text(validationErrors["sellingUnit"].orEmpty(), color = SellerProductRed, fontSize = 12.sp, modifier = Modifier.padding(start = 8.dp))
             }
             if (showUnitPicker) {
                 SellingUnitPicker(
@@ -692,6 +777,9 @@ private fun SellerProductEditor(
                     onDismiss = { showUnitPicker = false },
                     onSelect = {
                         selectedSellingUnitCode = it.code
+                        if (validationErrors.containsKey("sellingUnit")) {
+                            validationErrors = validationErrors - "sellingUnit"
+                        }
                         showUnitPicker = false
                     },
                 )
@@ -721,8 +809,27 @@ private fun SellerProductEditor(
             number = 3,
             title = "Product Images",
             subtitle = "Upload 1-10 photos. First image is the store cover.",
-            isComplete = isMediaReady,
+            isComplete = isMediaReady && !validationErrors.containsKey("images"),
         ) {
+            if (validationErrors.containsKey("images")) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.ErrorSoft),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AdisGebeyaColors.Error.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = AdisGebeyaColors.Error, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            validationErrors["images"].orEmpty(),
+                            color = AdisGebeyaColors.Error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
             SellerProductMediaSection(
                 images = uploadedImages,
                 busy = editorBusy,
@@ -790,36 +897,173 @@ private fun SellerProductEditor(
             }
         }
 
-        // Section 5: Base Price & Inventory
+        // Section 5: Base Price & Inventory (Promotions & Discounts)
+        val regularPriceEtb = price.toIntOrNull() ?: 0
+        val discountPctInt = discountPercent.toIntOrNull()?.takeIf { it in 1..90 }
+        val promotionalPriceEtb = if (discountPctInt != null && regularPriceEtb > 0) computeDiscountedPrice(regularPriceEtb, discountPctInt) else null
+        val savingsEtb = if (discountPctInt != null && regularPriceEtb > 0) computeSavingsEtb(regularPriceEtb, discountPctInt) else 0
+
         SellerSectionCard(
             number = 5,
-            title = "Base Price & Inventory",
-            subtitle = "Listing base price and inventory quantity",
-            isComplete = isPricingReady,
+            title = "Price & Promotional Discount",
+            subtitle = "Base regular price, promotional discount percentage, and stock",
+            isComplete = isPricingReady && !validationErrors.containsKey("price") && !validationErrors.containsKey("stock") && !validationErrors.containsKey("discount"),
         ) {
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = price,
-                    onValueChange = { price = it.filter(Char::isDigit) },
+                    onValueChange = {
+                        price = it.filter(Char::isDigit)
+                        if (validationErrors.containsKey("price")) validationErrors = validationErrors - "price"
+                    },
                     label = { Text("Base Price ETB / ${selectedUnit?.symbol ?: "unit"} *") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    isError = validationErrors.containsKey("price"),
+                    supportingText = validationErrors["price"]?.let { err -> { Text(err, color = SellerProductRed) } },
                     colors = shopOutlinedTextFieldColors(),
                 )
                 OutlinedTextField(
                     value = stock,
-                    onValueChange = { stock = it.filter(Char::isDigit) },
+                    onValueChange = {
+                        stock = it.filter(Char::isDigit)
+                        if (validationErrors.containsKey("stock")) validationErrors = validationErrors - "stock"
+                    },
                     label = { Text("Base Stock (${selectedUnit?.symbol ?: "units"}) *") },
                     modifier = Modifier.weight(1f),
                     singleLine = true,
+                    isError = validationErrors.containsKey("stock"),
+                    supportingText = validationErrors["stock"]?.let { err -> { Text(err, color = SellerProductRed) } },
                     colors = shopOutlinedTextFieldColors(),
                 )
             }
-            Text(
-                "Base price and stock apply to standard single-option products or serve as the default baseline when generating multi-variant combinations.",
-                color = SellerProductMuted,
-                fontSize = 12.sp,
+
+            OutlinedTextField(
+                value = discountPercent,
+                onValueChange = {
+                    val filtered = it.filter(Char::isDigit).take(2)
+                    discountPercent = filtered
+                    if (validationErrors.containsKey("discount")) validationErrors = validationErrors - "discount"
+                },
+                label = { Text("Promotional Discount (% OFF, optional)") },
+                placeholder = { Text("e.g. 10, 15, 20, 50") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = validationErrors.containsKey("discount"),
+                supportingText = validationErrors["discount"]?.let { err -> { Text(err, color = SellerProductRed) } },
+                colors = shopOutlinedTextFieldColors(),
             )
+
+            // Preset discount chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Presets:", color = SellerProductMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val presets = listOf("5", "10", "15", "20", "25", "30", "50")
+                    items(presets) { pct ->
+                        val isSelected = discountPercent == pct
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = {
+                                discountPercent = if (isSelected) "" else pct
+                                if (validationErrors.containsKey("discount")) validationErrors = validationErrors - "discount"
+                            },
+                            label = { Text("$pct% OFF", fontSize = 12.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = SellerProductGreen,
+                                selectedLabelColor = SellerProductOnColor,
+                            ),
+                        )
+                    }
+                    if (discountPercent.isNotBlank()) {
+                        item {
+                            TextButton(
+                                onClick = {
+                                    discountPercent = ""
+                                    if (validationErrors.containsKey("discount")) validationErrors = validationErrors - "discount"
+                                },
+                            ) {
+                                Text("Clear", color = SellerProductRed, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Live Promotional Pricing Preview Card
+            if (regularPriceEtb > 0 && promotionalPriceEtb != null && discountPctInt != null) {
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = SellerProductGreen.copy(alpha = 0.08f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductGreen.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                "Promotional Pricing Preview",
+                                color = SellerProductGreen,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
+                            Surface(
+                                shape = RoundedCornerShape(999.dp),
+                                color = SellerProductGreen,
+                            ) {
+                                Text(
+                                    "-$discountPctInt% OFF",
+                                    color = SellerProductOnColor,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                )
+                            }
+                        }
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            Text(
+                                "ETB %,d".format(promotionalPriceEtb),
+                                color = SellerProductGreen,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                            )
+                            Text(
+                                "ETB %,d".format(regularPriceEtb),
+                                color = SellerProductMuted,
+                                fontSize = 14.sp,
+                                textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                modifier = Modifier.padding(bottom = 2.dp),
+                            )
+                        }
+                        Text(
+                            "Buyers save ETB %,d (${discountPctInt}%% discount). Applied immediately upon listing or approval.".format(savingsEtb),
+                            color = SellerProductText,
+                            fontSize = 12.sp,
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    "Base price and stock apply to standard single-option products or serve as the default baseline when generating multi-variant combinations.",
+                    color = SellerProductMuted,
+                    fontSize = 12.sp,
+                )
+            }
         }
 
         // Section 6: Review & Submit
@@ -827,7 +1071,7 @@ private fun SellerProductEditor(
             number = 6,
             title = "Review & Submit",
             subtitle = "Listing readiness checklist and moderation submission",
-            isComplete = isListingReady,
+            isComplete = isListingReady && validationErrors.isEmpty(),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Listing Readiness Checklist", color = SellerProductText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -837,6 +1081,26 @@ private fun SellerProductEditor(
                 ListingChecklistRow("Base price & inventory count", isPricingReady)
                 ListingChecklistRow("Unique variant SKUs (No duplicates)", isVariantsReady, if (duplicateSkus.isNotEmpty()) "Duplicate: ${duplicateSkus.joinToString(", ")}" else null)
                 ListingChecklistRow("Category specifications verified", isSpecsReady)
+            }
+
+            if (validationErrors.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.ErrorSoft),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AdisGebeyaColors.Error.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, contentDescription = null, tint = AdisGebeyaColors.Error, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Please correct the following before submitting:", color = AdisGebeyaColors.Error, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        }
+                        validationErrors.values.distinct().forEach { msg ->
+                            Text("• $msg", color = AdisGebeyaColors.Error, fontSize = 12.sp)
+                        }
+                    }
+                }
             }
 
             if (duplicateSkus.isNotEmpty()) {
@@ -897,18 +1161,49 @@ private fun SellerProductEditor(
                 }
                 Button(
                     onClick = {
-                        if (duplicateSkus.isNotEmpty()) {
-                            specificationMessage = "Duplicate SKU detected (${duplicateSkus.joinToString(", ")}). Each active variant must have a unique SKU."
+                        val formValues = SellerProductFormValues(
+                            title = title,
+                            brand = brand,
+                            categoryId = selectedCategoryId,
+                            sellingUnitCode = selectedSellingUnitCode,
+                            minimumOrderQuantity = minimumOrderQuantity,
+                            productTypeDescription = productTypeDescription.ifBlank { selectedCategory?.name.orEmpty() },
+                            shortDescription = shortDescription,
+                            description = description,
+                            price = price,
+                            stock = stock,
+                            shipping = shipping,
+                            returns = returns,
+                            specs = specs,
+                            variantOutputsJson = variantOutputsJson,
+                            imageIds = product.images.map { it.id }.toSet(),
+                            discountPercent = discountPercent,
+                        )
+                        val validation = validateSellerProductForm(
+                            values = formValues,
+                            uploadedImagesCount = uploadedImages.size,
+                            duplicateSkus = duplicateSkus,
+                            specificationErrors = specificationErrors(true),
+                        )
+                        if (!validation.isValid) {
+                            validationErrors = validation.fieldErrors
+                            specificationMessage = validation.fieldErrors["specs"]
                             return@Button
                         }
-                        val specErr = specificationErrors(true).firstOrNull()
-                        if (specErr != null) {
-                            specificationMessage = specErr
-                            return@Button
+                        validationErrors = emptyMap()
+                        specificationMessage = null
+                        val payload = currentPayload()
+                        submittedTitle = payload.title
+                        submittedCategoryBreadcrumb = categoryBreadcrumbText ?: selectedCategory?.name.orEmpty()
+                        submittedPriceLabel = if (payload.compareAtPriceMinor != null && payload.compareAtPriceMinor > payload.priceMinor) {
+                            "ETB %,d (Regular: ETB %,d)".format(payload.priceMinor / 100, payload.compareAtPriceMinor / 100)
+                        } else {
+                            "ETB %,d".format(payload.priceMinor / 100)
                         }
-                        onSubmit(currentPayload())
+                        onSubmit(payload)
+                        showSuccessDialog = true
                     },
-                    enabled = !editorBusy && isListingReady,
+                    enabled = !editorBusy,
                     modifier = Modifier.weight(1.3f),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SellerProductOrange, contentColor = SellerProductOnColor),
@@ -920,6 +1215,73 @@ private fun SellerProductEditor(
                     }
                 }
             }
+        }
+
+        if (showSuccessDialog) {
+            AlertDialog(
+                onDismissRequest = { showSuccessDialog = false },
+                icon = {
+                    Icon(
+                        Icons.Default.CheckCircle,
+                        contentDescription = "Success",
+                        tint = SellerProductGreen,
+                        modifier = Modifier.size(36.dp),
+                    )
+                },
+                title = {
+                    Text(
+                        "Product Submitted for Review",
+                        fontWeight = FontWeight.Bold,
+                        color = SellerProductText,
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Your listing is now pending catalog moderation.",
+                            color = SellerProductText,
+                            fontSize = 14.sp,
+                        )
+                        Card(
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(SellerProductSoft),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductLine),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(submittedTitle, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = SellerProductText)
+                                if (submittedCategoryBreadcrumb.isNotBlank()) {
+                                    Text("Category: $submittedCategoryBreadcrumb", fontSize = 12.sp, color = SellerProductMuted)
+                                }
+                                Text("Price: $submittedPriceLabel", fontSize = 12.sp, color = SellerProductGreen, fontWeight = FontWeight.SemiBold)
+                                Text("Status: Pending Moderation", fontSize = 11.sp, color = SellerProductOrange, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                        Text(
+                            "Our team checks listing accuracy within 24 hours. You can continue updating draft details or return to your products list.",
+                            color = SellerProductMuted,
+                            fontSize = 12.sp,
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showSuccessDialog = false
+                            onClose()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = SellerProductGreen, contentColor = SellerProductOnColor),
+                        shape = RoundedCornerShape(10.dp),
+                    ) {
+                        Text("Return to Products")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showSuccessDialog = false }) {
+                        Text("Continue Editing")
+                    }
+                },
+            )
         }
     }
 }

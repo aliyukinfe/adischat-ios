@@ -1,6 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -14,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,10 +25,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -329,9 +334,10 @@ internal fun syncSingleDefaultVariant(
     variants: List<ShopSellerVariantInput>,
     basePriceMinor: Int,
     baseStock: Int,
+    compareAtPriceMinor: Int? = null,
 ): List<ShopSellerVariantInput> =
     if (options.isEmpty() && variants.size == 1 && variants[0].options.isEmpty()) {
-        listOf(variants[0].copy(priceMinor = basePriceMinor, quantityAvailable = baseStock))
+        listOf(variants[0].copy(priceMinor = basePriceMinor, compareAtPriceMinor = compareAtPriceMinor, quantityAvailable = baseStock))
     } else variants
 
 internal fun generateSuggestedSku(brand: String?, title: String, combination: Map<String, String>): String {
@@ -686,6 +692,66 @@ internal fun SellerVariantCatalogEditor(
                             Text(if (allActive) "Deactivate all" else "Activate all", fontSize = 12.sp)
                         }
                     }
+                    item {
+                        var showDiscountMenu by remember { mutableStateOf(false) }
+                        Box {
+                            OutlinedButton(
+                                onClick = { showDiscountMenu = true },
+                                shape = RoundedCornerShape(12.dp),
+                            ) {
+                                Icon(Icons.Default.TrendingUp, contentDescription = null, modifier = Modifier.size(15.dp), tint = AdisGebeyaColors.Primary)
+                                Spacer(Modifier.width(5.dp))
+                                Text("Bulk discount", fontSize = 12.sp)
+                            }
+                            DropdownMenu(
+                                expanded = showDiscountMenu,
+                                onDismissRequest = { showDiscountMenu = false },
+                            ) {
+                                val discountOptions = listOf(5, 10, 15, 20, 25, 30, 50)
+                                discountOptions.forEach { pct ->
+                                    DropdownMenuItem(
+                                        text = { Text("$pct% OFF") },
+                                        onClick = {
+                                            showDiscountMenu = false
+                                            current.third.forEach { variant ->
+                                                val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                                val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                                val regularPrice = draft.compareAtPriceMinor?.let { it / 100 }
+                                                    ?: draft.price.toIntOrNull()
+                                                    ?: (basePriceMinor / 100)
+                                                if (regularPrice > 0) {
+                                                    val discounted = computeDiscountedPrice(regularPrice, pct)
+                                                    variantDrafts[sig] = draft.copy(
+                                                        price = discounted.toString(),
+                                                        compareAtPriceMinor = regularPrice * 100,
+                                                    )
+                                                }
+                                            }
+                                            emit()
+                                        },
+                                    )
+                                }
+                                DropdownMenuItem(
+                                    text = { Text("Clear discount", color = AdisGebeyaColors.Error) },
+                                    onClick = {
+                                        showDiscountMenu = false
+                                        current.third.forEach { variant ->
+                                            val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                            val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                            val regularPrice = draft.compareAtPriceMinor?.let { it / 100 } ?: draft.price.toIntOrNull()
+                                            if (regularPrice != null && regularPrice > 0) {
+                                                variantDrafts[sig] = draft.copy(
+                                                    price = regularPrice.toString(),
+                                                    compareAtPriceMinor = null,
+                                                )
+                                            }
+                                        }
+                                        emit()
+                                    },
+                                )
+                            }
+                        }
+                    }
                 }
             }
             if (duplicateSkus.isNotEmpty()) {
@@ -728,6 +794,35 @@ internal fun SellerVariantCatalogEditor(
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(draft.price, { value -> variantDrafts[signature] = draft.copy(price = value.filter(Char::isDigit)); emit() }, label = { Text("Price ETB") }, modifier = Modifier.weight(1f), singleLine = true)
                                 OutlinedTextField(draft.stock, { value -> variantDrafts[signature] = draft.copy(stock = value.filter(Char::isDigit)); emit() }, label = { Text("Stock") }, modifier = Modifier.weight(1f), singleLine = true)
+                            }
+                            val variantPriceInt = draft.price.toIntOrNull() ?: 0
+                            val variantCompareAtEtb = draft.compareAtPriceMinor?.let { it / 100 }
+                            if (variantCompareAtEtb != null && variantCompareAtEtb > variantPriceInt && variantPriceInt > 0) {
+                                val discountPct = computeDiscountPercent(variantCompareAtEtb, variantPriceInt)
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.padding(top = 2.dp),
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = AdisGebeyaColors.Success.copy(alpha = 0.15f),
+                                    ) {
+                                        Text(
+                                            "-$discountPct% OFF",
+                                            color = AdisGebeyaColors.Success,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
+                                    Text(
+                                        "Reg: ETB %,d".format(variantCompareAtEtb),
+                                        color = AdisGebeyaColors.SecondaryText,
+                                        fontSize = 11.sp,
+                                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                                    )
+                                }
                             }
                         }
                         val isDuplicateSku = draft.active && draft.sku.trim().uppercase() in duplicateSkus

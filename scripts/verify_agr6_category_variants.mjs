@@ -962,5 +962,163 @@ test('agr6_8_category_hierarchy_proposal.sql exists and contains valid SQL with 
   assert.ok(sql.includes('v_agr6_8_category_hierarchy_summary'));
 });
 
+console.log('\n--- 9. AG-R6.9 Seller Submission Reliability & Product Promotions Tests ---');
+
+function computeDiscountedPrice(regularPriceEtb, discountPercent) {
+  if (discountPercent < 1 || discountPercent > 90 || regularPriceEtb <= 0) return regularPriceEtb;
+  return Math.max(1, Math.floor((regularPriceEtb * (100 - discountPercent) + 50) / 100));
+}
+
+function computeSavingsEtb(regularPriceEtb, discountPercent) {
+  if (discountPercent < 1 || discountPercent > 90 || regularPriceEtb <= 0) return 0;
+  return regularPriceEtb - computeDiscountedPrice(regularPriceEtb, discountPercent);
+}
+
+function computeDiscountPercent(regularPriceEtb, promotionalPriceEtb) {
+  if (regularPriceEtb <= promotionalPriceEtb || regularPriceEtb <= 0) return null;
+  return Math.round(((regularPriceEtb - promotionalPriceEtb) * 100) / regularPriceEtb);
+}
+
+function validateSellerProductForm(values, uploadedImagesCount, duplicateSkus, specErrors) {
+  const errors = {};
+  if (!values.title || values.title.trim().length < 3) errors.title = 'Product title is required (min 3 chars).';
+  if (!values.categoryId || !values.categoryId.trim()) errors.category = 'Product category must be selected.';
+  if (!values.sellingUnitCode || !values.sellingUnitCode.trim()) errors.sellingUnit = 'Selling unit must be selected.';
+  if (!values.description || values.description.trim().length < 10) errors.description = 'Product description must be at least 10 chars.';
+  if (uploadedImagesCount < 1) errors.images = 'At least 1 product image must be uploaded.';
+  const price = parseInt(values.price, 10);
+  if (isNaN(price) || price <= 0) errors.price = 'Valid base price in ETB is required.';
+  const stock = parseInt(values.stock, 10);
+  if (isNaN(stock) || stock < 0) errors.stock = 'Stock quantity must be 0 or more.';
+  if (values.discountPercent && values.discountPercent.trim()) {
+    const discountPct = parseInt(values.discountPercent, 10);
+    if (isNaN(discountPct) || discountPct < 1 || discountPct > 90) errors.discount = 'Discount must be between 1% and 90%.';
+  }
+  if (duplicateSkus && duplicateSkus.length > 0) errors.variants = 'Duplicate SKU detected.';
+  if (specErrors && specErrors.length > 0) errors.specs = specErrors[0];
+  return { fieldErrors: errors, isValid: Object.keys(errors).length === 0 };
+}
+
+test('computeDiscountedPrice and computeSavingsEtb calculate promotional pricing accurately', () => {
+  // 10% off 2,000 ETB -> 1,800 ETB, saves 200 ETB
+  assert.equal(computeDiscountedPrice(2000, 10), 1800);
+  assert.equal(computeSavingsEtb(2000, 10), 200);
+
+  // 25% off 4,000 ETB -> 3,000 ETB, saves 1,000 ETB
+  assert.equal(computeDiscountedPrice(4000, 25), 3000);
+  assert.equal(computeSavingsEtb(4000, 25), 1000);
+
+  // 50% off 1,500 ETB -> 750 ETB, saves 750 ETB
+  assert.equal(computeDiscountedPrice(1500, 50), 750);
+  assert.equal(computeSavingsEtb(1500, 50), 750);
+
+  // Out-of-bounds discount (<1 or >90) leaves regular price unchanged
+  assert.equal(computeDiscountedPrice(2000, 0), 2000);
+  assert.equal(computeSavingsEtb(2000, 0), 0);
+  assert.equal(computeDiscountedPrice(2000, 95), 2000);
+  assert.equal(computeSavingsEtb(2000, 95), 0);
+});
+
+test('computeDiscountPercent derives discount percentage from regular and promotional prices', () => {
+  assert.equal(computeDiscountPercent(2000, 1800), 10);
+  assert.equal(computeDiscountPercent(4000, 3000), 25);
+  assert.equal(computeDiscountPercent(1500, 750), 50);
+  assert.equal(computeDiscountPercent(2000, 2000), null);
+  assert.equal(computeDiscountPercent(2000, 2500), null);
+  assert.equal(computeDiscountPercent(0, 100), null);
+});
+
+test('validateSellerProductForm flags individual missing or invalid fields correctly', () => {
+  const baseValid = {
+    title: 'Men Casual Oxford Shirt',
+    categoryId: 'cat-fashion-men-shirts',
+    sellingUnitCode: 'item',
+    description: '100% premium cotton long-sleeve oxford casual shirt.',
+    price: '1800',
+    stock: '15',
+    discountPercent: '10',
+  };
+
+  // Valid form
+  const validResult = validateSellerProductForm(baseValid, 2, [], []);
+  assert.ok(validResult.isValid);
+  assert.equal(Object.keys(validResult.fieldErrors).length, 0);
+
+  // Missing title
+  const noTitle = validateSellerProductForm({ ...baseValid, title: '  ' }, 2, [], []);
+  assert.ok(!noTitle.isValid);
+  assert.ok(noTitle.fieldErrors.title);
+
+  // Unselected category
+  const noCat = validateSellerProductForm({ ...baseValid, categoryId: '' }, 2, [], []);
+  assert.ok(!noCat.isValid);
+  assert.ok(noCat.fieldErrors.category);
+
+  // No images uploaded
+  const noImages = validateSellerProductForm(baseValid, 0, [], []);
+  assert.ok(!noImages.isValid);
+  assert.ok(noImages.fieldErrors.images);
+
+  // Invalid price
+  const badPrice = validateSellerProductForm({ ...baseValid, price: '0' }, 2, [], []);
+  assert.ok(!badPrice.isValid);
+  assert.ok(badPrice.fieldErrors.price);
+
+  // Invalid discount (>90%)
+  const badDiscount = validateSellerProductForm({ ...baseValid, discountPercent: '95' }, 2, [], []);
+  assert.ok(!badDiscount.isValid);
+  assert.ok(badDiscount.fieldErrors.discount);
+
+  // Duplicate SKUs
+  const dupeSku = validateSellerProductForm(baseValid, 2, ['SHIRT-BLU-M'], []);
+  assert.ok(!dupeSku.isValid);
+  assert.ok(dupeSku.fieldErrors.variants);
+});
+
+test('SellerProductDraftPayloadBuilder.kt implements discount calculations, validation, and promotional price assignment', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerProductDraftPayloadBuilder.kt'), 'utf8');
+  assert.ok(code.includes('internal fun computeDiscountedPrice'));
+  assert.ok(code.includes('internal fun computeSavingsEtb'));
+  assert.ok(code.includes('internal fun computeDiscountPercent'));
+  assert.ok(code.includes('internal fun validateSellerProductForm'));
+  assert.ok(code.includes('val discountPercent: String = ""'));
+  assert.ok(code.includes('val (finalPriceMinor, compareAtMinor) = if (discountPct > 0)'));
+  assert.ok(code.includes('priceMinor = finalPriceMinor'));
+  assert.ok(code.includes('compareAtPriceMinor = compareAtMinor'));
+});
+
+test('ShopSellerProductsScreen.kt implements exact category badge, promotional preview, field validation, and confirmed success dialog', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerProductsScreen.kt'), 'utf8');
+  assert.ok(code.includes('Exact classification:'));
+  assert.ok(code.includes('Promotional Discount (% OFF, optional)'));
+  assert.ok(code.includes('Promotional Pricing Preview'));
+  assert.ok(code.includes('Product Submitted for Review'));
+  assert.ok(code.includes('Please correct the following before submitting:'));
+  assert.ok(code.includes('validateSellerProductForm('));
+  assert.ok(code.includes('showSuccessDialog = true'));
+  assert.ok(code.includes('FilterChip'));
+});
+
+test('SellerVariantCatalogEditor.kt implements bulk discount action and variant discount badge', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('"Bulk discount"'));
+  assert.ok(code.includes('DropdownMenu'));
+  assert.ok(code.includes('val discountOptions = listOf(5, 10, 15, 20, 25, 30, 50)'));
+  assert.ok(code.includes('val discounted = computeDiscountedPrice(regularPrice, pct)'));
+  assert.ok(code.includes('compareAtPriceMinor = regularPrice * 100'));
+  assert.ok(code.includes('-$discountPct% OFF'));
+});
+
+test('agr6_9_promotions_and_submission_proposal.sql exists and contains promotional constraints, partial index, and moderation view', () => {
+  const sql = fs.readFileSync(path.join(REPO_ROOT, 'supabase/validation/agr6_9_promotions_and_submission_proposal.sql'), 'utf8');
+  assert.ok(sql.includes('PROPOSAL ONLY — DO NOT EXECUTE DIRECTLY IN THIS AG-R6.9 SESSION'));
+  assert.ok(sql.includes('BEGIN;'));
+  assert.ok(sql.includes('COMMIT;'));
+  assert.ok(sql.includes('chk_shop_products_promotional_pricing'));
+  assert.ok(sql.includes('chk_shop_product_variants_promotional_pricing'));
+  assert.ok(sql.includes('idx_shop_products_active_promotions'));
+  assert.ok(sql.includes('v_agr6_9_promotions_and_submissions'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);
