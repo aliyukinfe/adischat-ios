@@ -246,12 +246,15 @@ fun RestaurantsCustomerRootScreen(
         var discoverInitialized by remember(currentFirebaseUid) { mutableStateOf(false) }
         LaunchedEffect(currentFirebaseUid) {
             discoverInitialized = false
+            val accountChanged = flowState.activeAccountUid != currentFirebaseUid
             coordinator.reconcileAccountState()
             isCartSheetOpen = false
             checkoutStep = CheckoutSheetStep.CART_REVIEW
             isOrdersSheetOpen = false
             selectedOrderIdInSheet = null
-            coordinator.loadDiscover()
+            if (accountChanged || flowState.destination is RestaurantsCustomerDestination.Discover) {
+                coordinator.loadDiscover()
+            }
             discoverInitialized = true
         }
 

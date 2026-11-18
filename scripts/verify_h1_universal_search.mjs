@@ -40,7 +40,8 @@ test('each result opens its exact native destination', () => {
   const restaurantInit = restaurantRoot.split('LaunchedEffect(currentFirebaseUid) {')[1]?.split('LaunchedEffect(flowState.destination) {')[0];
   assert.ok(restaurantInit);
   assert.ok(restaurantInit.indexOf('coordinator.reconcileAccountState()') < restaurantInit.indexOf('coordinator.loadDiscover()'));
-  assert.match(restaurantInit, /coordinator\.loadDiscover\(\)\s*discoverInitialized = true/);
+  assert.match(restaurantInit, /val accountChanged = flowState\.activeAccountUid != currentFirebaseUid/);
+  assert.match(restaurantInit, /if \(accountChanged \|\| flowState\.destination is RestaurantsCustomerDestination\.Discover\) \{\s*coordinator\.loadDiscover\(\)\s*\}\s*discoverInitialized = true/);
   assert.match(restaurantRoot, /LaunchedEffect\(initialSearchRestaurantId, currentFirebaseUid, discoverInitialized\)/);
   assert.match(restaurantRoot, /if \(!discoverInitialized\) return@LaunchedEffect/);
   assert.match(restaurantRoot, /coordinator\.openRestaurantProfile\(restaurantId\)\s*onInitialSearchRestaurantConsumed\(\)/);
