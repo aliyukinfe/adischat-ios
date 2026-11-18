@@ -55,6 +55,8 @@ import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assignment
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Checkroom
@@ -64,6 +66,8 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.PriorityHigh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.FilterList
@@ -490,6 +494,17 @@ private fun SellerProductEditor(
     val uploadedImages = product.images
         .filter { it.imageUrl?.isNotBlank() == true }
         .sortedWith(compareByDescending<ShopProductImageDto> { it.isPrimary == true }.thenBy { it.displayOrder ?: 0 })
+    val duplicateSkus = remember(variantOutputsJson) {
+        findDuplicateSkusFromOutputs(variantOutputsJson)
+    }
+    val isBasicInfoReady = title.trim().isNotBlank() && description.trim().isNotBlank()
+    val isCategoryReady = selectedCategoryId.isNotBlank() && selectedSellingUnitCode.isNotBlank() && minimumOrderQuantity.isNotBlank()
+    val isMediaReady = uploadedImages.isNotEmpty()
+    val isPricingReady = (price.toIntOrNull() ?: 0) > 0 && (stock.toIntOrNull() ?: 0) >= 0
+    val isVariantsReady = duplicateSkus.isEmpty()
+    val isSpecsReady = specificationErrors(false).isEmpty()
+    val isListingReady = isBasicInfoReady && isCategoryReady && isMediaReady && isPricingReady && isVariantsReady && isSpecsReady
+
     val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
         mediaMessage = null
         val selected = eligibleSellerMediaSelection(uris, uploadedImages.size)
@@ -500,30 +515,118 @@ private fun SellerProductEditor(
         if (selectedCategoryId.isNotBlank()) onLoadCategoryAttributes(selectedCategoryId)
     }
 
-    Card(
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(SellerProductSurface),
-        border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductGreen.copy(alpha = .25f)),
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        // Header
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(SellerProductSurface),
+            border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductGreen.copy(alpha = 0.25f)),
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Column {
-                    Text("Product draft", color = SellerProductText, fontWeight = FontWeight.Black, fontSize = 18.sp)
+                    Text("Product Editor", color = SellerProductText, fontWeight = FontWeight.Black, fontSize = 20.sp)
                     Text(productStatusLabel(product), color = SellerProductMuted, fontSize = 12.sp)
                 }
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(onClick = onArchive, enabled = !editorBusy) {
                         Icon(Icons.Default.Delete, contentDescription = "Remove product from store", tint = SellerProductRed)
                     }
-                    IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Close product editor") }
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.Default.Close, contentDescription = "Close product editor")
+                    }
                 }
             }
-            OutlinedTextField(title, { title = it }, label = { Text("Product name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
-            OutlinedTextField(brand, { brand = it }, label = { Text("Brand optional") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = shopOutlinedTextFieldColors())
-            val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
-            val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
-            Text("Category", color = SellerProductText, fontWeight = FontWeight.SemiBold)
-            OutlinedButton(onClick = { showCategoryPicker = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+        }
+
+        // Section 1: Basic Information
+        SellerSectionCard(
+            number = 1,
+            title = "Basic Information",
+            subtitle = "Product title, brand, descriptions, and policies",
+            isComplete = isBasicInfoReady,
+        ) {
+            OutlinedTextField(
+                value = title,
+                onValueChange = { title = it },
+                label = { Text("Product name *") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = brand,
+                onValueChange = { brand = it },
+                label = { Text("Brand (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = shortDescription,
+                onValueChange = { shortDescription = it },
+                label = { Text("Short description (one-liner)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Full description *") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 4,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = shipping,
+                onValueChange = { shipping = it },
+                label = { Text("Shipping notes (delivery expectations, handling)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = returns,
+                onValueChange = { returns = it },
+                label = { Text("Return policy (return window, exchange policy)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 2,
+                colors = shopOutlinedTextFieldColors(),
+            )
+            OutlinedTextField(
+                value = specs,
+                onValueChange = { specs = it },
+                label = { Text("Additional specifications (e.g. Material: Leather, one per line)") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3,
+                colors = shopOutlinedTextFieldColors(),
+            )
+        }
+
+        // Section 2: Category & Attributes
+        val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
+        val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
+        SellerSectionCard(
+            number = 2,
+            title = "Category & Attributes",
+            subtitle = "Catalog classification, selling unit, and minimum order",
+            isComplete = isCategoryReady,
+        ) {
+            Text("Product Category *", color = SellerProductText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            OutlinedButton(
+                onClick = { showCategoryPicker = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) {
                 Text(
                     selectedCategory?.let { categoryBreadcrumb(it, categories) } ?: "Choose the most specific category",
                     modifier = Modifier.weight(1f),
@@ -567,8 +670,13 @@ private fun SellerProductEditor(
                     dismissButton = { TextButton(onClick = { pendingCategoryId = null }) { Text("Keep editing") } },
                 )
             }
-            Text("Selling unit", color = SellerProductText, fontWeight = FontWeight.SemiBold)
-            OutlinedButton(onClick = { showUnitPicker = true }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+
+            Text("Selling Unit & Minimum Order *", color = SellerProductText, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            OutlinedButton(
+                onClick = { showUnitPicker = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+            ) {
                 Text(selectedUnit?.let { "${it.name} (${it.symbol})" } ?: "Choose selling unit", modifier = Modifier.weight(1f))
                 Icon(Icons.Default.ChevronRight, contentDescription = null)
             }
@@ -585,29 +693,32 @@ private fun SellerProductEditor(
                 )
             }
             OutlinedTextField(
-                minimumOrderQuantity,
-                { minimumOrderQuantity = it.filter(Char::isDigit) },
-                label = { Text("Minimum order (${selectedUnit?.symbol ?: "units"})") },
+                value = minimumOrderQuantity,
+                onValueChange = { minimumOrderQuantity = it.filter(Char::isDigit) },
+                label = { Text("Minimum order quantity (${selectedUnit?.symbol ?: "units"})") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 colors = shopOutlinedTextFieldColors(),
             )
             if (selectedCategory?.slug == "other-specialized-products") {
                 OutlinedTextField(
-                    productTypeDescription,
-                    { productTypeDescription = it },
+                    value = productTypeDescription,
+                    onValueChange = { productTypeDescription = it },
                     label = { Text("Product type description") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 2,
                     colors = shopOutlinedTextFieldColors(),
                 )
             }
-            OutlinedTextField(shortDescription, { shortDescription = it }, label = { Text("Short description") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
-            OutlinedTextField(description, { description = it }, label = { Text("Full description") }, modifier = Modifier.fillMaxWidth(), minLines = 4, colors = shopOutlinedTextFieldColors())
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(price, { price = it.filter { char -> char.isDigit() } }, label = { Text("Price ETB / ${selectedUnit?.symbol ?: "unit"}") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
-                OutlinedTextField(stock, { stock = it.filter { char -> char.isDigit() } }, label = { Text("Stock (${selectedUnit?.symbol ?: "units"})") }, modifier = Modifier.weight(1f), singleLine = true, colors = shopOutlinedTextFieldColors())
-            }
+        }
+
+        // Section 3: Product Images
+        SellerSectionCard(
+            number = 3,
+            title = "Product Images",
+            subtitle = "Upload 1-10 photos. First image is the store cover.",
+            isComplete = isMediaReady,
+        ) {
             SellerProductMediaSection(
                 images = uploadedImages,
                 busy = editorBusy,
@@ -635,9 +746,15 @@ private fun SellerProductEditor(
                     }
                 },
             )
-            OutlinedTextField(shipping, { shipping = it }, label = { Text("Shipping notes") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
-            OutlinedTextField(returns, { returns = it }, label = { Text("Return policy") }, modifier = Modifier.fillMaxWidth(), minLines = 2, colors = shopOutlinedTextFieldColors())
-            OutlinedTextField(specs, { specs = it }, label = { Text("Specifications, one per line") }, modifier = Modifier.fillMaxWidth(), minLines = 3, colors = shopOutlinedTextFieldColors())
+        }
+
+        // Section 4: Sizes, Colors & Variations
+        SellerSectionCard(
+            number = 4,
+            title = "Sizes, Colors & Variations",
+            subtitle = "Category specifications, options, and unique SKUs",
+            isComplete = isVariantsReady && isSpecsReady,
+        ) {
             if (selectedCategoryId.isNotBlank()) {
                 val dynamicAttributes = categoryAttributes[selectedCategoryId].orEmpty()
                 when {
@@ -647,33 +764,124 @@ private fun SellerProductEditor(
                         OutlinedButton(onClick = { onLoadCategoryAttributes(selectedCategoryId) }) { Text("Retry category fields") }
                     }
                     !categoryAttributes.containsKey(selectedCategoryId) -> Text("Preparing category fields...", color = SellerProductMuted, fontSize = 13.sp)
-                    dynamicAttributes.isEmpty() -> Text("No additional fields for this category.", color = SellerProductMuted, fontSize = 13.sp)
+                    dynamicAttributes.isEmpty() -> Text("No additional attributes or options for this category.", color = SellerProductMuted, fontSize = 13.sp)
                     else -> SellerVariantCatalogEditor(
-                            product = product,
-                            categoryId = selectedCategoryId,
-                            categoryCode = selectedCategory?.code,
-                            attributes = dynamicAttributes,
-                            productImages = uploadedImages,
-                            baseStock = stock.toIntOrNull() ?: 0,
-                            savedSnapshot = decodeSellerVariantSnapshot(decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId]),
-                            onSnapshotChanged = { snapshot ->
-                                variantSnapshotsJson = putSellerVariantSnapshot(variantSnapshotsJson, selectedCategoryId, snapshot)
-                            },
-                            onChanged = { nextSpecifications, nextOptions, nextVariants ->
-                                variantOutputsJson = encodeSellerVariantOutputs(
-                                    SellerVariantOutputs(nextSpecifications, nextOptions, nextVariants),
-                                )
-                            },
+                        product = product,
+                        categoryId = selectedCategoryId,
+                        categoryCode = selectedCategory?.code,
+                        attributes = dynamicAttributes,
+                        productImages = uploadedImages,
+                        baseStock = stock.toIntOrNull() ?: 0,
+                        basePriceMinor = (price.toIntOrNull() ?: (product.priceMinor / 100)) * 100,
+                        savedSnapshot = decodeSellerVariantSnapshot(decodeSellerVariantSnapshots(variantSnapshotsJson)[selectedCategoryId]),
+                        onSnapshotChanged = { snapshot ->
+                            variantSnapshotsJson = putSellerVariantSnapshot(variantSnapshotsJson, selectedCategoryId, snapshot)
+                        },
+                        onChanged = { nextSpecifications, nextOptions, nextVariants ->
+                            variantOutputsJson = encodeSellerVariantOutputs(
+                                SellerVariantOutputs(nextSpecifications, nextOptions, nextVariants),
+                            )
+                        },
+                    )
+                }
+            } else {
+                Text("Select a category above to configure specifications, size, and color options.", color = SellerProductMuted, fontSize = 13.sp)
+            }
+        }
+
+        // Section 5: Base Price & Inventory
+        SellerSectionCard(
+            number = 5,
+            title = "Base Price & Inventory",
+            subtitle = "Listing base price and inventory quantity",
+            isComplete = isPricingReady,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { price = it.filter(Char::isDigit) },
+                    label = { Text("Base Price ETB / ${selectedUnit?.symbol ?: "unit"} *") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    colors = shopOutlinedTextFieldColors(),
+                )
+                OutlinedTextField(
+                    value = stock,
+                    onValueChange = { stock = it.filter(Char::isDigit) },
+                    label = { Text("Base Stock (${selectedUnit?.symbol ?: "units"}) *") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    colors = shopOutlinedTextFieldColors(),
+                )
+            }
+            Text(
+                "Base price and stock apply to standard single-option products or serve as the default baseline when generating multi-variant combinations.",
+                color = SellerProductMuted,
+                fontSize = 12.sp,
+            )
+        }
+
+        // Section 6: Review & Submit
+        SellerSectionCard(
+            number = 6,
+            title = "Review & Submit",
+            subtitle = "Listing readiness checklist and moderation submission",
+            isComplete = isListingReady,
+        ) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Listing Readiness Checklist", color = SellerProductText, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                ListingChecklistRow("Basic details (Title & full description)", isBasicInfoReady)
+                ListingChecklistRow("Category & selling unit", isCategoryReady)
+                ListingChecklistRow("At least 1 product photo uploaded", isMediaReady, "${uploadedImages.size} uploaded")
+                ListingChecklistRow("Base price & inventory count", isPricingReady)
+                ListingChecklistRow("Unique variant SKUs (No duplicates)", isVariantsReady, if (duplicateSkus.isNotEmpty()) "Duplicate: ${duplicateSkus.joinToString(", ")}" else null)
+                ListingChecklistRow("Category specifications verified", isSpecsReady)
+            }
+
+            if (duplicateSkus.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.ErrorSoft),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AdisGebeyaColors.Error.copy(alpha = 0.5f)),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = AdisGebeyaColors.Error, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Duplicate SKU detected (${duplicateSkus.joinToString(", ")}). You must resolve duplicates in Section 4 before submitting.",
+                            color = AdisGebeyaColors.Error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
                         )
+                    }
                 }
             }
+
+            Card(
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(SellerProductSoft),
+                border = androidx.compose.foundation.BorderStroke(1.dp, SellerProductLine),
+            ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Moderation & Review Process", color = SellerProductText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(
+                        "You can save drafts at any time. When you submit, our team checks product images, category classification, and specifications for catalog accuracy within 24 hours.",
+                        color = SellerProductMuted,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+
             if (product.validationErrors.isNotEmpty()) ErrorCardMessage(product.validationErrors.joinToString("\n"))
             specificationMessage?.let { ErrorCardMessage(it) }
             if (com.adischat.app.feature.shop.data.ShopBenefitFlags.managementEnabled) {
                 SellerBenefitClaimsPanel(product.storeId, product.id)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onClose, modifier = Modifier.weight(.8f), shape = RoundedCornerShape(14.dp)) { Text("Close") }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                OutlinedButton(onClick = onClose, modifier = Modifier.weight(0.7f), shape = RoundedCornerShape(14.dp)) {
+                    Text("Close")
+                }
                 Button(
                     onClick = {
                         specificationMessage = specificationErrors(false).firstOrNull()
@@ -683,17 +891,33 @@ private fun SellerProductEditor(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SellerProductGreen, contentColor = SellerProductOnColor),
-                ) { Text("Save") }
+                ) {
+                    Text("Save Draft")
+                }
                 Button(
                     onClick = {
-                        specificationMessage = specificationErrors(true).firstOrNull()
-                        if (specificationMessage == null) onSubmit(currentPayload())
+                        if (duplicateSkus.isNotEmpty()) {
+                            specificationMessage = "Duplicate SKU detected (${duplicateSkus.joinToString(", ")}). Each active variant must have a unique SKU."
+                            return@Button
+                        }
+                        val specErr = specificationErrors(true).firstOrNull()
+                        if (specErr != null) {
+                            specificationMessage = specErr
+                            return@Button
+                        }
+                        onSubmit(currentPayload())
                     },
-                    enabled = !editorBusy && uploadedImages.isNotEmpty(),
-                    modifier = Modifier.weight(1f),
+                    enabled = !editorBusy && isListingReady,
+                    modifier = Modifier.weight(1.3f),
                     shape = RoundedCornerShape(14.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = SellerProductOrange, contentColor = SellerProductOnColor),
-                ) { Text("Submit") }
+                ) {
+                    if (editorBusy) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = SellerProductOnColor)
+                    } else {
+                        Text("Submit for Review")
+                    }
+                }
             }
         }
     }
@@ -723,10 +947,12 @@ private fun SellerProductMediaSection(
     onSetPrimary: (ShopProductImageDto) -> Unit,
     onMove: (Int, Int) -> Unit,
 ) {
+    var previewImage by remember { mutableStateOf<ShopProductImageDto?>(null) }
+
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Product images", color = SellerProductText, fontWeight = FontWeight.SemiBold)
-            Text("${images.size}/10 uploaded. Submit requires at least one image.", color = SellerProductMuted, fontSize = 12.sp)
+            Text("${images.size}/10 uploaded. First image will be used as the store cover photo.", color = SellerProductMuted, fontSize = 12.sp)
             OutlinedButton(
                 onClick = onAdd,
                 enabled = !busy && images.size < 10,
@@ -735,7 +961,7 @@ private fun SellerProductMediaSection(
             ) {
                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text(if (images.isEmpty()) "Add product images" else "Add more images")
+                Text(if (images.isEmpty()) "Add product images" else "Add more images (${10 - images.size} remaining)")
             }
         }
         if (message != null) Text(message, color = SellerProductRed, fontSize = 12.sp)
@@ -765,14 +991,34 @@ private fun SellerProductMediaSection(
             LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(images, key = { it.id.ifBlank { it.imageUrl.orEmpty() } }) { image ->
                     val index = images.indexOf(image)
-                    Card(shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(SellerProductOnColor), border = androidx.compose.foundation.BorderStroke(1.dp, if (image.isPrimary == true) SellerProductGreen else SellerProductLine)) {
-                        Column(Modifier.width(156.dp).padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Box(Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp)).background(SellerProductSoft)) {
+                    val isCover = image.isPrimary == true || index == 0
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(SellerProductOnColor),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isCover) SellerProductGreen else SellerProductLine),
+                    ) {
+                        Column(Modifier.width(160.dp).padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .aspectRatio(1f)
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(SellerProductSoft)
+                                    .clickable { previewImage = image },
+                            ) {
                                 ShopAssetImage(image.imageUrl, image.altText ?: "Product image", Modifier.fillMaxSize(), iconSize = 30.dp)
-                                if (image.isPrimary == true) {
-                                    Surface(Modifier.align(Alignment.TopStart).padding(6.dp), shape = RoundedCornerShape(999.dp), color = SellerProductGreen) {
-                                        Text("Primary", color = SellerProductOnColor, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp))
-                                    }
+                                Surface(
+                                    Modifier.align(Alignment.TopStart).padding(6.dp),
+                                    shape = RoundedCornerShape(999.dp),
+                                    color = if (isCover) SellerProductGreen else AdisGebeyaColors.DarkBackground.copy(alpha = 0.65f),
+                                ) {
+                                    Text(
+                                        if (isCover) "Cover Photo" else "Photo ${index + 1}",
+                                        color = SellerProductOnColor,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                                    )
                                 }
                             }
                             Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -786,9 +1032,9 @@ private fun SellerProductMediaSection(
                                     Icon(Icons.Default.Delete, contentDescription = "Remove image", tint = SellerProductRed, modifier = Modifier.size(18.dp))
                                 }
                             }
-                            if (image.isPrimary != true) {
+                            if (!isCover) {
                                 TextButton(onClick = { onSetPrimary(image) }, enabled = !busy && image.id.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
-                                    Text("Set primary", fontSize = 12.sp)
+                                    Text("Set as cover", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -796,6 +1042,185 @@ private fun SellerProductMediaSection(
                 }
             }
         }
+    }
+
+    previewImage?.let { img ->
+        AlertDialog(
+            onDismissRequest = { previewImage = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Inventory2, contentDescription = null, tint = SellerProductGreen, modifier = Modifier.size(20.dp))
+                    Text(if (img.isPrimary == true) "Cover Photo Preview" else "Product Photo Preview", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(260.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(SellerProductSoft),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        ShopAssetImage(img.imageUrl, img.altText ?: "Product image", Modifier.fillMaxSize(), iconSize = 48.dp)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        img.altText?.takeIf(String::isNotBlank) ?: (if (img.isPrimary == true) "Primary store cover image" else "Product gallery image"),
+                        color = SellerProductMuted,
+                        fontSize = 12.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { previewImage = null }) { Text("Close") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SellerSectionCard(
+    number: Int,
+    title: String,
+    subtitle: String? = null,
+    isComplete: Boolean? = null,
+    modifier: Modifier = Modifier,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(SellerProductSurface),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (isComplete == true) SellerProductGreen.copy(alpha = 0.35f) else SellerProductLine,
+        ),
+        modifier = modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.weight(1f, fill = false),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isComplete == true) SellerProductGreen else SellerProductMuted.copy(alpha = 0.15f),
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (isComplete == true) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = SellerProductOnColor, modifier = Modifier.size(16.dp))
+                        } else {
+                            Text(
+                                number.toString(),
+                                color = SellerProductText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                            )
+                        }
+                    }
+                    Column {
+                        Text(
+                            title,
+                            color = SellerProductText,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                        )
+                        if (!subtitle.isNullOrBlank()) {
+                            Text(
+                                subtitle,
+                                color = SellerProductMuted,
+                                fontSize = 12.sp,
+                            )
+                        }
+                    }
+                }
+                if (isComplete != null) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = if (isComplete) SellerProductGreenSoft else AdisGebeyaColors.SoftOrange,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Icon(
+                                if (isComplete) Icons.Default.Check else Icons.Default.PriorityHigh,
+                                contentDescription = null,
+                                tint = if (isComplete) SellerProductGreen else AdisGebeyaColors.Warning,
+                                modifier = Modifier.size(12.dp),
+                            )
+                            Text(
+                                if (isComplete) "Ready" else "Incomplete",
+                                color = if (isComplete) SellerProductGreen else AdisGebeyaColors.Warning,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 11.sp,
+                            )
+                        }
+                    }
+                }
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun ListingChecklistRow(
+    label: String,
+    passed: Boolean,
+    detail: String? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            Icon(
+                if (passed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                contentDescription = null,
+                tint = if (passed) SellerProductGreen else AdisGebeyaColors.Warning,
+                modifier = Modifier.size(16.dp),
+            )
+            Column {
+                Text(
+                    label,
+                    color = SellerProductText,
+                    fontSize = 13.sp,
+                    fontWeight = if (passed) FontWeight.Normal else FontWeight.Medium,
+                )
+                if (!detail.isNullOrBlank()) {
+                    Text(detail, color = SellerProductMuted, fontSize = 11.sp)
+                }
+            }
+        }
+        Text(
+            if (passed) "Ready" else "Required",
+            color = if (passed) SellerProductGreen else AdisGebeyaColors.Warning,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp,
+        )
     }
 }
 

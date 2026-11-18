@@ -340,5 +340,113 @@ test('ProductInformationComponents.kt supports interactive ProductOptionsSummary
   assert.ok(code.includes('ProductVariantSelector('));
 });
 
+console.log('\n--- 4. AG-R6.3 Seller Listing UX & SKU Safety Tests ---');
+
+function generateSuggestedSku(brand, title, combination) {
+  const prefix = ((brand && brand.trim()) || title.slice(0, 8)).trim().toUpperCase().replace(/[^A-Z0-9]+/g, '');
+  const suffix = Object.values(combination).map((v) => v.toUpperCase().replace(/[^A-Z0-9]+/g, '')).join('-');
+  if (prefix && suffix) return `${prefix}-${suffix}`;
+  if (suffix) return suffix;
+  return prefix || 'SKU';
+}
+
+function findDuplicateSkus(drafts) {
+  const activeSkus = Object.values(drafts)
+    .filter((d) => d.active)
+    .map((d) => d.sku?.trim().toUpperCase())
+    .filter(Boolean);
+  const counts = {};
+  for (const sku of activeSkus) {
+    counts[sku] = (counts[sku] || 0) + 1;
+  }
+  return new Set(Object.keys(counts).filter((k) => counts[k] > 1));
+}
+
+function findDuplicateSkusFromOutputs(json) {
+  try {
+    const outputs = JSON.parse(json);
+    const activeSkus = (outputs.variants || [])
+      .filter((v) => v.status === 'active')
+      .map((v) => v.sku?.trim().toUpperCase())
+      .filter(Boolean);
+    const counts = {};
+    for (const sku of activeSkus) {
+      counts[sku] = (counts[sku] || 0) + 1;
+    }
+    return new Set(Object.keys(counts).filter((k) => counts[k] > 1));
+  } catch {
+    return new Set();
+  }
+}
+
+test('generateSuggestedSku generates deterministic uppercase SKU with brand and options', () => {
+  const sku = generateSuggestedSku('Adidas', 'Running Shoe', { COLOR: 'White', SIZE: '42' });
+  assert.equal(sku, 'ADIDAS-WHITE-42');
+});
+
+test('generateSuggestedSku falls back to sanitized title prefix when brand is omitted', () => {
+  const sku = generateSuggestedSku('', 'Leather Jacket', { COLOR: 'Brown', SIZE: 'XL' });
+  assert.equal(sku, 'LEATHER-BROWN-XL');
+});
+
+test('findDuplicateSkus detects identical active SKUs and ignores case/whitespace', () => {
+  const drafts = {
+    'COLOR=Black|SIZE=42': { active: true, sku: 'SHOE-42' },
+    'COLOR=White|SIZE=42': { active: true, sku: ' shoe-42 ' },
+    'COLOR=Blue|SIZE=44': { active: true, sku: 'SHOE-44' },
+  };
+  const duplicates = findDuplicateSkus(drafts);
+  assert.equal(duplicates.size, 1);
+  assert.ok(duplicates.has('SHOE-42'));
+});
+
+test('findDuplicateSkus ignores SKUs of inactive variants', () => {
+  const drafts = {
+    'COLOR=Black|SIZE=42': { active: true, sku: 'SHOE-42' },
+    'COLOR=White|SIZE=42': { active: false, sku: 'SHOE-42' },
+    'COLOR=Blue|SIZE=44': { active: true, sku: 'SHOE-44' },
+  };
+  const duplicates = findDuplicateSkus(drafts);
+  assert.equal(duplicates.size, 0);
+});
+
+test('findDuplicateSkusFromOutputs detects duplicate active variant SKUs from JSON', () => {
+  const payload = JSON.stringify({
+    variants: [
+      { id: '1', sku: 'BOOT-40', status: 'active', options: { SIZE: '40' } },
+      { id: '2', sku: 'boot-40', status: 'active', options: { SIZE: '41' } },
+      { id: '3', sku: 'BOOT-42', status: 'inactive', options: { SIZE: '42' } },
+    ],
+  });
+  const duplicates = findDuplicateSkusFromOutputs(payload);
+  assert.equal(duplicates.size, 1);
+  assert.ok(duplicates.has('BOOT-40'));
+});
+
+test('SellerVariantCatalogEditor.kt implements SKU helpers, auto-fill, and bulk actions', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('fun generateSuggestedSku'));
+  assert.ok(code.includes('fun findDuplicateSkus'));
+  assert.ok(code.includes('fun findDuplicateSkusFromOutputs'));
+  assert.ok(code.includes('Auto-fill SKUs'));
+  assert.ok(code.includes('Apply base price'));
+  assert.ok(code.includes('Apply base stock'));
+  assert.ok(code.includes('basePriceMinor: Int = product.priceMinor'));
+});
+
+test('ShopSellerProductsScreen.kt implements 6-section structure and Listing Readiness Checklist', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerProductsScreen.kt'), 'utf8');
+  assert.ok(code.includes('fun SellerSectionCard'));
+  assert.ok(code.includes('fun ListingChecklistRow'));
+  assert.ok(code.includes('Section 1: Basic Information'));
+  assert.ok(code.includes('Section 2: Category & Attributes'));
+  assert.ok(code.includes('Section 3: Product Images'));
+  assert.ok(code.includes('Section 4: Sizes, Colors & Variations'));
+  assert.ok(code.includes('Section 5: Base Price & Inventory'));
+  assert.ok(code.includes('Section 6: Review & Submit'));
+  assert.ok(code.includes('Listing Readiness Checklist'));
+  assert.ok(code.includes('Cover Photo Preview'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

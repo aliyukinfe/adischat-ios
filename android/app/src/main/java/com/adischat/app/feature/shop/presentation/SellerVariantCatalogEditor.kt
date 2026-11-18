@@ -17,6 +17,13 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -203,6 +210,32 @@ internal fun syncSingleDefaultVariant(
         listOf(variants[0].copy(priceMinor = basePriceMinor, quantityAvailable = baseStock))
     } else variants
 
+internal fun generateSuggestedSku(brand: String?, title: String, combination: Map<String, String>): String {
+    val prefix = (brand?.takeIf { it.isNotBlank() } ?: title.take(8)).trim()
+        .uppercase().replace(Regex("[^A-Z0-9]+"), "")
+    val suffix = combination.values.joinToString("-") { it.uppercase().replace(Regex("[^A-Z0-9]+"), "") }
+    return if (prefix.isNotBlank() && suffix.isNotBlank()) "$prefix-$suffix"
+    else if (suffix.isNotBlank()) suffix
+    else prefix.ifBlank { "SKU" }
+}
+
+internal fun findDuplicateSkus(drafts: Map<String, SellerVariantDraft>): Set<String> {
+    val activeSkus = drafts.values
+        .filter { it.active }
+        .mapNotNull { it.sku.trim().takeIf(String::isNotBlank)?.uppercase() }
+    val counts = activeSkus.groupingBy { it }.eachCount()
+    return counts.filter { it.value > 1 }.keys
+}
+
+internal fun findDuplicateSkusFromOutputs(json: String): Set<String> {
+    val outputs = decodeSellerVariantOutputs(json)
+    val activeSkus = outputs.variants
+        .filter { it.status == "active" }
+        .mapNotNull { it.sku?.trim()?.takeIf(String::isNotBlank)?.uppercase() }
+    val counts = activeSkus.groupingBy { it }.eachCount()
+    return counts.filter { it.value > 1 }.keys
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun SellerVariantCatalogEditor(
@@ -216,6 +249,7 @@ internal fun SellerVariantCatalogEditor(
     onChanged: (List<ShopSellerSpecificationInput>, List<ShopSellerProductOptionInput>, List<ShopSellerVariantInput>) -> Unit,
     modifier: Modifier = Modifier,
     categoryCode: String? = null,
+    basePriceMinor: Int = product.priceMinor,
 ) {
     val specificationText = remember(product.id, categoryId, attributes) {
         mutableStateMapOf<String, String>().apply {
@@ -426,9 +460,127 @@ internal fun SellerVariantCatalogEditor(
             }
         }
 
+        val duplicateSkus = remember(variantDrafts.values.map { it.sku to it.active }) {
+            findDuplicateSkus(variantDrafts)
+        }
         val current = outputs(includeUnselectedCandidates = true)
         if (current.third.isNotEmpty()) {
-            Text("Variant inventory (${current.third.size})", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Variant inventory (${current.third.count { variantDrafts[it.options.entries.sortedBy { e -> e.key }.joinToString("|") { e -> "${e.key}=${e.value}" }]?.active == true }} active / ${current.third.size} total)",
+                    color = AdisGebeyaColors.PrimaryText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                )
+            }
+            if (current.third.size > 1) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                current.third.forEach { variant ->
+                                    val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                    val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                    if (draft.sku.isBlank()) {
+                                        val suggested = generateSuggestedSku(product.brand, product.title, variant.options)
+                                        variantDrafts[sig] = draft.copy(sku = suggested)
+                                    }
+                                }
+                                emit()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(15.dp), tint = AdisGebeyaColors.Primary)
+                            Spacer(Modifier.width(5.dp))
+                            Text("Auto-fill SKUs", fontSize = 12.sp)
+                        }
+                    }
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                val basePriceStr = (basePriceMinor / 100).takeIf { it > 0 }?.toString().orEmpty()
+                                if (basePriceStr.isNotBlank()) {
+                                    current.third.forEach { variant ->
+                                        val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                        val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                        if (draft.price.isBlank() || draft.price == "0") {
+                                            variantDrafts[sig] = draft.copy(price = basePriceStr)
+                                        }
+                                    }
+                                    emit()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("Apply base price", fontSize = 12.sp)
+                        }
+                    }
+                    item {
+                        OutlinedButton(
+                            onClick = {
+                                val baseStockStr = baseStock.takeIf { it > 0 }?.toString().orEmpty()
+                                if (baseStockStr.isNotBlank()) {
+                                    current.third.forEach { variant ->
+                                        val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                        val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                        if (draft.stock.isBlank() || draft.stock == "0") {
+                                            variantDrafts[sig] = draft.copy(stock = baseStockStr)
+                                        }
+                                    }
+                                    emit()
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text("Apply base stock", fontSize = 12.sp)
+                        }
+                    }
+                    item {
+                        val allActive = current.third.all { variant ->
+                            val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                            variantDrafts[sig]?.active == true
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                current.third.forEach { variant ->
+                                    val sig = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
+                                    val draft = variantDrafts[sig] ?: SellerVariantDraft()
+                                    variantDrafts[sig] = draft.copy(active = !allActive)
+                                }
+                                emit()
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                        ) {
+                            Text(if (allActive) "Deactivate all" else "Activate all", fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+            if (duplicateSkus.isNotEmpty()) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = AdisGebeyaColors.ErrorSoft),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, AdisGebeyaColors.Error.copy(alpha = 0.5f)),
+                ) {
+                    Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = AdisGebeyaColors.Error, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Duplicate SKU detected (${duplicateSkus.joinToString(", ")}). Each active variant must have a unique SKU.",
+                            color = AdisGebeyaColors.Error,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+            }
             current.third.forEach { variant ->
                 val signature = variant.options.entries.sortedBy { it.key }.joinToString("|") { "${it.key}=${it.value}" }
                 val draft = variantDrafts[signature] ?: SellerVariantDraft()
@@ -453,7 +605,22 @@ internal fun SellerVariantCatalogEditor(
                                 OutlinedTextField(draft.stock, { value -> variantDrafts[signature] = draft.copy(stock = value.filter(Char::isDigit)); emit() }, label = { Text("Stock") }, modifier = Modifier.weight(1f), singleLine = true)
                             }
                         }
-                        OutlinedTextField(draft.sku, { value -> variantDrafts[signature] = draft.copy(sku = value); emit() }, label = { Text("Seller SKU") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                        val isDuplicateSku = draft.active && draft.sku.trim().uppercase() in duplicateSkus
+                        OutlinedTextField(
+                            value = draft.sku,
+                            onValueChange = { value ->
+                                val clean = value.uppercase().filter { it.isLetterOrDigit() || it == '-' || it == '_' }
+                                variantDrafts[signature] = draft.copy(sku = clean)
+                                emit()
+                            },
+                            label = { Text("Seller SKU") },
+                            isError = isDuplicateSku,
+                            supportingText = if (isDuplicateSku) {
+                                { Text("Duplicate SKU — must be unique", color = AdisGebeyaColors.Error, fontSize = 11.sp) }
+                            } else null,
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                        )
                         if (productImages.isNotEmpty()) {
                             Text("Variant images", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.Medium)
                             LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
