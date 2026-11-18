@@ -1422,6 +1422,8 @@ private fun SubcategoryIconCards(
     }
 }
 
+@Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun CategoryProductsScreen(
     category: ShopCategoryDto,
     state: ShopHomeState,
