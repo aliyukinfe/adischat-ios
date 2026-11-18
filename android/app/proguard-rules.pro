@@ -23,3 +23,6 @@
 -keep class com.adischat.app.data.model.** { *; }
 -keep class com.adischat.app.network.** { *; }
 -keep class com.adischat.app.feature.shop.data.** { *; }
+-keep class com.adischat.app.feature.restaurants.data.** { *; }
+-keep interface com.adischat.app.feature.restaurants.data.** { *; }
+-keep class com.adischat.app.feature.restaurants.center.** { *; }
