@@ -165,7 +165,14 @@ class ShopViewModel(
                 runCatching {
                     val lineage = sellerCategoryLineage(categoryId, _state.value.categories)
                     require(lineage.isNotEmpty()) { "The selected category is unavailable." }
-                    mergeSellerCategoryAttributes(lineage.map { id -> categoryRepository.attributes(id).getOrThrow() })
+                    val merged = mergeSellerCategoryAttributes(
+                        lineage.map { id ->
+                            val safeId = CategoryHierarchyDefinition.resolveSaveableCategoryId(id, _state.value.categories)
+                            categoryRepository.attributes(safeId).getOrDefault(emptyList())
+                        }
+                    )
+                    val selectedCategory = _state.value.categories.firstOrNull { it.id == categoryId }
+                    enrichCategoryAttributes(categoryId, selectedCategory?.code, merged)
                 }
             }
             if (_protectedState.value.ownerUid != ownerUid) return@launch
@@ -202,8 +209,9 @@ class ShopViewModel(
             categoryProducts.all { current.productDetails.containsKey(it.id) }
         ) return
         _state.value = current.copy(buyerFilterLoadingCategoryId = categoryId)
+        val safeCategoryId = CategoryHierarchyDefinition.resolveSaveableCategoryId(categoryId, current.categories)
         viewModelScope.launch {
-            categoryRepository.attributes(categoryId)
+            categoryRepository.attributes(safeCategoryId)
                 .onSuccess { attributes ->
                     val details = categoryProducts.mapNotNull { product ->
                         productRepository.detail(product.id).getOrNull()?.let { product.id to it }

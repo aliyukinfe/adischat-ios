@@ -487,8 +487,9 @@ private fun SellerProductEditor(
         return sellerSpecificationErrors(categoryAttributes[selectedCategoryId].orEmpty(), values, requireRequired)
     }
     fun currentPayload(): ShopSellerProductDraftPayload {
+        val saveableCategoryId = CategoryHierarchyDefinition.resolveSaveableCategoryId(selectedCategoryId, categories)
         return sellerProductDraftPayload(SellerProductFormValues(
-            title, brand, selectedCategoryId, selectedSellingUnitCode, minimumOrderQuantity,
+            title, brand, saveableCategoryId, selectedSellingUnitCode, minimumOrderQuantity,
             productTypeDescription, shortDescription, description, price, stock, shipping, returns,
             specs, variantOutputsJson, product.images.map { it.id }.toSet(),
         ))
@@ -615,7 +616,8 @@ private fun SellerProductEditor(
         }
 
         // Section 2: Category & Attributes
-        val selectedCategory = categories.firstOrNull { it.id == selectedCategoryId }
+        val fullCategories = remember(categories) { CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories) }
+        val selectedCategory = fullCategories.firstOrNull { it.id == selectedCategoryId } ?: categories.firstOrNull { it.id == selectedCategoryId }
         val selectedUnit = sellingUnits.firstOrNull { it.code == selectedSellingUnitCode }
         SellerSectionCard(
             number = 2,
@@ -630,7 +632,7 @@ private fun SellerProductEditor(
                 shape = RoundedCornerShape(14.dp),
             ) {
                 Text(
-                    selectedCategory?.let { categoryBreadcrumb(it, categories) } ?: "Choose the most specific category",
+                    selectedCategory?.let { CategoryHierarchyDefinition.canonicalBreadcrumb(it, fullCategories) } ?: "Choose the most specific category",
                     modifier = Modifier.weight(1f),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,

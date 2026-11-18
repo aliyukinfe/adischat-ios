@@ -70,20 +70,59 @@ internal object CategoryVariantPresets {
         "28", "30", "32", "34", "36", "38", "40", "42",
         "30/30", "32/30", "32/32", "34/32", "36/32",
     )
+    val JEANS_WAIST_SIZES = listOf("28", "29", "30", "31", "32", "33", "34", "36", "38", "40", "42")
+    val JEANS_INSEAM_SIZES = listOf("30", "32", "34")
+    val JEANS_FIT_CHOICES = listOf("Slim", "Skinny", "Straight", "Relaxed", "Loose", "Tapered")
+    val JEANS_WASH_CHOICES = listOf("Dark Wash", "Medium Wash", "Light Wash", "Black", "Distressed", "Raw Denim")
+    val SUIT_CHEST_SIZES = listOf("36R", "38R", "40R", "42R", "44R", "46R")
+    val SUIT_FIT_CHOICES = listOf("Slim Fit", "Classic Fit", "Tailored Fit", "Modern Fit")
+    val SUIT_PIECES_CHOICES = listOf("2-Piece (Jacket + Trouser)", "3-Piece (Jacket + Trouser + Vest)", "Jacket Only")
+    val SHIRT_FABRIC_CHOICES = listOf("100% Cotton", "Linen", "Oxford", "Poplin", "Cotton Blend", "Silk", "Flannel")
+    val SHIRT_FIT_CHOICES = listOf("Slim Fit", "Regular Fit", "Relaxed Fit")
+    val SHOE_UPPER_MATERIAL_CHOICES = listOf("Genuine Leather", "Suede", "Canvas", "Mesh / Knit", "Synthetic Leather", "Patent Leather")
+    val FURNITURE_MATERIAL_CHOICES = listOf("Solid Wood", "MDF / Engineered Wood", "Metal / Steel", "Leather", "Fabric Upholstery", "Glass")
+    val ELECTRONICS_STORAGE_CHOICES = listOf("64GB", "128GB", "256GB", "512GB", "1TB", "2TB")
+    val ELECTRONICS_RAM_CHOICES = listOf("4GB", "6GB", "8GB", "12GB", "16GB", "32GB", "64GB")
     val APPAREL_ALPHA_SIZES = listOf("XS", "S", "M", "L", "XL", "XXL", "3XL", "4XL")
     val FURNITURE_SIZES = listOf("Single", "Double", "Queen", "King", "Custom")
 
     val KIDS_SHOE_CATEGORY_IDS = setOf(
         "2ba3dd18-474b-4544-8ea1-c1b3a3e97279", // KIDS_SHOES
+        "canonical-kids-shoes",
     )
     val FOOTWEAR_CATEGORY_IDS = setOf(
         "b9b2956d-425b-4049-850e-9b2a88125acc", // MENS_SHOES
         "08b0d893-223c-42c5-86cd-1e01e07bc82b", // WOMENS_SHOES
         "83af6f95-e949-489e-8a11-f6d68602e1b1", // SPORTS_SHOES
         "586ab99f-66fc-4c03-8464-ee2f902eccdd", // SHOES_BAGS_ACCESSORIES
+        "canonical-men-shoes",
+        "canonical-women-shoes",
+        "canonical-men-sneakers",
+        "canonical-men-formal-shoes",
+        "canonical-men-boots",
+        "canonical-men-sandals",
+        "canonical-women-heels",
+        "canonical-women-flats",
+        "canonical-women-sneakers",
+        "canonical-women-boots",
+        "canonical-women-sandals",
+    )
+    val JEANS_CATEGORY_IDS = setOf(
+        "canonical-men-jeans",
+        "canonical-women-jeans",
+    )
+    val SUIT_CATEGORY_IDS = setOf(
+        "canonical-men-suits",
     )
     val TROUSER_CATEGORY_IDS = setOf(
         "7a56e0f2-2b60-4543-8a52-512e969cc253", // TROUSERS
+        "men-trousers",
+        "women-trousers",
+    )
+    val SHIRT_CATEGORY_IDS = setOf(
+        "4b75f4e5-3b88-46e2-8069-33082443228c", // SHIRTS
+        "men-shirts",
+        "canonical-women-tops",
     )
     val APPAREL_CATEGORY_IDS = setOf(
         "db8c93f5-e3a0-46eb-8778-713d4c9b23c3", // JACKETS
@@ -93,11 +132,25 @@ internal object CategoryVariantPresets {
         "679f286d-3bdb-48ea-8a0f-593fdca66c50", // MENS_CLOTHING
         "c185bdc9-f022-44de-8fa7-6158e177b070", // WOMENS_CLOTHING
         "00000000-0000-4000-8000-000000000102", // FASHION_CLOTHING
+        "canonical-men-clothing",
+        "canonical-women-clothing",
+        "canonical-women-dresses",
+        "canonical-women-skirts",
     )
     val FURNITURE_CATEGORY_IDS = setOf(
         "97385dba-3aaf-4fcd-8bf7-6cd7f54e8e6f", // FURNITURE
         "5abfc134-cb63-4006-83a4-bf8940695771", // BEDDING
         "00000000-0000-4000-8000-000000000103", // HOME_FURNITURE_GARDEN
+    )
+    val ELECTRONICS_CATEGORY_IDS = setOf(
+        "00000000-0000-4000-8000-000000000101", // ELECTRONICS
+        "3884fbf3-4ba9-425f-bc1d-bcaecba49c30", // PHONES
+        "ee5530a0-0e13-4dbf-a795-3b98c56fa769", // TABLETS
+        "aa487399-52e8-466c-bb92-c0e86b02660a", // LAPTOPS
+        "8c7eb220-410b-4ea5-802c-7b2fb5e5aa49", // DESKTOPS
+        "e72a81fa-5847-494b-9706-e3d64bc8c919", // AUDIO
+        "27493a7e-128a-442a-a035-7ce3c965c40d", // SMART_WATCHES
+        "0c441b8c-f0cf-4e5a-a384-cb91dc201639", // TELEVISIONS
     )
 
     fun resolveSuggestions(
@@ -107,16 +160,79 @@ internal object CategoryVariantPresets {
         defaultSuggestions: List<String>,
     ): List<String> {
         val attr = attributeCode.trim().uppercase()
+        val id = categoryId.trim().lowercase()
+        val code = categoryCode?.trim()?.uppercase().orEmpty()
+
+        // Electronics attribute handling
+        val isElectronics = id in ELECTRONICS_CATEGORY_IDS || code.contains("ELECTRONIC") ||
+            code.contains("PHONE") || code.contains("LAPTOP") || code.contains("TABLET")
+        if (isElectronics) {
+            when (attr) {
+                "STORAGE" -> return if (defaultSuggestions.isNotEmpty()) defaultSuggestions else ELECTRONICS_STORAGE_CHOICES
+                "RAM" -> return if (defaultSuggestions.isNotEmpty()) defaultSuggestions else ELECTRONICS_RAM_CHOICES
+                "SIZE", "CLOTHING_SIZE" -> return emptyList() // Strictly no apparel sizes for electronics
+                else -> return defaultSuggestions
+            }
+        }
+
+        // Specific attribute choices across categories
+        when (attr) {
+            "STORAGE" -> return if (defaultSuggestions.isNotEmpty()) defaultSuggestions else ELECTRONICS_STORAGE_CHOICES
+            "RAM" -> return if (defaultSuggestions.isNotEmpty()) defaultSuggestions else ELECTRONICS_RAM_CHOICES
+            "FIT" -> {
+                return when {
+                    id in SUIT_CATEGORY_IDS || code.contains("SUIT") || code.contains("BLAZER") -> SUIT_FIT_CHOICES
+                    id in JEANS_CATEGORY_IDS || id in TROUSER_CATEGORY_IDS || code.contains("JEAN") || code.contains("TROUSER") -> JEANS_FIT_CHOICES
+                    id in SHIRT_CATEGORY_IDS || code.contains("SHIRT") -> SHIRT_FIT_CHOICES
+                    defaultSuggestions.isNotEmpty() -> defaultSuggestions
+                    else -> listOf("Slim Fit", "Regular Fit")
+                }
+            }
+            "WASH" -> {
+                if (id in JEANS_CATEGORY_IDS || code.contains("JEAN") || code.contains("DENIM")) {
+                    return JEANS_WASH_CHOICES
+                }
+                return defaultSuggestions
+            }
+            "INSEAM" -> {
+                if (id in JEANS_CATEGORY_IDS || id in TROUSER_CATEGORY_IDS || id in SUIT_CATEGORY_IDS || code.contains("PANT") || code.contains("JEAN") || code.contains("TROUSER")) {
+                    return JEANS_INSEAM_SIZES
+                }
+                return defaultSuggestions
+            }
+            "PIECES" -> {
+                if (id in SUIT_CATEGORY_IDS || code.contains("SUIT")) {
+                    return SUIT_PIECES_CHOICES
+                }
+                return defaultSuggestions
+            }
+            "FABRIC" -> {
+                if (id in SHIRT_CATEGORY_IDS || id in APPAREL_CATEGORY_IDS || code.contains("SHIRT") || code.contains("CLOTHING")) {
+                    return SHIRT_FABRIC_CHOICES
+                }
+                return defaultSuggestions
+            }
+            "MATERIAL", "UPPER_MATERIAL" -> {
+                if (id in FOOTWEAR_CATEGORY_IDS || code.contains("SHOE") || code.contains("FOOTWEAR") || attr == "UPPER_MATERIAL") {
+                    return SHOE_UPPER_MATERIAL_CHOICES
+                }
+                if (id in FURNITURE_CATEGORY_IDS || code.contains("FURNITURE")) {
+                    return FURNITURE_MATERIAL_CHOICES
+                }
+                return defaultSuggestions
+            }
+        }
+
         if (attr != "SIZE" && attr != "SHOE_SIZE" && attr != "CLOTHING_SIZE" && attr != "DIMENSIONS") {
             return defaultSuggestions
         }
-        val id = categoryId.trim().lowercase()
-        val code = categoryCode?.trim()?.uppercase().orEmpty()
 
         return when {
             id in KIDS_SHOE_CATEGORY_IDS || code == "KIDS_SHOES" || code.contains("KIDS_SHOE") -> KIDS_SHOE_SIZES
             id in FOOTWEAR_CATEGORY_IDS || code.contains("SHOE") || code.contains("FOOTWEAR") || attr == "SHOE_SIZE" -> SHOE_EU_SIZES
-            id in TROUSER_CATEGORY_IDS || code == "TROUSERS" || code.contains("PANTS") || code.contains("JEANS") -> TROUSER_SIZES
+            id in SUIT_CATEGORY_IDS || code.contains("SUIT") || code.contains("BLAZER") -> SUIT_CHEST_SIZES
+            id in JEANS_CATEGORY_IDS || code.contains("JEAN") -> JEANS_WAIST_SIZES
+            id in TROUSER_CATEGORY_IDS || code == "TROUSERS" || code.contains("PANTS") -> TROUSER_SIZES
             id in FURNITURE_CATEGORY_IDS || code.contains("FURNITURE") || code.contains("BEDDING") || code.contains("MATTRESS") -> FURNITURE_SIZES
             id in APPAREL_CATEGORY_IDS || code.contains("CLOTHING") || code.contains("JACKET") || code.contains("SHIRT") || code.contains("DRESS") || code.contains("APPAREL") || attr == "CLOTHING_SIZE" -> APPAREL_ALPHA_SIZES
             defaultSuggestions.isNotEmpty() -> defaultSuggestions

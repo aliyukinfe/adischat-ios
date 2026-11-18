@@ -26,6 +26,8 @@
 -keepclassmembers class com.adischat.app.feature.shop.data.** { *; }
 -keep class com.adischat.app.feature.shop.presentation.SellerVariant* { *; }
 -keepclassmembers class com.adischat.app.feature.shop.presentation.SellerVariant* { *; }
+-keep class com.adischat.app.feature.shop.presentation.CategoryHierarchy* { *; }
+-keepclassmembers class com.adischat.app.feature.shop.presentation.CategoryHierarchy* { *; }
 -keep class com.adischat.app.feature.restaurants.data.** { *; }
 -keep interface com.adischat.app.feature.restaurants.data.** { *; }
 -keep class com.adischat.app.feature.restaurants.center.** { *; }

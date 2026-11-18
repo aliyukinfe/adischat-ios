@@ -1,5 +1,6 @@
 package com.adischat.app.feature.shop.presentation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -68,6 +69,7 @@ internal fun SellerCategoryPicker(
     onDismiss: () -> Unit,
     onSelect: (ShopCategoryDto) -> Unit,
 ) {
+    val hierarchy = remember(categories) { CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories) }
     var parentId by rememberSaveable { mutableStateOf<String?>(null) }
     var queryInput by rememberSaveable { mutableStateOf("") }
     var query by rememberSaveable { mutableStateOf("") }
@@ -75,14 +77,19 @@ internal fun SellerCategoryPicker(
         delay(250)
         query = queryInput.trim()
     }
-    val byId = remember(categories) { categories.associateBy { it.id } }
+    val byId = remember(hierarchy) { hierarchy.associateBy { it.id } }
     val currentParent = parentId?.let(byId::get)
-    val rows = remember(categories, parentId, query) {
+
+    BackHandler(enabled = parentId != null && query.isBlank()) {
+        parentId = currentParent?.parentId
+    }
+
+    val rows = remember(hierarchy, parentId, query) {
         if (query.isNotBlank()) {
-            categories.filter { it.isLeaf && it.sellerSelectable && categoryMatchesQuery(it, query) }
-                .sortedBy { categoryBreadcrumb(it, categories) }
+            hierarchy.filter { it.isLeaf && it.sellerSelectable && categoryMatchesQuery(it, query) }
+                .sortedBy { categoryBreadcrumb(it, hierarchy) }
         } else {
-            categories.filter {
+            hierarchy.filter {
                 if (parentId.isNullOrBlank()) it.parentId.isNullOrBlank()
                 else it.parentId == parentId
             }.sortedWith(compareBy({ it.displayOrder }, { it.name }))
@@ -101,7 +108,7 @@ internal fun SellerCategoryPicker(
                 }
                 Column {
                     Text(if (currentParent == null) "Choose category" else currentParent.name, fontWeight = FontWeight.SemiBold)
-                    if (currentParent != null) Text(categoryBreadcrumb(currentParent, categories), style = MaterialTheme.typography.labelSmall)
+                    if (currentParent != null) Text(categoryBreadcrumb(currentParent, hierarchy), style = MaterialTheme.typography.labelSmall)
                 }
             }
         },
@@ -113,7 +120,7 @@ internal fun SellerCategoryPicker(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    label = { Text("Search categories...") },
+                    label = { Text("Search categories (e.g. Jeans, Shoes)...") },
                 )
                 if (rows.isEmpty()) {
                     Text(
@@ -123,7 +130,7 @@ internal fun SellerCategoryPicker(
                 } else {
                     LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
                         items(rows, key = { it.id }) { category ->
-                            val hasChildren = categories.any { it.parentId == category.id && it.buyerVisible }
+                            val hasChildren = hierarchy.any { it.parentId == category.id && it.buyerVisible }
                             Surface(
                                 modifier = Modifier.fillMaxWidth().clickable {
                                     if (category.isLeaf && category.sellerSelectable) onSelect(category)
@@ -135,12 +142,12 @@ internal fun SellerCategoryPicker(
                                     Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(Icons.Default.Category, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Icon(categoryIcon(category), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(category.name, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         if (query.isNotBlank()) {
-                                            Text(categoryBreadcrumb(category, categories), style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                                            Text(categoryBreadcrumb(category, hierarchy), style = MaterialTheme.typography.labelSmall, maxLines = 2)
                                         }
                                     }
                                     if (!category.isLeaf || hasChildren) Icon(Icons.Default.ChevronRight, contentDescription = "Open ${category.name}")

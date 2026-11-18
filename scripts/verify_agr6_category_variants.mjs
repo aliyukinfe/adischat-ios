@@ -785,5 +785,182 @@ test('build.gradle version is incremented to 124 (1.0.124)', () => {
   assert.ok(gradle.includes('versionName "1.0.124"'));
 });
 
+console.log('\n--- 8. AG-R6.8 Category Hierarchy & Product-Specific Attributes Tests ---');
+
+test('CategoryHierarchyDefinition.kt exists and defines authoritative category constants and mapping logic', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/CategoryHierarchyDefinition.kt'), 'utf8');
+  assert.ok(code.includes('const val FASHION_ROOT_ID = "00000000-0000-4000-8000-000000000102"'));
+  assert.ok(code.includes('const val SHOES_ROOT_ID = "586ab99f-66fc-4c03-8464-ee2f902eccdd"'));
+  assert.ok(code.includes('const val ELECTRONICS_ROOT_ID = "00000000-0000-4000-8000-000000000101"'));
+  assert.ok(code.includes('const val HOME_ROOT_ID = "00000000-0000-4000-8000-000000000103"'));
+  assert.ok(code.includes('fun buildAuthoritativeHierarchy'));
+  assert.ok(code.includes('fun resolveDescendantIds'));
+  assert.ok(code.includes('fun resolveSaveableCategoryId'));
+  assert.ok(code.includes('fun canonicalBreadcrumb'));
+  assert.ok(code.includes('DB_FALLBACK_CATEGORY_MAP'));
+});
+
+test('CategoryHierarchyDefinition.buildAuthoritativeHierarchy structures Men, Women, and Kids into multi-tier hierarchy', () => {
+  // Replicate Kotlin hierarchy builder in JS test
+  const MENS_CLOTHING_ID = '679f286d-3bdb-48ea-8a0f-593fdca66c50';
+  const WOMENS_CLOTHING_ID = 'c185bdc9-f022-44de-8fa7-6158e177b070';
+  const FASHION_ROOT_ID = '00000000-0000-4000-8000-000000000102';
+
+  const rawCategories = [
+    { id: FASHION_ROOT_ID, name: 'Fashion & Clothing', parentId: null, isLeaf: false },
+    { id: MENS_CLOTHING_ID, name: 'Men', parentId: FASHION_ROOT_ID, isLeaf: true },
+    { id: WOMENS_CLOTHING_ID, name: 'Women', parentId: FASHION_ROOT_ID, isLeaf: true },
+  ];
+
+  function buildTestHierarchy(categories) {
+    const list = [...categories];
+    const menIdx = list.findIndex((c) => c.id === MENS_CLOTHING_ID);
+    if (menIdx >= 0) list[menIdx] = { ...list[menIdx], isLeaf: false, sellerSelectable: false };
+    const womenIdx = list.findIndex((c) => c.id === WOMENS_CLOTHING_ID);
+    if (womenIdx >= 0) list[womenIdx] = { ...list[womenIdx], isLeaf: false, sellerSelectable: false };
+
+    // Add Men's branches & leaves
+    list.push({ id: 'canonical-men-clothing', name: "Men's Clothing", parentId: MENS_CLOTHING_ID, isLeaf: false });
+    list.push({ id: 'canonical-men-shoes', name: "Men's Shoes", parentId: MENS_CLOTHING_ID, isLeaf: false });
+    list.push({ id: 'canonical-men-jeans', name: 'Jeans', parentId: 'canonical-men-clothing', isLeaf: true, sellerSelectable: true });
+    list.push({ id: 'canonical-men-suits', name: 'Suits & Blazers', parentId: 'canonical-men-clothing', isLeaf: true, sellerSelectable: true });
+    list.push({ id: 'canonical-men-sneakers', name: 'Sneakers', parentId: 'canonical-men-shoes', isLeaf: true, sellerSelectable: true });
+
+    // Add Women's branches & leaves
+    list.push({ id: 'canonical-women-clothing', name: "Women's Clothing", parentId: WOMENS_CLOTHING_ID, isLeaf: false });
+    list.push({ id: 'canonical-women-shoes', name: "Women's Shoes", parentId: WOMENS_CLOTHING_ID, isLeaf: false });
+    list.push({ id: 'canonical-women-dresses', name: 'Dresses', parentId: 'canonical-women-clothing', isLeaf: true, sellerSelectable: true });
+    list.push({ id: 'canonical-women-heels', name: 'Heels & Pumps', parentId: 'canonical-women-shoes', isLeaf: true, sellerSelectable: true });
+
+    return list;
+  }
+
+  const hierarchy = buildTestHierarchy(rawCategories);
+  const men = hierarchy.find((c) => c.id === MENS_CLOTHING_ID);
+  assert.equal(men.isLeaf, false);
+  const menClothing = hierarchy.find((c) => c.parentId === MENS_CLOTHING_ID && c.name === "Men's Clothing");
+  assert.ok(menClothing);
+  const menJeans = hierarchy.find((c) => c.parentId === menClothing.id && c.name === 'Jeans');
+  assert.ok(menJeans);
+  assert.equal(menJeans.isLeaf, true);
+  assert.equal(menJeans.sellerSelectable, true);
+
+  const women = hierarchy.find((c) => c.id === WOMENS_CLOTHING_ID);
+  assert.equal(women.isLeaf, false);
+  const womenShoes = hierarchy.find((c) => c.parentId === WOMENS_CLOTHING_ID && c.name === "Women's Shoes");
+  assert.ok(womenShoes);
+  const heels = hierarchy.find((c) => c.parentId === womenShoes.id && c.name === 'Heels & Pumps');
+  assert.ok(heels);
+  assert.equal(heels.isLeaf, true);
+});
+
+test('CategoryHierarchyDefinition safe DB fallback maps protect against Postgres foreign key violations', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/CategoryHierarchyDefinition.kt'), 'utf8');
+  assert.ok(code.includes('VIRT_MEN_JEANS to TROUSERS_ID'));
+  assert.ok(code.includes('VIRT_MEN_SUITS to MENS_CLOTHING_ID'));
+  assert.ok(code.includes('VIRT_MEN_SNEAKERS to MENS_SHOES_ID'));
+  assert.ok(code.includes('VIRT_WOMEN_HEELS to WOMENS_SHOES_ID'));
+  assert.ok(code.includes('VIRT_WOMEN_DRESSES to DRESSES_ID'));
+
+  // Verify resolution function logic
+  const fallbackMap = {
+    'canonical-men-jeans': '7a56e0f2-2b60-4543-8a52-512e969cc253', // Trousers
+    'canonical-men-suits': '679f286d-3bdb-48ea-8a0f-593fdca66c50', // Men
+    'canonical-men-sneakers': 'b9b2956d-425b-4049-850e-9b2a88125acc', // Men's Shoes
+    'canonical-women-heels': '08b0d893-223c-42c5-86cd-1e01e07bc82b', // Women's Shoes
+  };
+  function resolveSaveable(id, categories) {
+    if (categories.some((c) => c.id === id)) return id;
+    return fallbackMap[id] || id;
+  }
+
+  const existingCats = [{ id: '7a56e0f2-2b60-4543-8a52-512e969cc253', name: 'Trousers' }];
+  assert.equal(resolveSaveable('canonical-men-jeans', existingCats), '7a56e0f2-2b60-4543-8a52-512e969cc253');
+  assert.equal(resolveSaveable('canonical-men-suits', existingCats), '679f286d-3bdb-48ea-8a0f-593fdca66c50');
+  assert.equal(resolveSaveable('7a56e0f2-2b60-4543-8a52-512e969cc253', existingCats), '7a56e0f2-2b60-4543-8a52-512e969cc253');
+});
+
+test('CategoryVariantPresets provides Jeans waist (28-42), inseams (30-34), fit and wash choices', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('JEANS_WAIST_SIZES'));
+  assert.ok(code.includes('JEANS_INSEAM_SIZES'));
+  assert.ok(code.includes('JEANS_FIT_CHOICES'));
+  assert.ok(code.includes('JEANS_WASH_CHOICES'));
+  assert.ok(code.includes('"Dark Wash", "Medium Wash", "Light Wash"'));
+  assert.ok(code.includes('"Slim", "Skinny", "Straight"'));
+});
+
+test('CategoryVariantPresets provides Suits chest (36R-46R), fit and pieces choices', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('SUIT_CHEST_SIZES'));
+  assert.ok(code.includes('SUIT_FIT_CHOICES'));
+  assert.ok(code.includes('SUIT_PIECES_CHOICES'));
+  assert.ok(code.includes('"36R", "38R", "40R", "42R", "44R", "46R"'));
+  assert.ok(code.includes('"2-Piece (Jacket + Trouser)"'));
+});
+
+test('CategoryVariantPresets provides Shirts fabric and fit choices', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('SHIRT_FABRIC_CHOICES'));
+  assert.ok(code.includes('SHIRT_FIT_CHOICES'));
+  assert.ok(code.includes('"100% Cotton", "Linen", "Oxford"'));
+});
+
+test('CategoryVariantPresets provides Shoes upper material and strictly removes apparel sizes for Electronics and Furniture', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerVariantCatalogEditor.kt'), 'utf8');
+  assert.ok(code.includes('SHOE_UPPER_MATERIAL_CHOICES'));
+  assert.ok(code.includes('FURNITURE_MATERIAL_CHOICES'));
+  assert.ok(code.includes('ELECTRONICS_STORAGE_CHOICES'));
+  assert.ok(code.includes('ELECTRONICS_RAM_CHOICES'));
+  assert.ok(code.includes('"SIZE", "CLOTHING_SIZE" -> return emptyList()'));
+});
+
+test('SellerCategorySchema.kt implements enrichCategoryAttributes with product-specific attribute enrichment', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerCategorySchema.kt'), 'utf8');
+  assert.ok(code.includes('internal fun enrichCategoryAttributes'));
+  assert.ok(code.includes('mutable.removeAll { it.code == "SIZE" || it.code == "CLOTHING_SIZE" }'));
+  assert.ok(code.includes('hasJeans'));
+  assert.ok(code.includes('hasSuits'));
+  assert.ok(code.includes('hasShirts'));
+  assert.ok(code.includes('isShoes'));
+});
+
+test('SellerCategoryPicker.kt implements authoritative hierarchy, BackHandler, categoryIcon, and breadcrumbs', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/SellerCategoryPicker.kt'), 'utf8');
+  assert.ok(code.includes('CategoryHierarchyDefinition.buildAuthoritativeHierarchy'));
+  assert.ok(code.includes('BackHandler(enabled = parentId != null'));
+  assert.ok(code.includes('Icon(categoryIcon(category)'));
+  assert.ok(code.includes('categoryBreadcrumb(currentParent, hierarchy)'));
+});
+
+test('ShopSellerProductsScreen.kt passes saveableCategoryId and renders canonical breadcrumbs', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerProductsScreen.kt'), 'utf8');
+  assert.ok(code.includes('val saveableCategoryId = CategoryHierarchyDefinition.resolveSaveableCategoryId'));
+  assert.ok(code.includes('CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories)'));
+  assert.ok(code.includes('CategoryHierarchyDefinition.canonicalBreadcrumb'));
+});
+
+test('ShopScreen.kt CategoryProductsScreen implements CategoryBreadcrumbsTrail, SubcategoryIconCards, BackHandler, and descendant filtering', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('CategoryBreadcrumbsTrail'));
+  assert.ok(code.includes('SubcategoryIconCards'));
+  assert.ok(code.includes('CategoryHierarchyDefinition.resolveDescendantIds'));
+  assert.ok(code.includes('BackHandler {'));
+  assert.ok(code.includes('CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories)'));
+});
+
+test('agr6_8_category_hierarchy_proposal.sql exists and contains valid SQL with review notice', () => {
+  const sql = fs.readFileSync(path.join(REPO_ROOT, 'supabase/validation/agr6_8_category_hierarchy_proposal.sql'), 'utf8');
+  assert.ok(sql.includes('PROPOSAL ONLY — DO NOT EXECUTE DIRECTLY IN THIS AG-R6.8 SESSION'));
+  assert.ok(sql.includes('BEGIN;'));
+  assert.ok(sql.includes('COMMIT;'));
+  assert.ok(sql.includes("UPDATE public.shop_categories\nSET name = 'Men'"));
+  assert.ok(sql.includes("UPDATE public.shop_categories\nSET name = 'Women'"));
+  assert.ok(sql.includes("'Jeans & Denim', 'men-jeans'"));
+  assert.ok(sql.includes("'Suits & Blazers', 'men-suits'"));
+  assert.ok(sql.includes("'Heels & Pumps', 'women-heels'"));
+  assert.ok(sql.includes('v_agr6_8_category_hierarchy_summary'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

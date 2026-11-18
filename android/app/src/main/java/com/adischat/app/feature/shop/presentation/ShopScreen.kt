@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -349,16 +350,16 @@ internal fun marketplaceCategoryAndDescendantSlugs(
     selectedSlug: String?,
 ): Set<String> {
     if (selectedSlug == null) return emptySet()
-    val selected = categories.firstOrNull { it.slug == selectedSlug } ?: return setOf(selectedSlug)
-    val ids = mutableSetOf(selected.id)
-    var changed: Boolean
-    do {
-        changed = false
-        categories.forEach { category ->
-            if (category.parentId?.let(ids::contains) == true && ids.add(category.id)) changed = true
-        }
-    } while (changed)
-    return categories.filter { it.id in ids }.mapTo(linkedSetOf()) { it.slug }
+    val fullCategories = CategoryHierarchyDefinition.buildAuthoritativeHierarchy(categories)
+    val selected = fullCategories.firstOrNull { it.slug == selectedSlug }
+        ?: categories.firstOrNull { it.slug == selectedSlug }
+        ?: return setOf(selectedSlug)
+    val descendantIds = CategoryHierarchyDefinition.resolveDescendantIds(selected.id, fullCategories)
+    val result = linkedSetOf<String>()
+    result.add(selected.slug)
+    fullCategories.filter { it.id in descendantIds }.forEach { result.add(it.slug) }
+    categories.filter { it.id in descendantIds }.forEach { result.add(it.slug) }
+    return result
 }
 
 private data class PromotionBannerUiModel(
@@ -1317,6 +1318,110 @@ private fun ShopBottomBar(
 }
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun CategoryBreadcrumbsTrail(
+    category: ShopCategoryDto,
+    categories: List<ShopCategoryDto>,
+    onSelect: (ShopCategoryDto) -> Unit,
+) {
+    val lineage = remember(category.id, categories) {
+        val byId = categories.associateBy { it.id }
+        val trail = mutableListOf(category)
+        var parentId = category.parentId
+        val visited = mutableSetOf(category.id)
+        while (!parentId.isNullOrBlank() && visited.add(parentId)) {
+            val parent = byId[parentId] ?: break
+            trail.add(0, parent)
+            parentId = parent.parentId
+        }
+        trail
+    }
+    if (lineage.size > 1) {
+        LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            itemsIndexed(lineage, key = { _, cat -> cat.id }) { index, item ->
+                val isCurrent = index == lineage.lastIndex
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (isCurrent) ShopGreen.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, if (isCurrent) ShopGreen else Color.LightGray.copy(alpha = 0.4f)),
+                    modifier = Modifier.clickable(!isCurrent) { onSelect(item) },
+                ) {
+                    Text(
+                        text = item.name,
+                        color = if (isCurrent) ShopGreen else ShopInk,
+                        fontSize = 12.sp,
+                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Normal,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                if (index < lineage.lastIndex) {
+                    Icon(
+                        Icons.Default.KeyboardArrowRight,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.Gray,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SubcategoryIconCards(
+    categories: List<ShopCategoryDto>,
+    onSelect: (ShopCategoryDto) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
+        Text("Subcategories", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = ShopInk)
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(categories, key = { it.id }) { item ->
+                Card(
+                    modifier = Modifier.width(112.dp).clickable { onSelect(item) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.35f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(42.dp),
+                            shape = CircleShape,
+                            color = ShopGreen.copy(alpha = 0.1f),
+                        ) {
+                            Icon(
+                                categoryIcon(item),
+                                contentDescription = item.name,
+                                tint = ShopGreen,
+                                modifier = Modifier.padding(9.dp),
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            text = item.name,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = ShopInk,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 private fun CategoryProductsScreen(
     category: ShopCategoryDto,
     state: ShopHomeState,
@@ -1327,24 +1432,33 @@ private fun CategoryProductsScreen(
     onAddToCart: (ShopProductDto) -> Unit,
     onToggleFavorite: (ShopProductDto) -> Unit,
 ) {
-    var activeCategory by remember(category.id) { mutableStateOf(category) }
+    val fullCategories = remember(state.categories) {
+        CategoryHierarchyDefinition.buildAuthoritativeHierarchy(state.categories)
+    }
+    var activeCategory by remember(category.id) {
+        mutableStateOf(fullCategories.firstOrNull { it.id == category.id } ?: category)
+    }
     var query by remember(activeCategory.id) { mutableStateOf("") }
-    val descendantIds = remember(activeCategory.id, state.categories) {
-        buildSet {
-            val pending = ArrayDeque<String>()
-            pending.add(activeCategory.id)
-            while (pending.isNotEmpty()) {
-                val id = pending.removeFirst()
-                if (add(id)) state.categories.filter { it.parentId == id }.forEach { pending.add(it.id) }
-            }
-        }
+
+    BackHandler {
+        val parent = activeCategory.parentId?.let { id -> fullCategories.firstOrNull { it.id == id } }
+        if (parent == null) onBack() else activeCategory = parent
     }
-    val childCategories = remember(activeCategory.id, state.categories) {
-        state.categories.filter { it.parentId == activeCategory.id }.sortedWith(compareBy({ it.displayOrder }, { it.name }))
+
+    val descendantIds = remember(activeCategory.id, fullCategories) {
+        CategoryHierarchyDefinition.resolveDescendantIds(activeCategory.id, fullCategories)
     }
-    val products = remember(state.products, activeCategory, descendantIds, query) {
+    val descendantSlugs = remember(descendantIds, fullCategories) {
+        fullCategories.filter { it.id in descendantIds }.map { it.slug }.toSet()
+    }
+    val childCategories = remember(activeCategory.id, fullCategories) {
+        fullCategories.filter { it.parentId == activeCategory.id && it.buyerVisible }
+            .sortedWith(compareBy({ it.displayOrder }, { it.name }))
+    }
+    val products = remember(state.products, activeCategory, descendantIds, descendantSlugs, query) {
         state.products.filter {
             val inCategory = it.categoryId in descendantIds ||
+                (it.categorySlug != null && it.categorySlug in descendantSlugs) ||
                 (it.categoryId == null && (it.categorySlug == activeCategory.slug || it.categorySlug == activeCategory.name.lowercase()))
             val matchesSearch = query.isBlank() || it.title.contains(query, ignoreCase = true) || it.brand.orEmpty().contains(query, ignoreCase = true)
             inCategory && matchesSearch
@@ -1355,7 +1469,7 @@ private fun CategoryProductsScreen(
             ShopHeader(
                 cartCount = state.cartCount,
                 onBack = {
-                    val parent = activeCategory.parentId?.let { id -> state.categories.firstOrNull { it.id == id } }
+                    val parent = activeCategory.parentId?.let { id -> fullCategories.firstOrNull { it.id == id } }
                     if (parent == null) onBack() else activeCategory = parent
                 },
                 onCart = onCart,
@@ -1363,9 +1477,16 @@ private fun CategoryProductsScreen(
                 onQuery = { query = it },
             )
         }
+        item {
+            CategoryBreadcrumbsTrail(
+                category = activeCategory,
+                categories = fullCategories,
+                onSelect = { activeCategory = it },
+            )
+        }
         item { PageTitle(activeCategory.name, "${products.size} products available") }
         if (childCategories.isNotEmpty()) {
-            item { CategoryShortcutRow(childCategories) { activeCategory = it } }
+            item { SubcategoryIconCards(childCategories) { activeCategory = it } }
         }
         item {
             if (products.isEmpty()) EmptyCard("No products available in this category yet.")
