@@ -13,6 +13,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.exifinterface.media.ExifInterface
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -1316,8 +1317,6 @@ private fun ShopBottomBar(
         }
     }
 }
-@Composable
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun CategoryBreadcrumbsTrail(
     category: ShopCategoryDto,
