@@ -64,7 +64,7 @@ import coil.compose.AsyncImage
 fun SuperAppPromotionsScreen(
     onBack: () -> Unit,
     onSelectService: (SuperAppService) -> Unit,
-    sidebarBounds: Rect? = null,
+    sidebarBounds: Rect? = LocalSidebarBounds.current,
     modifier: Modifier = Modifier,
     promotions: List<SuperAppPromotionItem> = SuperAppDemoPromotions.items,
 ) {
@@ -89,7 +89,7 @@ fun SuperAppPromotionsScreen(
         containerColor = bgColor,
         topBar = {
             TopAppBar(
-                modifier = Modifier.padding(start = 52.dp),
+                modifier = Modifier.padding(start = if (sidebarBounds != null) 60.dp else 0.dp),
                 title = {
                     Column {
                         Text(

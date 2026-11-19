@@ -9,6 +9,8 @@ import android.media.MediaRecorder
 import android.os.Build
 import android.view.ViewGroup
 import com.adischat.app.FeatureFlags
+import com.adischat.app.ui.home.LocalSidebarBounds
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -809,10 +811,12 @@ private fun ListScreenHeader(
         MessageTab.Channels -> "Create channel"
         MessageTab.Groups -> "Create group"
     }
+    val sidebar = LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 20.dp
     Row(
         modifier = Modifier
         .fillMaxWidth()
-        .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
+        .padding(start = startPad, end = 20.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -857,10 +861,12 @@ private fun ListScreenHeader(
 }
 @Composable
 private fun ChatSearchBar(value: String, onValueChange: (String) -> Unit, placeholder: String, accent: Color = brandAccent) {
+    val sidebar = LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 20.dp
     Surface(
         modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 20.dp, vertical = 6.dp)
+        .padding(start = startPad, end = 20.dp, top = 6.dp, bottom = 6.dp)
         .height(44.dp)
         .shadow(10.dp, RoundedCornerShape(18.dp), ambientColor = Color.Black.copy(alpha = 0.18f), spotColor = Color.Black.copy(alpha = 0.18f)),
         shape = RoundedCornerShape(18.dp),
@@ -1288,20 +1294,24 @@ private fun ConversationRow(
     }
     val secondary = if (isInDarkTheme) AdisTextSec else MaterialTheme.colorScheme.onSurfaceVariant
 
-    Row(
-        modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 10.dp, vertical = 3.dp)
-        .clip(RoundedCornerShape(20.dp))
-        .background(cardBg)
-        .then(if (unread) Modifier.border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(20.dp)) else Modifier)
-        .combinedClickable(
-        onClick = onClick,
-        onLongClick = { menuOpen = true },
-        )
-        .padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    AdaptiveFlowAround(
+        besideStart = 60.dp,
+        belowStart = 10.dp,
     ) {
+        Row(
+            modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .background(cardBg)
+            .then(if (unread) Modifier.border(1.dp, accent.copy(alpha = 0.22f), RoundedCornerShape(20.dp)) else Modifier)
+            .combinedClickable(
+            onClick = onClick,
+            onLongClick = { menuOpen = true },
+            )
+            .padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
         ChatAvatar(
         photoUrl = conv.otherUserPhotoUrl,
         initials = initialsOf(conv.otherUserName),
@@ -1374,6 +1384,7 @@ private fun ConversationRow(
         }
         }
         }
+    }
     }
     DropdownMenu(
         expanded = menuOpen,

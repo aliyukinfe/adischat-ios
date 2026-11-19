@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,21 +77,24 @@ fun SuperAppHomeScreen(
             .background(bg)
             .statusBarsPadding(),
     ) {
-        if (searchOpen) {
-            HomeUniversalSearchResults(
-                userUid = userUid,
-                query = query,
-                sidebarBounds = sidebarBounds,
-                onOpenResult = onOpenSearchResult,
-                modifier = Modifier.fillMaxSize().padding(top = 60.dp),
-            )
-        } else {
-            SuperAppPromotionalFeed(
-                onSelectService = onSelectService,
-                sidebarBounds = sidebarBounds,
-                listState = feedListState,
-                modifier = Modifier.fillMaxSize().padding(top = 60.dp),
-            )
+        CompositionLocalProvider(LocalSidebarBounds provides sidebarBounds) {
+            if (searchOpen) {
+                HomeUniversalSearchResults(
+                    userUid = userUid,
+                    query = query,
+                    sidebarBounds = sidebarBounds,
+                    onOpenResult = onOpenSearchResult,
+                    modifier = Modifier.fillMaxSize().padding(top = 60.dp),
+                )
+            } else {
+                RealHomeFeed(
+                    onSelectService = onSelectService,
+                    onOpenSearchResult = onOpenSearchResult,
+                    sidebarBounds = sidebarBounds,
+                    listState = feedListState,
+                    modifier = Modifier.fillMaxSize().padding(top = 60.dp),
+                )
+            }
         }
         SuperAppExpandedSidebar(
             selectedService = selectedService,

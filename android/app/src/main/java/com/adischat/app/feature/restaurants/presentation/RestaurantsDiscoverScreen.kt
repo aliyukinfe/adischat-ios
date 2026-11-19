@@ -214,22 +214,24 @@ private fun RestaurantsDiscoverScaffoldBody(
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     item(span = { GridItemSpan(columns) }) {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (state.isDemoPreview) {
-                                DemoPreviewAlertBanner()
+                        com.adischat.app.ui.home.AdaptiveFlowAround(besideStart = 60.dp, belowStart = 0.dp) {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (state.isDemoPreview) {
+                                    DemoPreviewAlertBanner()
+                                }
+                                DineInNoticeBanner(
+                                    headline = "Table Dine-In Ordering",
+                                    supportingText = "Explore partner kitchens and menus here. Scan a table QR inside the restaurant to start ordering.",
+                                    icon = Icons.Rounded.QrCodeScanner,
+                                )
+                                DiscoverSearchHeader(
+                                    searchQuery = state.searchQuery,
+                                    selectedCuisine = state.selectedCuisineFilter,
+                                    cuisineFilters = state.availableCuisineFilters,
+                                    onSearchQueryChange = onSearchQueryChange,
+                                    onCuisineFilterSelected = onCuisineFilterSelected,
+                                )
                             }
-                            DineInNoticeBanner(
-                                headline = "Table Dine-In Ordering",
-                                supportingText = "Explore partner kitchens and menus here. Scan a table QR inside the restaurant to start ordering.",
-                                icon = Icons.Rounded.QrCodeScanner,
-                            )
-                            DiscoverSearchHeader(
-                                searchQuery = state.searchQuery,
-                                selectedCuisine = state.selectedCuisineFilter,
-                                cuisineFilters = state.availableCuisineFilters,
-                                onSearchQueryChange = onSearchQueryChange,
-                                onCuisineFilterSelected = onCuisineFilterSelected,
-                            )
                         }
                     }
 
@@ -261,10 +263,12 @@ private fun RestaurantsDiscoverScaffoldBody(
                             items = filtered,
                             key = { it.id },
                         ) { restaurant ->
-                            RestaurantDiscoverCard(
-                                restaurant = restaurant,
-                                onClick = { onRestaurantClick(restaurant) },
-                            )
+                            com.adischat.app.ui.home.AdaptiveFlowAround(besideStart = 60.dp, belowStart = 0.dp) {
+                                RestaurantDiscoverCard(
+                                    restaurant = restaurant,
+                                    onClick = { onRestaurantClick(restaurant) },
+                                )
+                            }
                         }
                     }
                 }

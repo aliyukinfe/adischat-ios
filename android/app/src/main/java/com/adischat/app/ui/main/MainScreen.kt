@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -53,6 +54,7 @@ import com.adischat.app.feature.shop.presentation.ShopNotificationRouteEffect
 import com.adischat.app.ui.home.HomeScreen
 import com.adischat.app.ui.home.SuperAppService
 import com.adischat.app.ui.home.SuperAppCompactSidebar
+import com.adischat.app.ui.home.LocalSidebarBounds
 import com.adischat.app.ui.home.SuperAppPromotionsScreen
 import com.adischat.app.ui.home.SuperAppSavedScreen
 import com.adischat.app.ui.home.SuperAppActivityScreen
@@ -947,9 +949,15 @@ fun MainScreen(
                 }
             }
 
-            if (shouldShowCompactSidebar && activeSidebarService == SuperAppService.PROMOTIONS) {
+            var compactSidebarBounds by remember { mutableStateOf<Rect?>(null) }
+
+            if (shouldShowCompactSidebar) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    movableCoreContent()
+                    CompositionLocalProvider(
+                        LocalSidebarBounds provides (compactSidebarBounds ?: promotionsRailBounds),
+                    ) {
+                        movableCoreContent()
+                    }
                     SuperAppCompactSidebar(
                         selectedService = compactSidebarSelectedService,
                         onSelectService = onSelectSidebarService,
@@ -959,54 +967,17 @@ fun MainScreen(
                         modifier = Modifier.onGloballyPositioned { coordinates ->
                             val position = coordinates.positionInRoot()
                             val next = Rect(position.x, position.y, position.x + coordinates.size.width, position.y + coordinates.size.height)
-                            if (promotionsRailBounds != next) promotionsRailBounds = next
+                            if (compactSidebarBounds != next) {
+                                compactSidebarBounds = next
+                                promotionsRailBounds = next
+                            }
                         },
                     )
-                    SmallFloatingActionButton(
-                        onClick = onGoHome,
-                        containerColor = Color(0xFF0F766E),
-                        contentColor = Color.White,
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Home,
-                            contentDescription = "Return Home",
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
-                }
-            } else if (shouldShowCompactSidebar) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    SuperAppCompactSidebar(
-                        selectedService = compactSidebarSelectedService,
-                        onSelectService = onSelectSidebarService,
-                        onExpandHome = onGoHome,
-                        totalUnreadChat = totalUnread,
-                    )
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        movableCoreContent()
-                        if (activeSidebarService != SuperAppService.ADISGEBEYA) {
-                            SmallFloatingActionButton(
-                                onClick = onGoHome,
-                                containerColor = Color(0xFF0F766E),
-                                contentColor = Color.White,
-                                modifier = Modifier
-                                    .align(Alignment.BottomEnd)
-                                    .padding(16.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Home,
-                                    contentDescription = "Return Home",
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    }
                 }
             } else {
-                movableCoreContent()
+                CompositionLocalProvider(LocalSidebarBounds provides null) {
+                    movableCoreContent()
+                }
             }
         }
     }

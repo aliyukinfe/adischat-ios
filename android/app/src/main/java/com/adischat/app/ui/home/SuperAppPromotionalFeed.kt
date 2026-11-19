@@ -47,39 +47,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 
-internal fun overlapsSidebar(rowTop: Float, rowBottom: Float, sidebar: Rect?): Boolean =
-    sidebar == null || (rowTop < sidebar.bottom && rowBottom > sidebar.top)
-
-@Composable
-internal fun FlowAroundRow(
-    sidebarBounds: Rect?,
-    height: Dp,
-    besideStart: Dp = 114.dp,
-    modifier: Modifier = Modifier,
-    content: @Composable () -> Unit,
-) {
-    var besideSidebar by remember { mutableStateOf(true) }
-    val startPadding by animateDpAsState(
-        targetValue = if (besideSidebar) besideStart else 12.dp,
-        animationSpec = tween(160),
-        label = "flowAroundSidebar",
-    )
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(height)
-            .onGloballyPositioned { coordinates ->
-                val top = coordinates.positionInRoot().y
-                val next = overlapsSidebar(top, top + coordinates.size.height, sidebarBounds)
-                if (besideSidebar != next) besideSidebar = next
-            }
-            .padding(start = startPadding, end = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        content()
-    }
-}
-
 @Composable
 fun SuperAppPromotionalFeed(
     onSelectService: (SuperAppService) -> Unit,

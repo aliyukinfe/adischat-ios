@@ -1122,12 +1122,10 @@ test('agr6_9_promotions_and_submission_proposal.sql exists and contains promotio
 
 console.log('\n--- 10. Super-App UI Refinements & Internal Testing Release Tests ---');
 
-test('MainScreen.kt implements unified navigation rail and floating home return button', () => {
+test('MainScreen.kt implements unified navigation rail and removes floating home buttons', () => {
   const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/main/MainScreen.kt'), 'utf8');
   assert.ok(code.includes('compactSidebarSelectedService'));
-  assert.ok(code.includes('SmallFloatingActionButton'));
-  assert.ok(code.includes('Icons.Default.Home'));
-  assert.ok(code.includes('contentDescription = "Return Home"'));
+  assert.ok(!code.includes('SmallFloatingActionButton'));
   assert.ok(code.includes('((activeSidebarService != null && activeSidebarService != SuperAppService.HOME) || centerOverlayActive || sellerAccountOpen)'));
 });
 
@@ -1200,6 +1198,55 @@ test('ShopCategoryIcons.kt provides distinct semantic icons for fashion and foot
   assert.ok(code.includes('"women-heels"'));
   assert.ok(code.includes('"men-boots"'));
   assert.ok(code.includes('"men-sandals"'));
+});
+
+console.log('\n--- 12. Phase H2 — Adaptive Layout, Unified Navigation & Real Home Feed Tests ---');
+
+test('MainScreen.kt unifies compact sidebar in Box with LocalSidebarBounds and wraps content height', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/main/MainScreen.kt'), 'utf8');
+  assert.ok(code.includes('LocalSidebarBounds provides'));
+  assert.ok(code.includes('contentHeightOnly = true'));
+  assert.ok(!code.includes('SmallFloatingActionButton'));
+});
+
+test('AdaptiveFlowAround.kt defines LocalSidebarBounds, overlapsSidebar, and AdaptiveFlowAround', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/AdaptiveFlowAround.kt'), 'utf8');
+  assert.ok(code.includes('val LocalSidebarBounds = compositionLocalOf<Rect?>'));
+  assert.ok(code.includes('fun overlapsSidebar(rowTop: Float, rowBottom: Float, sidebar: Rect?)'));
+  assert.ok(code.includes('fun AdaptiveFlowAround('));
+  assert.ok(code.includes('fun FlowAroundRow('));
+});
+
+test('SuperAppHomeScreen.kt and SuperAppRealFeed.kt implement real authorized home feed', () => {
+  const homeCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppHomeScreen.kt'), 'utf8');
+  assert.ok(homeCode.includes('RealHomeFeed('));
+  assert.ok(homeCode.includes('LocalSidebarBounds provides sidebarBounds'));
+
+  const feedCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppRealFeed.kt'), 'utf8');
+  assert.ok(feedCode.includes('class RealHomeFeedCoordinator'));
+  assert.ok(feedCode.includes('data class AdminPromotedItem'));
+  assert.ok(feedCode.includes('sealed interface RealFeedCard'));
+  assert.ok(feedCode.includes('fun RealHomeFeed('));
+  assert.ok(feedCode.includes('AdaptiveFlowAround('));
+});
+
+test('ShopScreen.kt and RestaurantsDiscoverScreen.kt implement flow-around layout with LocalSidebarBounds', () => {
+  const shopCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(shopCode.includes('AdaptiveFlowAround'));
+  assert.ok(shopCode.includes('LocalSidebarBounds.current'));
+
+  const restCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/restaurants/presentation/RestaurantsDiscoverScreen.kt'), 'utf8');
+  assert.ok(restCode.includes('AdaptiveFlowAround'));
+
+  const uiCode = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/restaurants/presentation/RestaurantsUiComponents.kt'), 'utf8');
+  assert.ok(uiCode.includes('LocalSidebarBounds.current'));
+});
+
+test('agr7_2_admin_promotions_proposal.sql exists and contains administrative promotions schema', () => {
+  const sql = fs.readFileSync(path.join(REPO_ROOT, 'supabase/validation/agr7_2_admin_promotions_proposal.sql'), 'utf8');
+  assert.ok(sql.includes('admin_feed_promotions'));
+  assert.ok(sql.includes('v_active_superapp_promotions'));
+  assert.ok(sql.includes('STATUS: BLOCKED PENDING SEPARATE ARCHITECT & SECURITY REVIEW'));
 });
 
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);

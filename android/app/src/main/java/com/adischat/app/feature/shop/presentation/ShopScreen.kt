@@ -3143,7 +3143,10 @@ private fun ShopHomeScreen(
 
 @Composable
 private fun ShopHomePadded(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+    com.adischat.app.ui.home.AdaptiveFlowAround(
+        besideStart = 60.dp,
+        belowStart = 8.dp,
+    ) {
         content()
     }
 }
@@ -3164,12 +3167,14 @@ private fun AdisGebeyaBrandHeader(
         tonalElevation = 0.dp,
         modifier = modifier.fillMaxWidth().border(1.dp, ShopLine),
     ) {
+        val sidebar = com.adischat.app.ui.home.LocalSidebarBounds.current
+        val startPad = if (sidebar != null) 60.dp else 12.dp
         Box(
             Modifier
                 .fillMaxWidth()
                 .background(ShopSurface)
                 .statusBarsPadding()
-                .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 8.dp),
+                .padding(start = startPad, end = 12.dp, top = 4.dp, bottom = 8.dp),
         ) {
             Column(
                 Modifier.fillMaxWidth(),

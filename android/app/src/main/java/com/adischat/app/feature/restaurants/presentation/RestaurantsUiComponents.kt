@@ -107,12 +107,14 @@ internal fun RestaurantsTopBar(
         tonalElevation = 1.dp,
         shadowElevation = 0.dp,
     ) {
+        val sidebar = com.adischat.app.ui.home.LocalSidebarBounds.current
+        val startPad = if (sidebar != null) 60.dp else if (onBackClick != null) 4.dp else 16.dp
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .let { if (applyStatusBarPadding) it.statusBarsPadding() else it }
                 .padding(
-                    start = if (onBackClick != null) 4.dp else 16.dp,
+                    start = startPad,
                     end = 12.dp,
                     top = 8.dp,
                     bottom = 10.dp,
