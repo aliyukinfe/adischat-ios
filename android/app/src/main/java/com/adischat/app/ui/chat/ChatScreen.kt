@@ -504,7 +504,7 @@ private fun ErrorScreen(message: String, onRetry: () -> Unit) {
 
 // CONVERSATIONS LIST
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun ConversationsListScreen(
     conversations      : List<Conversation>,
