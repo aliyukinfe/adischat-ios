@@ -637,7 +637,16 @@ private fun SellerProductEditor(
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 4,
                 isError = validationErrors.containsKey("description"),
-                supportingText = validationErrors["description"]?.let { err -> { Text(err, color = SellerProductRed) } },
+                supportingText = {
+                    val err = validationErrors["description"]
+                    if (err != null) {
+                        Text(err, color = SellerProductRed)
+                    } else {
+                        val count = description.trim().length
+                        val hint = if (count < 10) "$count/10 characters minimum" else "$count characters"
+                        Text(hint, color = if (count < 10) SellerProductMuted else SellerProductGreen)
+                    }
+                },
                 colors = shopOutlinedTextFieldColors(),
             )
             OutlinedTextField(

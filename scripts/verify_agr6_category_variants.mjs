@@ -1168,5 +1168,39 @@ test('SuperAppActivityScreen.kt gates Business Tab strictly to authorized accoun
   assert.ok(code.includes('if (isSellerAuthorized || isPending)'));
 });
 
+console.log('\n--- 11. AG-R7.0 Seller Bug & Marketplace UI Repair Tests ---');
+
+test('MainScreen.kt preserves layout tree stability with movableContentOf and full-screen seller center', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/main/MainScreen.kt'), 'utf8');
+  assert.ok(code.includes('movableContentOf'));
+  assert.ok(code.includes('val isSellerCenter = sellerAccountOpen'));
+  assert.ok(code.includes('!isSellerCenter'));
+  assert.ok(code.includes('BackHandler(enabled = !sellerAccountOpen)'));
+});
+
+test('ShopScreen.kt stabilizes SellerAccountRootScreen without key(protectedState.ownerUid)', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(!code.includes('key(protectedState.ownerUid)'));
+  assert.ok(code.includes('SubcategoryIconCards'));
+  assert.ok(code.includes('minLines = 2'));
+});
+
+test('ShopSellerProductsScreen.kt displays live character counter and enforces 10 characters minimum', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerProductsScreen.kt'), 'utf8');
+  assert.ok(code.includes('$count/10 characters minimum'));
+  assert.ok(code.includes('validationErrors.containsKey("description")'));
+});
+
+test('ShopCategoryIcons.kt provides distinct semantic icons for fashion and footwear', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopCategoryIcons.kt'), 'utf8');
+  assert.ok(code.includes('"men-jeans"'));
+  assert.ok(code.includes('"men-suits"'));
+  assert.ok(code.includes('"men-sneakers"'));
+  assert.ok(code.includes('"women-dresses"'));
+  assert.ok(code.includes('"women-heels"'));
+  assert.ok(code.includes('"men-boots"'));
+  assert.ok(code.includes('"men-sandals"'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

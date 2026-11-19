@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -342,7 +343,7 @@ fun MainScreen(
     val scope      = rememberCoroutineScope()
     var lastBackTime      by remember { mutableLongStateOf(0L) }
 
-    BackHandler {
+    BackHandler(enabled = !sellerAccountOpen) {
         when {
             restaurantCenterNativeOpen && FeatureFlags.RESTAURANT_CENTER_ENABLED -> {
                 restaurantCenterNativeOpen = false
@@ -498,7 +499,9 @@ fun MainScreen(
         val promotionsActive = activeSidebarService == SuperAppService.PROMOTIONS
         val isSuperAppActive = FeatureFlags.SUPER_APP_HOME_ENABLED && activeSidebarService != null && activeSidebarService != SuperAppService.HOME
 
+        val isSellerCenter = sellerAccountOpen
         val shouldShowCompactSidebar = FeatureFlags.SUPER_APP_HOME_ENABLED &&
+            !isSellerCenter &&
             ((activeSidebarService != null && activeSidebarService != SuperAppService.HOME) || centerOverlayActive || sellerAccountOpen) &&
             !keyboardOpen &&
             restaurantsQaRoute == null &&
@@ -938,9 +941,15 @@ fun MainScreen(
                 else -> activeSidebarService
             }
 
+            val movableCoreContent = remember {
+                movableContentOf {
+                    renderCoreScreenContent()
+                }
+            }
+
             if (shouldShowCompactSidebar && activeSidebarService == SuperAppService.PROMOTIONS) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    renderCoreScreenContent()
+                    movableCoreContent()
                     SuperAppCompactSidebar(
                         selectedService = compactSidebarSelectedService,
                         onSelectService = onSelectSidebarService,
@@ -977,25 +986,27 @@ fun MainScreen(
                         totalUnreadChat = totalUnread,
                     )
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        renderCoreScreenContent()
-                        SmallFloatingActionButton(
-                            onClick = onGoHome,
-                            containerColor = Color(0xFF0F766E),
-                            contentColor = Color.White,
-                            modifier = Modifier
-                                .align(Alignment.BottomEnd)
-                                .padding(16.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Home,
-                                contentDescription = "Return Home",
-                                modifier = Modifier.size(20.dp)
-                            )
+                        movableCoreContent()
+                        if (activeSidebarService != SuperAppService.ADISGEBEYA) {
+                            SmallFloatingActionButton(
+                                onClick = onGoHome,
+                                containerColor = Color(0xFF0F766E),
+                                contentColor = Color.White,
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(16.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Home,
+                                    contentDescription = "Return Home",
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
                 }
             } else {
-                renderCoreScreenContent()
+                movableCoreContent()
             }
         }
     }

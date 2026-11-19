@@ -142,7 +142,7 @@ internal fun SellerCategoryPicker(
                                     Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 4.dp),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(categoryIcon(category), contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                    Icon(categoryIcon(category), contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(category.name, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)

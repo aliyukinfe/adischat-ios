@@ -319,7 +319,7 @@ internal fun PremiumHomeProductGrid(
 }
 
 internal fun homeProductCardHeight(width: androidx.compose.ui.unit.Dp, fontScale: Float): androidx.compose.ui.unit.Dp =
-    width + 144.dp + ((fontScale - 1f).coerceAtLeast(0f) * 104).dp
+    width + 160.dp + ((fontScale - 1f).coerceAtLeast(0f) * 104).dp
 
 @Composable
 private fun HomeV2PriceBadge(priceMinor: Int) {

@@ -658,7 +658,6 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit, openNotificationsInitially
         if (!initialStoreId.isNullOrBlank()) vm.loadSellerBusiness(initialStoreId)
     }
     AdisGebeyaPageTheme {
-        key(protectedState.ownerUid) {
         SellerCenterScreen(
             protectedState = protectedState,
             openNotificationsInitially = openNotificationsInitially,
@@ -724,7 +723,6 @@ fun SellerAccountRootScreen(onBackToHome: () -> Unit, openNotificationsInitially
             onDeleteProductMedia = vm::deleteSellerProductMedia,
             onReorderProductMedia = vm::reorderSellerProductMedia,
         )
-        }
     }
 }
 
@@ -1382,36 +1380,40 @@ private fun SubcategoryIconCards(
     Column(Modifier.fillMaxWidth().padding(horizontal = 4.dp)) {
         Text("Subcategories", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = ShopInk)
         Spacer(Modifier.height(8.dp))
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(categories, key = { it.id }) { item ->
                 Card(
-                    modifier = Modifier.width(112.dp).clickable { onSelect(item) },
+                    modifier = Modifier.width(100.dp).clickable { onSelect(item) },
                     shape = RoundedCornerShape(12.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     border = BorderStroke(1.dp, Color.LightGray.copy(alpha = 0.35f)),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                 ) {
                     Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 6.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 6.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.Center,
                     ) {
                         Surface(
-                            modifier = Modifier.size(42.dp),
+                            modifier = Modifier.size(38.dp),
                             shape = CircleShape,
                             color = ShopGreen.copy(alpha = 0.1f),
                         ) {
-                            Icon(
-                                categoryIcon(item),
-                                contentDescription = item.name,
-                                tint = ShopGreen,
-                                modifier = Modifier.padding(9.dp),
-                            )
+                            Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+                                Icon(
+                                    categoryIcon(item),
+                                    contentDescription = item.name,
+                                    tint = ShopGreen,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(6.dp))
                         Text(
                             text = item.name,
-                            fontSize = 12.sp,
+                            fontSize = 11.5.sp,
+                            lineHeight = 14.sp,
+                            minLines = 2,
                             fontWeight = FontWeight.Medium,
                             color = ShopInk,
                             maxLines = 2,
@@ -3141,7 +3143,7 @@ private fun ShopHomeScreen(
 
 @Composable
 private fun ShopHomePadded(content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+    Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
         content()
     }
 }
