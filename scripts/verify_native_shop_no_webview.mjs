@@ -1,16 +1,18 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = process.cwd();
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 const home = read("android/app/src/main/java/com/adischat/app/ui/home/HomeScreen.kt");
 const main = read("android/app/src/main/java/com/adischat/app/ui/main/MainScreen.kt");
 const profile = read("android/app/src/main/java/com/adischat/app/ui/profile/ProfileScreen.kt");
 const shop = read("android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt");
+const sellerCenter = read("android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopSellerCenterScreen.kt");
 const manifest = read("android/app/src/main/AndroidManifest.xml");
 
-for (const [name, content] of Object.entries({ home, main, profile, shop, manifest })) {
+for (const [name, content] of Object.entries({ home, main, profile, shop, sellerCenter, manifest })) {
   if (/https:\/\/(www\.)?adischat\.com\/shop/.test(content)) {
     throw new Error(`${name} still references the website Shop URL`);
   }
@@ -38,7 +40,7 @@ for (const required of [
   "SellerCenterTab.Products",
   "SellerCenterTab.Orders",
 ]) {
-  if (!shop.includes(required) && !main.includes(required) && !profile.includes(required) && !home.includes(required)) {
+  if (!shop.includes(required) && !sellerCenter.includes(required) && !main.includes(required) && !profile.includes(required) && !home.includes(required)) {
     throw new Error(`Native marketplace route guard missing ${required}`);
   }
 }

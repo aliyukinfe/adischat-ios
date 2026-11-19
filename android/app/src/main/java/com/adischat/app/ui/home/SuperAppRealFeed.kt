@@ -61,10 +61,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
+import com.adischat.app.BuildConfig
 import com.adischat.app.data.model.CommunityRoom
 import com.adischat.app.data.repository.ChatRepository
 import com.adischat.app.feature.restaurants.data.RestaurantSummaryDto
 import com.adischat.app.feature.restaurants.data.RestaurantsRepository
+import com.adischat.app.feature.restaurants.presentation.RestaurantsCustomerCoordinator
 import com.adischat.app.feature.shop.data.ProductRepository
 import com.adischat.app.feature.shop.data.ShopProductDto
 import com.adischat.app.feature.shop.data.ShopStoreDto
@@ -505,6 +508,44 @@ fun RealHomeFeed(
 }
 
 /**
+ * Resolves verified public image URL for a product in the Home Feed.
+ * Prioritizes primary product image, then first valid gallery image,
+ * with defensive fallback to store cover or logo before returning null.
+ */
+internal fun resolveFeedProductImageUrl(product: ShopProductDto): String? {
+    val primaryImage = product.images
+        ?.sortedWith(
+            compareByDescending<com.adischat.app.feature.shop.data.ShopProductImageDto> { it.isPrimary == true }
+                .thenBy { it.displayOrder ?: 0 }
+        )
+        ?.firstOrNull()
+
+    val rawUrl = primaryImage?.imageUrl?.takeIf { it.isNotBlank() }
+        ?: primaryImage?.storagePath?.takeIf { it.isNotBlank() }
+        ?: product.store?.coverUrl?.takeIf { it.isNotBlank() }
+        ?: product.store?.logoUrl?.takeIf { it.isNotBlank() }
+
+    if (rawUrl.isNullOrBlank()) return null
+    if (rawUrl.startsWith("http://", ignoreCase = true) || rawUrl.startsWith("https://", ignoreCase = true)) {
+        return rawUrl
+    }
+    val supabaseUrl = BuildConfig.ADISHOP_SUPABASE_URL.trimEnd('/')
+    val bucket = primaryImage?.bucket?.takeIf { it.isNotBlank() } ?: "shop-product-images"
+    val cleanPath = rawUrl.removePrefix("$bucket/").trimStart('/')
+    return if (supabaseUrl.isNotBlank()) "$supabaseUrl/storage/v1/object/public/$bucket/$cleanPath" else rawUrl
+}
+
+/**
+ * Resolves verified media URL for a restaurant in the Home Feed.
+ */
+internal fun resolveFeedRestaurantCoverUrl(rest: RestaurantSummaryDto): String? {
+    val raw = rest.coverPath?.takeIf { it.isNotBlank() } ?: rest.logoPath?.takeIf { it.isNotBlank() } ?: return null
+    if (raw.startsWith("http://", ignoreCase = true) || raw.startsWith("https://", ignoreCase = true)) return raw
+    val supabaseUrl = BuildConfig.ADISHOP_SUPABASE_URL.trimEnd('/')
+    return RestaurantsCustomerCoordinator.resolvePublicMediaUrl(supabaseUrl, raw) ?: raw
+}
+
+/**
  * Adaptive Product Card:
  * Beside sidebar: Compact horizontal card with side-by-side photo, title, price.
  * Below sidebar: Wider visual card with large photo, discount badge, store, and clear CTA.
@@ -522,7 +563,7 @@ private fun ProductFeedCard(
 ) {
     val prod = card.product
     val displayTitle = card.customTitle ?: prod.title
-    val imageUrl = card.customBannerUrl ?: prod.images?.firstOrNull()
+    val imageUrl = card.customBannerUrl ?: resolveFeedProductImageUrl(prod)
     val priceEtb = "ETB ${prod.priceMinor / 100}"
     val oldPriceEtb = prod.compareAtPriceMinor?.takeIf { it > prod.priceMinor }?.let { "ETB ${it / 100}" }
 
@@ -551,11 +592,21 @@ private fun ProductFeedCard(
                         .background(if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                 ) {
                     if (imageUrl != null) {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = imageUrl,
                             contentDescription = displayTitle,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
+                            error = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.ShoppingBag,
+                                        contentDescription = null,
+                                        tint = mutedColor,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            },
                         )
                     } else {
                         Icon(
@@ -631,11 +682,21 @@ private fun ProductFeedCard(
                         .background(if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                 ) {
                     if (imageUrl != null) {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = imageUrl,
                             contentDescription = displayTitle,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
+                            error = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.ShoppingBag,
+                                        contentDescription = null,
+                                        tint = mutedColor,
+                                        modifier = Modifier.size(36.dp),
+                                    )
+                                }
+                            },
                         )
                     } else {
                         Icon(
@@ -745,7 +806,7 @@ private fun RestaurantFeedCard(
     val rest = card.restaurant
     val name = card.customTitle ?: rest.name
     val cuisine = card.customSubtitle ?: rest.cuisineCategory ?: "Dining & Drinks"
-    val coverUrl = card.customBannerUrl ?: rest.coverPath ?: rest.logoPath
+    val coverUrl = card.customBannerUrl ?: resolveFeedRestaurantCoverUrl(rest)
 
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -771,11 +832,21 @@ private fun RestaurantFeedCard(
                         .background(if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                 ) {
                     if (coverUrl != null) {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = coverUrl,
                             contentDescription = name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
+                            error = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Restaurant,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFB923C),
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                }
+                            },
                         )
                     } else {
                         Icon(
@@ -822,11 +893,21 @@ private fun RestaurantFeedCard(
                         .background(if (isLight) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
                 ) {
                     if (coverUrl != null) {
-                        AsyncImage(
+                        SubcomposeAsyncImage(
                             model = coverUrl,
                             contentDescription = name,
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize(),
+                            error = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        Icons.Default.Restaurant,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFB923C),
+                                        modifier = Modifier.size(36.dp),
+                                    )
+                                }
+                            },
                         )
                     } else {
                         Icon(
@@ -906,6 +987,7 @@ private fun ChannelFeedCard(
     onClick: () -> Unit,
 ) {
     val room = card.room
+    val photoUrl = room.photoUrl.trim().takeIf { it.isNotBlank() }
 
     Surface(
         shape = RoundedCornerShape(14.dp),
@@ -930,12 +1012,31 @@ private fun ChannelFeedCard(
                     .background(Color(0xFF60A5FA).copy(alpha = 0.2f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    text = room.name.take(2).uppercase(),
-                    color = Color(0xFF2563EB),
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Bold,
-                )
+                if (photoUrl != null) {
+                    SubcomposeAsyncImage(
+                        model = photoUrl,
+                        contentDescription = room.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                        error = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = room.name.take(2).uppercase(),
+                                    color = Color(0xFF2563EB),
+                                    fontSize = 15.sp,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                        },
+                    )
+                } else {
+                    Text(
+                        text = room.name.take(2).uppercase(),
+                        color = Color(0xFF2563EB),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
             Column(
                 modifier = Modifier.weight(1f),

@@ -22,6 +22,22 @@
           }
         },
         {
+          "client_id": "75418741614-dim03nvkide5vgjdsm4tj4lekhcrcg7c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adischat.app",
+            "certificate_hash": "37c9661332c21e1c8a530ee2d3b1331e51adcc18"
+          }
+        },
+        {
+          "client_id": "75418741614-i1kn3thd9olqlj0b9cjck8okg0msegi3.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.adischat.app",
+            "certificate_hash": "2a832d2222653fb8309b69bdc9013d5f9b2b0d24"
+          }
+        },
+        {
           "client_id": "75418741614-ova6255i92gfa3r9i1l5qt5cv3dkrsmg.apps.googleusercontent.com",
           "client_type": 3
         }

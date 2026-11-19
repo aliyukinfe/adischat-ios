@@ -779,10 +779,10 @@ test('ShopViewModel.kt selectedSellerProductStore safely resolves active store f
   assert.ok(code.includes('uploadSellerProductMediaBatch'));
 });
 
-test('build.gradle version is incremented to 127 (1.0.127)', () => {
+test('build.gradle version is incremented to 128 (1.0.128)', () => {
   const gradle = fs.readFileSync(path.join(REPO_ROOT, 'android/app/build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionCode 127'));
-  assert.ok(gradle.includes('versionName "1.0.127"'));
+  assert.ok(gradle.includes('versionCode 128'));
+  assert.ok(gradle.includes('versionName "1.0.128"'));
 });
 
 console.log('\n--- 8. AG-R6.8 Category Hierarchy & Product-Specific Attributes Tests ---');
@@ -1155,7 +1155,8 @@ test('ShopScreen.kt implements refined ProductCard height and full checkout rede
   assert.ok(code.includes('code != "cash_on_delivery" && code != "cod"'));
   assert.ok(code.includes('eligiblePaymentMethods'));
   assert.ok(code.includes('canPlaceOrder'));
-  assert.ok(code.includes('No authorized online payment method is enabled'));
+  // AG-Admin A1: Unnecessary red warning removed from checkout UI
+  assert.ok(!code.includes('No authorized online payment method is enabled'));
 });
 
 test('SuperAppActivityScreen.kt gates Business Tab strictly to authorized accounts', () => {
@@ -1301,6 +1302,98 @@ test('ShopScreen.kt CheckoutScreen preserves strict gating on canPlaceOrder with
   assert.ok(code.includes('val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&'));
   assert.ok(code.includes('(checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0) || (selectedPaymentMethod.isNotBlank() && eligiblePaymentMethods.any { it.code == selectedPaymentMethod }))'));
   assert.ok(code.includes('enabled = canPlaceOrder'));
+});
+
+console.log('\n--- 14. AG-Admin A1 — UI Fixes & Admin Management Foundation Tests ---');
+
+test('ShopScreen.kt Checkout eliminates red payment error warning while preserving strict gating', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(!code.includes('No authorized online payment method is enabled'));
+  assert.ok(code.includes('val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&'));
+  assert.ok(code.includes('enabled = canPlaceOrder'));
+  assert.ok(code.includes('checkout.isFullyCoveredByVoucher'));
+});
+
+test('SuperAppRealFeed.kt resolves product cover, restaurant cover, and channel photo URLs with SubcomposeAsyncImage', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppRealFeed.kt'), 'utf8');
+  assert.ok(code.includes('fun resolveFeedProductImageUrl(product: ShopProductDto): String?'));
+  assert.ok(code.includes('fun resolveFeedRestaurantCoverUrl(rest: RestaurantSummaryDto): String?'));
+  assert.ok(code.includes('SubcomposeAsyncImage'));
+  assert.ok(code.includes('val photoUrl = room.photoUrl.trim().takeIf { it.isNotBlank() }'));
+  assert.ok(code.includes('Icons.Default.ShoppingBag'));
+  assert.ok(code.includes('Icons.Default.Restaurant'));
+});
+
+test('ShopScreen.kt AdminProductDetailScreen enforces self-approval prohibition', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('val isSelfApproval = !protectedState.ownerUid.isNullOrBlank() && (protectedState.ownerUid == detail?.store?.ownerProfileId)'));
+  assert.ok(code.includes('Self-approval prohibited: You are registered as the owner of this store.'));
+  assert.ok(code.includes('enabled = !busy && !isSelfApproval'));
+});
+
+test('ShopScreen.kt implements AdminTab Vouchers and Promotions with management composables', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('Vouchers("Vouchers & Coupons")'));
+  assert.ok(code.includes('Promotions("Promotions")'));
+  assert.ok(code.includes('AdminTab.Vouchers -> {'));
+  assert.ok(code.includes('AdminTab.Promotions -> {'));
+  assert.ok(code.includes('fun AdminVouchersManagementCard('));
+  assert.ok(code.includes('fun AdminPromotionsManagementCard('));
+  assert.ok(code.includes('Role-Restricted Voucher Governance'));
+  assert.ok(code.includes('Real-money voucher operations and escrow settlement remain strictly role-gated'));
+  assert.ok(code.includes('QA Isolated Sandbox'));
+  assert.ok(code.includes('Only approved products (moderation = \'approved\', status = \'active\') are eligible for promotions.'));
+});
+
+console.log('\n--- 15. AG-Admin A2 — Product Moderation Security Tests ---');
+
+test('SuperAppRealFeed.kt uses public shop-product-images bucket and preserves safe URL resolution', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/SuperAppRealFeed.kt'), 'utf8');
+  assert.ok(code.includes('"shop-product-images"'));
+  assert.ok(!code.includes('"marketplace-products"'));
+  assert.ok(code.includes('storage/v1/object/public/$bucket/$cleanPath'));
+});
+
+test('adishop.ts enforces authentication, active session, and authorized shop admin roles', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'supabase/functions/_shared/adishop.ts'), 'utf8');
+  assert.ok(code.includes('current_shop_roles'));
+  assert.ok(code.includes('["SHOP_SUPER_ADMIN", "SHOP_ADMIN"].includes(r)'));
+  assert.ok(!code.includes('["SHOP_SUPER_ADMIN", "SHOP_ADMIN", "SUPPORT_AGENT"].includes(r)'));
+  assert.ok(code.includes('admin_forbidden'));
+});
+
+test('adishop.ts blocks seller self-approval and cross-store/invalid state transitions server-side', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'supabase/functions/_shared/adishop.ts'), 'utf8');
+  assert.ok(code.includes('store.owner_profile_id === profileId'));
+  assert.ok(code.includes('self_review_blocked'));
+  assert.ok(code.includes('A seller cannot review their own product.'));
+  assert.ok(code.includes('product_not_found'));
+  assert.ok(code.includes('store_not_found'));
+  assert.ok(code.includes('invalid_state'));
+  assert.ok(code.includes('reason_required'));
+  assert.ok(code.includes('unsupported_action'));
+});
+
+test('adishop.ts enforces server-derived moderator identity without client override', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'supabase/functions/_shared/adishop.ts'), 'utf8');
+  assert.ok(code.includes('p_actor_profile_id: profileId'));
+  assert.ok(!code.includes('p_actor_profile_id: String(body.actorProfileId'));
+  assert.ok(!code.includes('p_actor_profile_id: String(body.profileId'));
+});
+
+test('Product moderation migrations enforce self-review block and AG-R5.1B containment', () => {
+  const sql = fs.readFileSync(path.join(REPO_ROOT, 'supabase/migrations/20260725203149_adishop_block_self_product_moderation.sql'), 'utf8');
+  assert.ok(sql.includes('store_record.owner_profile_id = p_actor_profile_id'));
+  assert.ok(sql.includes("raise exception 'self-product-review-blocked'"));
+  assert.ok(sql.includes('shop_product_moderation_reviews'));
+  assert.ok(sql.includes('adishop_admin_audit'));
+  assert.ok(sql.includes('security definer'));
+
+  const containmentPath = path.join(REPO_ROOT, 'supabase/migrations/20261119194200_adishop_product_moderation_rpc_containment.sql');
+  assert.ok(fs.existsSync(containmentPath), 'Forward-only containment migration missing');
+  const containmentSql = fs.readFileSync(containmentPath, 'utf8');
+  assert.ok(containmentSql.includes('revoke all on function public.adishop_admin_review_product(uuid, uuid, text, text, text, text, text) from public;'));
+  assert.ok(containmentSql.includes('grant execute on function public.adishop_admin_review_product(uuid, uuid, text, text, text, text, text) to service_role;'));
 });
 
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);

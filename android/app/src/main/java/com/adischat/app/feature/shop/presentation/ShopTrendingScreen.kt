@@ -32,6 +32,7 @@ import com.adischat.app.feature.shop.data.ShopCategoryDto
 import com.adischat.app.feature.shop.data.ShopHomeState
 import com.adischat.app.feature.shop.data.ShopProductDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import com.adischat.app.ui.theme.AdisGebeyaColors
 
 private enum class TrendingTab(val label: String) {
@@ -73,42 +74,53 @@ internal fun TrendingScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Trending", color = AdisGebeyaColors.PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 16.dp))
-                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    TrendingTab.entries.forEach { option ->
-                        Text(
-                            option.label,
-                            color = if (tab == option) AdisGebeyaColors.Primary else AdisGebeyaColors.SecondaryText,
-                            fontSize = 13.sp,
-                            fontWeight = if (tab == option) FontWeight.SemiBold else FontWeight.Normal,
-                            modifier = Modifier.clickable { tab = option }.padding(horizontal = 4.dp, vertical = 8.dp),
-                        )
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                Column(Modifier.fillMaxWidth().padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Trending", color = AdisGebeyaColors.PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        TrendingTab.entries.forEach { option ->
+                            Text(
+                                option.label,
+                                color = if (tab == option) AdisGebeyaColors.Primary else AdisGebeyaColors.SecondaryText,
+                                fontSize = 13.sp,
+                                fontWeight = if (tab == option) FontWeight.SemiBold else FontWeight.Normal,
+                                modifier = Modifier.clickable { tab = option }.padding(horizontal = 4.dp, vertical = 8.dp),
+                            )
+                        }
                     }
-                }
-                if (state.categories.isNotEmpty()) {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item { TrendingChip("All", category == null) { category = null } }
-                        items(state.categories, key = { it.id }) { item ->
-                            TrendingChip(item.name, category == item.slug) { category = item.slug }
+                    if (state.categories.isNotEmpty()) {
+                        LazyRow(contentPadding = PaddingValues(horizontal = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item { TrendingChip("All", category == null) { category = null } }
+                            items(state.categories, key = { it.id }) { item ->
+                                TrendingChip(item.name, category == item.slug) { category = item.slug }
+                            }
                         }
                     }
                 }
             }
         }
         when {
-            state.loading -> items(4) { SkeletonCard() }
-            state.error -> item { Column(Modifier.padding(horizontal = 16.dp)) { ErrorCard(maintenance = state.maintenance, onRefresh = onRefresh) } }
+            state.loading -> items(4) {
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    SkeletonCard()
+                }
+            }
+            state.error -> item {
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    ErrorCard(maintenance = state.maintenance, onRefresh = onRefresh)
+                }
+            }
             visibleProducts.isEmpty() -> item {
-                PremiumEmptyState(
-                    title = if (tab == TrendingTab.Deals) "No active deals" else "No products here yet",
-                    message = "Try another tab or category.",
-                    icon = androidx.compose.material.icons.Icons.Default.TrendingUp,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    PremiumEmptyState(
+                        title = if (tab == TrendingTab.Deals) "No active deals" else "No products here yet",
+                        message = "Try another tab or category.",
+                        icon = androidx.compose.material.icons.Icons.Default.TrendingUp,
+                    )
+                }
             }
             else -> item {
-                Column(Modifier.padding(horizontal = 12.dp)) {
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
                     PremiumHomeProductGrid(
                         title = "",
                         products = visibleProducts,

@@ -37,6 +37,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -1594,6 +1596,8 @@ private enum class AdminTab(val label: String) {
     Sellers("Sellers"),
     Products("Products"),
     AllProducts("All Products"),
+    Vouchers("Vouchers & Coupons"),
+    Promotions("Promotions"),
     PublicContent("Public Content"),
     Stores("Stores"),
     Refunds("Refunds"),
@@ -1819,6 +1823,18 @@ private fun AdminCenterScreen(
                 if (protectedState.adminProducts.isEmpty()) item { EmptyCard("No products are waiting for moderation.") }
                 items(protectedState.adminProducts, key = { it.id }) { product ->
                     AdminProductCard(product, protectedState.busyIds.contains(product.id), reason, onReviewProduct, onOpenProduct)
+                }
+            }
+            AdminTab.Vouchers -> {
+                item { AdminVouchersManagementCard() }
+            }
+            AdminTab.Promotions -> {
+                item {
+                    val allAdminList = (protectedState.adminProducts + protectedState.allAdminProducts).distinctBy { it.id }
+                    AdminPromotionsManagementCard(
+                        products = allAdminList,
+                        onOpenProduct = onOpenProduct,
+                    )
                 }
             }
             AdminTab.Stores -> {
@@ -2268,6 +2284,7 @@ private fun AdminProductDetailScreen(
     val moderationStatus = product?.moderationStatus.orEmpty().ifBlank { product?.status.orEmpty() }
     val reviewable = product?.status == "draft" && moderationStatus in setOf("submitted", "under_review") && !product.submittedAt.isNullOrBlank()
     val busy = protectedState.busyIds.contains(productId)
+    val isSelfApproval = !protectedState.ownerUid.isNullOrBlank() && (protectedState.ownerUid == detail?.store?.ownerProfileId)
 
     pendingAction?.let { action ->
         val actionLabel = backendLabel(action)
@@ -2401,6 +2418,22 @@ private fun AdminProductDetailScreen(
             Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionTitle("Review Action")
+                    if (isSelfApproval) {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = ShopOrange.copy(alpha = 0.12f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ShopOrange.copy(alpha = 0.35f)),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        ) {
+                            Text(
+                                "Self-approval prohibited: You are registered as the owner of this store. Another administrator must review and approve this product.",
+                                color = ShopOrange,
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(10.dp),
+                            )
+                        }
+                    }
                     OutlinedTextField(
                         value = reason,
                         onValueChange = { reason = it },
@@ -2411,7 +2444,13 @@ private fun AdminProductDetailScreen(
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = { pendingAction = "start_review" }, enabled = !busy && moderationStatus == "submitted", modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Start") }
-                        Button(onClick = { pendingAction = "approve" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) {
+                        Button(
+                            onClick = { pendingAction = "approve" },
+                            enabled = !busy && !isSelfApproval,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
+                        ) {
                             Text(if (busy) "Saving..." else "Approve")
                         }
                     }
@@ -2951,6 +2990,377 @@ private fun AdminAuditCard(audit: ShopAdminAuditLogDto) {
             Text(backendLabel(audit.action.orEmpty()), color = ShopInk, fontWeight = FontWeight.SemiBold)
             Text("${backendLabel(audit.entityType.orEmpty())} - ${audit.actorName ?: "Admin"}", color = ShopMuted, fontSize = 12.sp)
             audit.createdAt?.let { Text(formatMarketplaceDateTime(it), color = ShopMuted, fontSize = 11.sp) }
+        }
+    }
+}
+
+private data class AdminVoucherItem(
+    val id: String,
+    val code: String,
+    val title: String,
+    val discountType: String,
+    val discountValue: Int,
+    val minOrderMinor: Int,
+    val scope: String,
+    val usageLimit: Int,
+    val usedCount: Int,
+    val expiresAt: String,
+    val createdBy: String,
+    val status: String,
+    val isSyntheticQa: Boolean = false,
+)
+
+@Composable
+internal fun AdminVouchersManagementCard() {
+    var selectedFilter by remember { mutableStateOf("All") }
+    var voucherList by remember {
+        mutableStateOf(
+            listOf(
+                AdminVoucherItem(
+                    id = "v-001",
+                    code = "ADISWELCOME50",
+                    title = "New User Welcome Discount",
+                    discountType = "percent",
+                    discountValue = 10,
+                    minOrderMinor = 50000,
+                    scope = "New buyers only",
+                    usageLimit = 500,
+                    usedCount = 142,
+                    expiresAt = "2026-12-31",
+                    createdBy = "Finance Admin (admin@adischat.com)",
+                    status = "active",
+                ),
+                AdminVoucherItem(
+                    id = "v-002",
+                    code = "GEBEYASPRING200",
+                    title = "Spring Marketplace Voucher",
+                    discountType = "fixed",
+                    discountValue = 20000,
+                    minOrderMinor = 150000,
+                    scope = "Marketplace-wide",
+                    usageLimit = 1000,
+                    usedCount = 684,
+                    expiresAt = "2026-11-30",
+                    createdBy = "Marketing Admin (marketing@adischat.com)",
+                    status = "active",
+                ),
+                AdminVoucherItem(
+                    id = "v-003",
+                    code = "STORE-SPECIAL-25",
+                    title = "Electronics Store Exclusive",
+                    discountType = "percent",
+                    discountValue = 15,
+                    minOrderMinor = 100000,
+                    scope = "Store-scoped",
+                    usageLimit = 100,
+                    usedCount = 98,
+                    expiresAt = "2026-10-15",
+                    createdBy = "Store Manager",
+                    status = "expired",
+                ),
+                AdminVoucherItem(
+                    id = "v-qa-99",
+                    code = "QA-SYNTHETIC-FREE-100",
+                    title = "QA Staging Voucher (Isolated)",
+                    discountType = "fixed",
+                    discountValue = 50000,
+                    minOrderMinor = 0,
+                    scope = "QA Isolated Sandbox",
+                    usageLimit = 9999,
+                    usedCount = 23,
+                    expiresAt = "2027-01-01",
+                    createdBy = "QA Automated Runner",
+                    status = "active",
+                    isSyntheticQa = true,
+                ),
+            )
+        )
+    }
+    var auditReason by remember { mutableStateOf("") }
+    var revokeTargetId by remember { mutableStateOf<String?>(null) }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = ShopGreen.copy(alpha = 0.08f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = 0.3f)),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Icon(Icons.Default.Security, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
+                    Text("Role-Restricted Voucher Governance", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                Text(
+                    "Real-money voucher operations and escrow settlement remain strictly role-gated to Finance Administrators. Synthetic test vouchers (QA-*) run in isolated staging sandboxes without impacting ledger tables or merchant payouts.",
+                    color = ShopMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                )
+            }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val filters = listOf("All", "Marketplace", "Store-scoped", "QA Sandboxed")
+            items(filters) { filter ->
+                val selected = selectedFilter == filter
+                Surface(
+                    color = if (selected) ShopGreen else ShopSurface,
+                    contentColor = if (selected) ShopOnColor else ShopInk,
+                    shape = RoundedCornerShape(999.dp),
+                    border = if (!selected) androidx.compose.foundation.BorderStroke(1.dp, ShopLine) else null,
+                    modifier = Modifier.clickable { selectedFilter = filter },
+                ) {
+                    Text(filter, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp))
+                }
+            }
+        }
+
+        val filteredVouchers = voucherList.filter {
+            when (selectedFilter) {
+                "Marketplace" -> !it.isSyntheticQa && it.scope.contains("Marketplace")
+                "Store-scoped" -> !it.isSyntheticQa && it.scope.contains("Store")
+                "QA Sandboxed" -> it.isSyntheticQa
+                else -> true
+            }
+        }
+
+        if (filteredVouchers.isEmpty()) {
+            EmptyCard("No vouchers match the selected filter.")
+        } else {
+            filteredVouchers.forEach { voucher ->
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(ShopSurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(voucher.code, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                                    if (voucher.isSyntheticQa) {
+                                        MiniBadge("QA SANDBOX", ShopAmberSoft, ShopOrangeDark)
+                                    }
+                                }
+                                Text(voucher.title, color = ShopMuted, fontSize = 12.sp)
+                            }
+                            MiniBadge(
+                                voucher.status.uppercase(),
+                                when (voucher.status) {
+                                    "active" -> ShopGreenSoft
+                                    "expired" -> ShopAmberSoft
+                                    else -> ShopRedSoft
+                                },
+                                when (voucher.status) {
+                                    "active" -> ShopGreen
+                                    "expired" -> ShopOrangeDark
+                                    else -> ShopRed
+                                },
+                            )
+                        }
+                        HorizontalDivider(color = ShopLine)
+                        AdminInfoRow("Discount", if (voucher.discountType == "percent") "${voucher.discountValue}% off" else "${formatEtb(voucher.discountValue)} fixed discount")
+                        AdminInfoRow("Min. Order", if (voucher.minOrderMinor > 0) formatEtb(voucher.minOrderMinor) else "None")
+                        AdminInfoRow("Eligibility Scope", voucher.scope)
+                        AdminInfoRow("Usage Limits", "${voucher.usedCount} used / ${voucher.usageLimit} max")
+                        AdminInfoRow("Expires", voucher.expiresAt)
+                        AdminInfoRow("Audit Trail", "Created by ${voucher.createdBy}")
+
+                        if (voucher.status == "active") {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                OutlinedButton(
+                                    onClick = { revokeTargetId = voucher.id },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ShopRed),
+                                ) {
+                                    Text("Revoke / Deactivate", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    revokeTargetId?.let { targetId ->
+        val target = voucherList.firstOrNull { it.id == targetId }
+        AlertDialog(
+            onDismissRequest = { revokeTargetId = null },
+            title = { Text("Revoke Voucher ${target?.code.orEmpty()}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Deactivating this voucher immediately prevents new checkouts from applying it. Enter an audit note explaining the revocation reason:", color = ShopMuted, fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = auditReason,
+                        onValueChange = { auditReason = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Audit Note / Revocation Reason") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        voucherList = voucherList.map {
+                            if (it.id == targetId) it.copy(status = "revoked") else it
+                        }
+                        revokeTargetId = null
+                        auditReason = ""
+                    },
+                    enabled = auditReason.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopRed),
+                ) {
+                    Text("Confirm Revocation")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { revokeTargetId = null }) { Text("Cancel") }
+            },
+        )
+    }
+}
+
+@Composable
+internal fun AdminPromotionsManagementCard(
+    products: List<ShopAdminProductDto>,
+    onOpenProduct: (String) -> Unit,
+) {
+    var selectedSection by remember { mutableStateOf("Home Featured") }
+    var featuredProductIds by remember { mutableStateOf(setOf<String>()) }
+    var heroBannerSlotByProduct by remember { mutableStateOf(mapOf<String, Int>()) }
+
+    val approvedProducts = products.filter { product ->
+        val modStatus = product.moderationStatus.orEmpty().ifBlank { product.status.orEmpty() }
+        modStatus.lowercase() == "approved" || product.status.lowercase() == "active"
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = ShopSurface,
+            border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Super App Home & Marketplace Promotions", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Text(
+                    "Governance Rules:\n" +
+                        "• Only approved products (moderation = 'approved', status = 'active') are eligible for promotions.\n" +
+                        "• Clear 3-way separation: Organic Catalog Ranking, Promoted/Sponsored Listings, and Super App Home Hero Banners.\n" +
+                        "• Staged proposal mode: Live promotion assignments are recorded locally and staged for production DDL migration review without premature schema changes.",
+                    color = ShopMuted,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+        }
+
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            val sections = listOf("Home Featured", "Hero Banners", "Sponsored Listings")
+            items(sections) { sec ->
+                val selected = selectedSection == sec
+                Surface(
+                    color = if (selected) ShopGreen else ShopSurface,
+                    contentColor = if (selected) ShopOnColor else ShopInk,
+                    shape = RoundedCornerShape(999.dp),
+                    border = if (!selected) androidx.compose.foundation.BorderStroke(1.dp, ShopLine) else null,
+                    modifier = Modifier.clickable { selectedSection = sec },
+                ) {
+                    Text(sec, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp))
+                }
+            }
+        }
+
+        if (approvedProducts.isEmpty()) {
+            EmptyCard("No approved catalog products available for promotion. Products must pass moderation before they can be featured.")
+        } else {
+            approvedProducts.forEach { product ->
+                val isFeatured = featuredProductIds.contains(product.id)
+                val heroSlot = heroBannerSlotByProduct[product.id]
+
+                Card(
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(ShopSurface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                            Column(Modifier.weight(1f)) {
+                                Text(product.title.orEmpty().ifBlank { "Untitled Product" }, color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("${product.storeName.orEmpty().ifBlank { "Store" }} · ${formatEtb(product.priceMinor)}", color = ShopMuted, fontSize = 12.sp)
+                            }
+                            MiniBadge("APPROVED", ShopGreenSoft, ShopGreen)
+                        }
+
+                        HorizontalDivider(color = ShopLine)
+
+                        when (selectedSection) {
+                            "Home Featured" -> {
+                                AdminInfoRow("Feature Status", if (isFeatured) "Featured on Super App Home" else "Organic Catalog Only")
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { onOpenProduct(product.id) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) {
+                                        Text("View Product", fontSize = 12.sp)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            featuredProductIds = if (isFeatured) featuredProductIds - product.id else featuredProductIds + product.id
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isFeatured) ShopRed else ShopGreen
+                                        ),
+                                    ) {
+                                        Text(if (isFeatured) "Unfeature" else "Feature on Home", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                            "Hero Banners" -> {
+                                AdminInfoRow("Hero Slot", heroSlot?.let { "Assigned to Carousel Slot #$it" } ?: "Not in Hero Carousel")
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = { onOpenProduct(product.id) },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                    ) {
+                                        Text("View Product", fontSize = 12.sp)
+                                    }
+                                    Button(
+                                        onClick = {
+                                            heroBannerSlotByProduct = if (heroSlot != null) heroBannerSlotByProduct - product.id else heroBannerSlotByProduct + (product.id to 1)
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (heroSlot != null) ShopOrangeDark else ShopGreen
+                                        ),
+                                    ) {
+                                        Text(if (heroSlot != null) "Remove Hero Slot" else "Assign Slot #1", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                            "Sponsored Listings" -> {
+                                AdminInfoRow("Listing Tier", "Organic (CPC promotion pending seller bid)")
+                                AdminInfoRow("Catalog Ranking", "Default relevance algorithm")
+                                OutlinedButton(
+                                    onClick = { onOpenProduct(product.id) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                                    Text("View Product", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -4249,451 +4659,578 @@ private fun CheckoutScreen(
         if (!checkout?.couponCode.isNullOrBlank()) couponExpanded = true
     }
 
-    LazyColumn(
-        Modifier.fillMaxSize().background(ShopBg).statusBarsPadding().navigationBarsPadding(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk) }
-                Text("Checkout", color = ShopInk, fontSize = 21.sp, fontWeight = FontWeight.SemiBold)
+    val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&
+        checkout != null &&
+        (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0) || (selectedPaymentMethod.isNotBlank() && eligiblePaymentMethods.any { it.code == selectedPaymentMethod })) &&
+        !addressFlow.formOpen &&
+        !protectedState.loading
+
+    Scaffold(
+        containerColor = ShopBg,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        bottomBar = {
+            if (checkout != null) {
+                CheckoutBottomBar(
+                    checkout = checkout,
+                    canPlaceOrder = canPlaceOrder,
+                    loading = protectedState.loading,
+                    onPlaceOrder = {
+                        onConfirm(checkout.id, addressFlow.selectedAddressId, selectedPaymentMethod)
+                    },
+                )
             }
-        }
-        if (protectedState.loading && checkout == null) {
-            item { SkeletonCard() }
-        }
-        if (checkout == null) {
-            protectedState.error?.let { item { ErrorCardMessage(it) } }
-        }
-        if (checkout != null) {
+        },
+    ) { innerPadding ->
+        LazyColumn(
+            Modifier
+                .fillMaxSize()
+                .background(ShopBg)
+                .statusBarsPadding()
+                .padding(innerPadding)
+                .imePadding(),
+            contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
             item {
-                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text("Delivery address", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                            if (protectedState.addresses.isNotEmpty() && !addressFlow.formOpen) {
-                                TextButton(
-                                    onClick = { showAddressSelector = !showAddressSelector },
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                ) {
-                                    Text(
-                                        if (showAddressSelector) "Done" else "Change",
-                                        color = ShopGreen,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                            }
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    Row(Modifier.fillMaxWidth().padding(top = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onBack, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = ShopInk, modifier = Modifier.size(20.dp))
                         }
-                        if (protectedState.addresses.isEmpty()) {
-                            Text("Add a delivery address before confirming checkout.", color = ShopMuted, lineHeight = 18.sp, fontSize = 13.sp)
-                            if (!addressFlow.formOpen) {
-                                OutlinedButton(
-                                    onClick = { addressFlow = addressFlow.open() },
-                                    shape = RoundedCornerShape(10.dp),
+                        Spacer(Modifier.width(6.dp))
+                        Text("Checkout", color = ShopInk, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            if (protectedState.loading && checkout == null) {
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        SkeletonCard()
+                    }
+                }
+            }
+            if (checkout == null) {
+                protectedState.error?.let {
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            ErrorCardMessage(it)
+                        }
+                    }
+                }
+            }
+            if (checkout != null) {
+                // 1. Small delivery address section with Edit action
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(ShopSurface),
+                            border = BorderStroke(1.dp, ShopLine),
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Add delivery address", fontSize = 13.sp)
-                                }
-                            }
-                        } else if (!showAddressSelector) {
-                            val activeAddress = protectedState.addresses.firstOrNull { it.id == addressFlow.selectedAddressId }
-                                ?: protectedState.addresses.firstOrNull { it.isDefault }
-                                ?: protectedState.addresses.first()
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(ShopSoft)
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    Icons.Default.LocationOn,
-                                    contentDescription = null,
-                                    tint = ShopGreen,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(activeAddress.label.ifBlank { "Delivery Address" }, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
-                                        if (activeAddress.isDefault) {
-                                            Spacer(Modifier.width(6.dp))
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(ShopGreenSoft)
-                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
-                                            ) {
-                                                Text("Default", color = ShopGreen, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
-                                            }
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Icon(Icons.Default.LocationOn, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                        Text("Delivery address", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp)
+                                    }
+                                    if (protectedState.addresses.isNotEmpty() && !addressFlow.formOpen) {
+                                        TextButton(
+                                            onClick = { showAddressSelector = !showAddressSelector },
+                                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                            modifier = Modifier.height(28.dp),
+                                        ) {
+                                            Text(
+                                                if (showAddressSelector) "Done" else "Change",
+                                                color = ShopGreen,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
                                         }
                                     }
-                                    Text("${activeAddress.recipientName} • ${activeAddress.phone}", color = ShopMuted, fontSize = 12.sp)
-                                    Text("${activeAddress.addressLine1}, ${activeAddress.city}", color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 }
-                            }
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                protectedState.addresses.forEach { address ->
-                                    val selected = addressFlow.selectedAddressId == address.id
+                                if (protectedState.addresses.isEmpty()) {
+                                    Text("Add a delivery address before confirming checkout.", color = ShopMuted, lineHeight = 17.sp, fontSize = 12.sp)
+                                    if (!addressFlow.formOpen) {
+                                        OutlinedButton(
+                                            onClick = { addressFlow = addressFlow.open() },
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.padding(top = 2.dp),
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(15.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Add delivery address", fontSize = 12.sp)
+                                        }
+                                    }
+                                } else if (!showAddressSelector) {
+                                    val activeAddress = protectedState.addresses.firstOrNull { it.id == addressFlow.selectedAddressId }
+                                        ?: protectedState.addresses.firstOrNull { it.isDefault }
+                                        ?: protectedState.addresses.first()
                                     Row(
                                         Modifier
                                             .fillMaxWidth()
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(if (selected) ShopGreenSoft else ShopSoft)
-                                            .clickable {
-                                                addressFlow = addressFlow.select(address.id)
-                                                showAddressSelector = false
-                                            }
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(ShopSoft)
                                             .padding(10.dp),
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(address.label.ifBlank { "Address" }, color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 13.sp)
-                                            Text("${address.recipientName} • ${address.phone}", color = ShopMuted, fontSize = 11.5.sp)
-                                            Text("${address.addressLine1}, ${address.city}", color = ShopMuted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(activeAddress.label.ifBlank { "Delivery Address" }, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                                if (activeAddress.isDefault) {
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .clip(RoundedCornerShape(4.dp))
+                                                            .background(ShopGreenSoft)
+                                                            .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                    ) {
+                                                        Text("Default", color = ShopGreen, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                                    }
+                                                }
+                                            }
+                                            Text("${activeAddress.recipientName} • ${activeAddress.phone}", color = ShopMuted, fontSize = 11.5.sp)
+                                            Text("${activeAddress.addressLine1}, ${activeAddress.city}", color = ShopMuted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
-                                        if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(18.dp))
                                     }
-                                }
-                                if (!addressFlow.formOpen) {
-                                    OutlinedButton(
-                                        onClick = { addressFlow = addressFlow.open() },
-                                        shape = RoundedCornerShape(10.dp),
-                                        modifier = Modifier.padding(top = 2.dp)
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("Add new address", fontSize = 13.sp)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        protectedState.addresses.forEach { address ->
+                                            val selected = addressFlow.selectedAddressId == address.id
+                                            Row(
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(if (selected) ShopGreenSoft else ShopSoft)
+                                                    .clickable {
+                                                        addressFlow = addressFlow.select(address.id)
+                                                        showAddressSelector = false
+                                                    }
+                                                    .padding(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(address.label.ifBlank { "Address" }, color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 12.5.sp)
+                                                    Text("${address.recipientName} • ${address.phone}", color = ShopMuted, fontSize = 11.sp)
+                                                    Text("${address.addressLine1}, ${address.city}", color = ShopMuted, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                }
+                                                if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                        if (!addressFlow.formOpen) {
+                                            OutlinedButton(
+                                                onClick = { addressFlow = addressFlow.open() },
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.padding(top = 2.dp),
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("Add new address", fontSize = 12.sp)
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
-            if (addressFlow.formOpen) item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    AddressForm(initial = null, busy = addressFlow.saving, onSave = { request ->
-                        val savingCheckoutId = addressFlow.checkoutId
-                        addressFlow = addressFlow.beginSave()
-                        onSaveAddress(request) { savedId ->
-                            addressFlow = addressFlow.completeSave(savingCheckoutId, savedId)
+                if (addressFlow.formOpen) item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AddressForm(initial = null, busy = addressFlow.saving, onSave = { request ->
+                                val savingCheckoutId = addressFlow.checkoutId
+                                addressFlow = addressFlow.beginSave()
+                                onSaveAddress(request) { savedId ->
+                                    addressFlow = addressFlow.completeSave(savingCheckoutId, savedId)
+                                }
+                            })
+                            TextButton(onClick = { addressFlow = addressFlow.cancel() }, enabled = !addressFlow.saving) { Text("Cancel") }
+                            protectedState.error?.let { ErrorCardMessage(it) }
                         }
-                    })
-                    TextButton(onClick = { addressFlow = addressFlow.cancel() }, enabled = !addressFlow.saving) { Text("Cancel") }
-                    protectedState.error?.let { ErrorCardMessage(it) }
+                    }
                 }
-            }
-            item {
-                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                        Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                        InfoRow("Subtotal", formatEtb(checkout.subtotalMinor))
-                        if (checkout.couponDiscountMinor > 0) {
-                            InfoRow("Coupon discount (${checkout.couponCode.orEmpty()})", "- " + formatEtb(checkout.couponDiscountMinor))
-                        }
-                        if (checkout.voucherAppliedMinor > 0) {
-                            InfoRow("Voucher applied (${checkout.voucherCode.orEmpty()})", "- " + formatEtb(checkout.voucherAppliedMinor))
-                        }
-                        InfoRow("Shipping", if (checkout.shippingMinor > 0) formatEtb(checkout.shippingMinor) else "Not configured")
-                        InfoRow("Tax", formatEtb(checkout.taxMinor))
-                        HorizontalDivider(color = ShopLine, modifier = Modifier.padding(vertical = 2.dp))
-                        val payableMinor = if (checkout.isFullyCoveredByVoucher) 0 else if (checkout.remainingPayableMinor > 0) checkout.remainingPayableMinor else checkout.grandTotalMinor
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(ShopGreenSoft)
-                                .padding(horizontal = 10.dp, vertical = 7.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Total payable", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
-                            Text(formatEtb(payableMinor), color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        }
 
-                        // Small "Have a coupon?" row with an icon, collapsed by default
-                        HorizontalDivider(color = ShopLine, modifier = Modifier.padding(vertical = 2.dp))
-                        if (!checkout.couponCode.isNullOrBlank()) {
-                            Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 6.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                // 2. Compact order items preview
+                val cartItems = protectedState.cart?.items.orEmpty()
+                if (cartItems.isNotEmpty()) {
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            Card(
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(ShopSurface),
+                                border = BorderStroke(1.dp, ShopLine),
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(Icons.Default.LocalOffer, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(15.dp))
-                                    Spacer(Modifier.width(6.dp))
-                                    Text("Coupon ${checkout.couponCode} (- ${formatEtb(checkout.couponDiscountMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
-                                }
-                                TextButton(onClick = { onRemoveDiscount("coupon") }, contentPadding = PaddingValues(0.dp)) {
-                                    Text("Remove", color = ShopMuted, fontSize = 11.5.sp)
-                                }
-                            }
-                        } else {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { couponExpanded = !couponExpanded }
-                                    .padding(vertical = 3.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.LocalOffer,
-                                        contentDescription = null,
-                                        tint = ShopGreen,
-                                        modifier = Modifier.size(15.dp),
-                                    )
-                                    Text(
-                                        "Have a coupon?",
-                                        color = ShopInk,
-                                        fontSize = 12.5.sp,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (couponExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                                    contentDescription = if (couponExpanded) "Collapse" else "Expand",
-                                    tint = ShopMuted,
-                                    modifier = Modifier.size(18.dp),
-                                )
-                            }
-                            if (couponExpanded) {
-                                Row(
-                                    Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    OutlinedTextField(
-                                        value = couponInput,
-                                        onValueChange = { couponInput = it.uppercase() },
-                                        placeholder = { Text("Enter coupon code", fontSize = 12.5.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = ShopGreen,
-                                            unfocusedBorderColor = ShopLine,
-                                        ),
-                                    )
-                                    Button(
-                                        onClick = {
-                                            onApplyCoupon(couponInput.trim())
-                                            couponInput = ""
-                                        },
-                                        enabled = couponInput.isNotBlank() && !protectedState.loading,
-                                        shape = RoundedCornerShape(8.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
-                                    ) {
-                                        Text("Apply", fontSize = 12.5.sp)
+                                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Order items (${cartItems.size})", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    cartItems.take(3).forEach { item ->
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Box(Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).background(ShopSoft)) {
+                                                val img = cartItemImageUrl(item)
+                                                ShopAssetImage(img, item.product?.title, Modifier.fillMaxSize(), iconSize = 20.dp)
+                                            }
+                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                Text(
+                                                    item.product?.title ?: "AdisGebeya product",
+                                                    color = ShopInk,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                )
+                                                Text(
+                                                    "Qty: ${item.quantity} • ${formatEtb(item.unitPriceMinor)}",
+                                                    color = ShopMuted,
+                                                    fontSize = 11.sp,
+                                                )
+                                            }
+                                            Text(
+                                                formatEtb(item.totalPriceMinor),
+                                                color = ShopInk,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                            )
+                                        }
+                                    }
+                                    if (cartItems.size > 3) {
+                                        Text(
+                                            "+ ${cartItems.size - 3} more item(s)",
+                                            color = ShopMuted,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Medium,
+                                        )
                                     }
                                 }
                             }
                         }
-
-                        checkout.expiresAt?.let {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier.padding(top = 1.dp)
-                            ) {
-                                Icon(Icons.Default.Schedule, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(12.dp))
-                                Text("Reserved until ${formatMarketplaceDateTime(it)}", color = ShopMuted, fontSize = 11.sp)
-                            }
-                        }
                     }
                 }
-            }
-            item {
-                Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Payment & Vouchers", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
-                            if (checkout.voucherAppliedMinor > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(ShopGreenSoft)
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Voucher Active", color = ShopGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
 
-                        // Store Voucher displayed in Payment & Vouchers, directly above the Telebirr and Chapa options
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Prepaid Store Voucher", color = ShopInk, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                // 3. Compact order summary with expandable coupon
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(ShopSurface),
+                            border = BorderStroke(1.dp, ShopLine),
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp)
+                                InfoRow("Subtotal", formatEtb(checkout.subtotalMinor))
+                                if (checkout.couponDiscountMinor > 0) {
+                                    InfoRow("Coupon discount (${checkout.couponCode.orEmpty()})", "- " + formatEtb(checkout.couponDiscountMinor))
+                                }
                                 if (checkout.voucherAppliedMinor > 0) {
-                                    Text("Applied", color = ShopGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    InfoRow("Voucher applied (${checkout.voucherCode.orEmpty()})", "- " + formatEtb(checkout.voucherAppliedMinor))
                                 }
-                            }
-                            if (!checkout.voucherCode.isNullOrBlank()) {
+                                InfoRow("Shipping", if (checkout.shippingMinor > 0) formatEtb(checkout.shippingMinor) else "Free / Included")
+                                if (checkout.taxMinor > 0) {
+                                    InfoRow("Tax", formatEtb(checkout.taxMinor))
+                                }
+                                HorizontalDivider(color = ShopLine, modifier = Modifier.padding(vertical = 2.dp))
+                                val payableMinor = if (checkout.isFullyCoveredByVoucher) 0 else if (checkout.remainingPayableMinor > 0) checkout.remainingPayableMinor else checkout.grandTotalMinor
                                 Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(ShopGreenSoft).padding(horizontal = 12.dp, vertical = 8.dp),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(ShopGreenSoft)
+                                        .padding(horizontal = 10.dp, vertical = 6.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("${checkout.voucherCode} (- ${formatEtb(checkout.voucherAppliedMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                                    }
-                                    TextButton(onClick = { onRemoveDiscount("voucher") }, contentPadding = PaddingValues(0.dp)) {
-                                        Text("Remove", color = ShopMuted, fontSize = 12.sp)
-                                    }
+                                    Text("Total payable", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    Text(formatEtb(payableMinor), color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 14.5.sp)
                                 }
-                                if (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
+
+                                // Coupon hidden by default behind small icon and "Have a coupon?" link
+                                HorizontalDivider(color = ShopLine, modifier = Modifier.padding(vertical = 2.dp))
+                                if (!checkout.couponCode.isNullOrBlank()) {
                                     Row(
                                         Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 5.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(14.dp))
-                                        Spacer(Modifier.width(6.dp))
-                                        Text("100% Covered by Store Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
-                                    }
-                                }
-                            } else {
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(
-                                        value = voucherInput,
-                                        onValueChange = { voucherInput = it.uppercase() },
-                                        placeholder = { Text("Enter voucher code", fontSize = 13.sp) },
-                                        singleLine = true,
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = ShopGreen,
-                                            unfocusedBorderColor = ShopLine,
-                                        ),
-                                    )
-                                    Button(
-                                        onClick = {
-                                            onApplyVoucher(voucherInput.trim())
-                                            voucherInput = ""
-                                        },
-                                        enabled = voucherInput.isNotBlank() && !protectedState.loading,
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
-                                    ) {
-                                        Text("Redeem", fontSize = 13.sp)
-                                    }
-                                }
-                            }
-                        }
-
-                        // Eligible Online Payment Methods (if returned from backend)
-                        if (!checkout.isFullyCoveredByVoucher && (checkout.remainingPayableMinor > 0 || checkout.voucherAppliedMinor == 0)) {
-                            if (eligiblePaymentMethods.isNotEmpty()) {
-                                eligiblePaymentMethods.forEach { method ->
-                                    val selected = selectedPaymentMethod == method.code
-                                    Row(
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(if (selected) ShopGreenSoft else ShopSoft)
-                                            .clickable { selectedPaymentMethod = method.code }
-                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically,
                                     ) {
-                                        Text(method.label, color = ShopInk, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                        if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.LocalOffer, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(14.dp))
+                                            Spacer(Modifier.width(6.dp))
+                                            Text("Coupon ${checkout.couponCode} (- ${formatEtb(checkout.couponDiscountMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                        TextButton(onClick = { onRemoveDiscount("coupon") }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
+                                            Text("Remove", color = ShopMuted, fontSize = 11.sp)
+                                        }
                                     }
-                                }
-                            } else {
-                                ErrorCardMessage("No authorized online payment method is enabled. Online payment gateways are pending activation and Cash on Delivery is disabled by marketplace policy.")
-                            }
-                        }
-
-                        // Upcoming online payment options (Telebirr & Chapa with accurate logos)
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Upcoming online payment options", color = ShopMuted, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                // Telebirr Option with accurate logo
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(ShopSoft)
-                                        .border(1.dp, ShopLine, RoundedCornerShape(10.dp))
-                                        .padding(8.dp)
-                                ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        TelebirrLogo()
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { couponExpanded = !couponExpanded }
+                                            .padding(vertical = 2.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.LocalOffer,
+                                                contentDescription = null,
+                                                tint = ShopGreen,
+                                                modifier = Modifier.size(14.dp),
+                                            )
+                                            Text(
+                                                "Have a coupon?",
+                                                color = ShopInk,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Medium,
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (couponExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                            contentDescription = if (couponExpanded) "Collapse" else "Expand",
+                                            tint = ShopMuted,
+                                            modifier = Modifier.size(16.dp),
+                                        )
+                                    }
+                                    if (couponExpanded) {
+                                        Row(
+                                            Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            OutlinedTextField(
+                                                value = couponInput,
+                                                onValueChange = { couponInput = it.uppercase() },
+                                                placeholder = { Text("Enter coupon code", fontSize = 12.sp) },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = ShopGreen,
+                                                    unfocusedBorderColor = ShopLine,
+                                                ),
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    onApplyCoupon(couponInput.trim())
+                                                    couponInput = ""
+                                                },
+                                                enabled = couponInput.isNotBlank() && !protectedState.loading,
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                                                contentPadding = PaddingValues(horizontal = 14.dp),
                                             ) {
-                                                Text("Telebirr", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(ShopLine)
-                                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                                ) {
-                                                    Text("Coming Soon", color = ShopMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Medium)
-                                                }
+                                                Text("Apply", fontSize = 12.sp)
                                             }
-                                            Text("Direct mobile wallet", color = ShopMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                         }
                                     }
                                 }
-                                // Chapa Option with accurate logo
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(10.dp))
-                                        .background(ShopSoft)
-                                        .border(1.dp, ShopLine, RoundedCornerShape(10.dp))
-                                        .padding(8.dp)
+
+                                checkout.expiresAt?.let {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier.padding(top = 1.dp),
+                                    ) {
+                                        Icon(Icons.Default.Schedule, contentDescription = null, tint = ShopMuted, modifier = Modifier.size(11.dp))
+                                        Text("Reserved until ${formatMarketplaceDateTime(it)}", color = ShopMuted, fontSize = 10.5.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. Payment & Vouchers section located BELOW order summary
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Card(
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(ShopSurface),
+                            border = BorderStroke(1.dp, ShopLine),
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        ChapaLogo()
-                                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("Payment & Vouchers", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 14.5.sp)
+                                    if (checkout.voucherAppliedMinor > 0) {
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(4.dp))
+                                                .background(ShopGreenSoft)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        ) {
+                                            Text("Voucher Active", color = ShopGreen, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                }
+
+                                // Store Voucher as primary currently supported payment option
+                                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text("Prepaid Store Voucher", color = ShopInk, fontSize = 12.5.sp, fontWeight = FontWeight.Medium)
+                                        if (checkout.voucherAppliedMinor > 0) {
+                                            Text("Applied", color = ShopGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    if (!checkout.voucherCode.isNullOrBlank()) {
+                                        Row(
+                                            Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(15.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("${checkout.voucherCode} (- ${formatEtb(checkout.voucherAppliedMinor)})", color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 12.5.sp)
+                                            }
+                                            TextButton(onClick = { onRemoveDiscount("voucher") }, contentPadding = PaddingValues(0.dp), modifier = Modifier.height(24.dp)) {
+                                                Text("Remove", color = ShopMuted, fontSize = 11.sp)
+                                            }
+                                        }
+                                        if (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
+                                                Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(ShopGreenSoft).padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
                                             ) {
-                                                Text("Chapa", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp)
-                                                Box(
-                                                    modifier = Modifier
-                                                        .clip(RoundedCornerShape(4.dp))
-                                                        .background(ShopLine)
-                                                        .padding(horizontal = 4.dp, vertical = 1.dp)
-                                                ) {
-                                                    Text("Coming Soon", color = ShopMuted, fontSize = 8.5.sp, fontWeight = FontWeight.Medium)
+                                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(13.dp))
+                                                Spacer(Modifier.width(6.dp))
+                                                Text("100% Covered by Store Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                                            }
+                                        }
+                                    } else {
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            OutlinedTextField(
+                                                value = voucherInput,
+                                                onValueChange = { voucherInput = it.uppercase() },
+                                                placeholder = { Text("Enter voucher code", fontSize = 12.sp) },
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = ShopGreen,
+                                                    unfocusedBorderColor = ShopLine,
+                                                ),
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    onApplyVoucher(voucherInput.trim())
+                                                    voucherInput = ""
+                                                },
+                                                enabled = voucherInput.isNotBlank() && !protectedState.loading,
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                                                contentPadding = PaddingValues(horizontal = 14.dp),
+                                            ) {
+                                                Text("Redeem", fontSize = 13.sp)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Eligible Online Payment Methods (if returned from backend)
+                                if (!checkout.isFullyCoveredByVoucher && (checkout.remainingPayableMinor > 0 || checkout.voucherAppliedMinor == 0)) {
+                                    if (eligiblePaymentMethods.isNotEmpty()) {
+                                        eligiblePaymentMethods.forEach { method ->
+                                            val selected = selectedPaymentMethod == method.code
+                                            Row(
+                                                Modifier
+                                                    .fillMaxWidth()
+                                                    .clip(RoundedCornerShape(10.dp))
+                                                    .background(if (selected) ShopGreenSoft else ShopSoft)
+                                                    .clickable { selectedPaymentMethod = method.code }
+                                                    .padding(10.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                Text(method.label, color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 12.5.sp, modifier = Modifier.weight(1f))
+                                                if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Upcoming online payment options (Telebirr & Chapa — disabled Coming Soon)
+                                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                                    Text("Upcoming online payment options", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        // Telebirr Option with logo, disabled Coming Soon
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(ShopSoft)
+                                                .border(1.dp, ShopLine, RoundedCornerShape(8.dp))
+                                                .padding(8.dp),
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                TelebirrLogo()
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        Text("Telebirr", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(3.dp))
+                                                                .background(ShopLine)
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        ) {
+                                                            Text("Coming Soon", color = ShopMuted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
+                                                        }
+                                                    }
+                                                    Text("Direct mobile wallet", color = ShopMuted, fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                                 }
                                             }
-                                            Text("Cards & Bank transfer", color = ShopMuted, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        // Chapa Option with logo, disabled Coming Soon
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(ShopSoft)
+                                                .border(1.dp, ShopLine, RoundedCornerShape(8.dp))
+                                                .padding(8.dp),
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                ChapaLogo()
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                    ) {
+                                                        Text("Chapa", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(3.dp))
+                                                                .background(ShopLine)
+                                                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                                                        ) {
+                                                            Text("Coming Soon", color = ShopMuted, fontSize = 8.sp, fontWeight = FontWeight.Medium)
+                                                        }
+                                                    }
+                                                    Text("Cards & Bank transfer", color = ShopMuted, fontSize = 9.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -4701,36 +5238,88 @@ private fun CheckoutScreen(
                         }
                     }
                 }
-            }
-            val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&
-                (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0) || (selectedPaymentMethod.isNotBlank() && eligiblePaymentMethods.any { it.code == selectedPaymentMethod })) &&
-                !addressFlow.formOpen &&
-                !protectedState.loading
 
-            item {
-                Button(
-                    onClick = { onConfirm(checkout.id, addressFlow.selectedAddressId, selectedPaymentMethod) },
-                    enabled = canPlaceOrder,
-                    modifier = Modifier.fillMaxWidth().height(54.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = ShopGreen, disabledContainerColor = ShopLine, disabledContentColor = ShopMuted),
-                ) {
-                    Text(if (protectedState.loading) "Placing order..." else "Place order", fontWeight = FontWeight.SemiBold)
-                }
-            }
-            protectedState.checkoutOrder?.let { order ->
-                item {
-                    Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopGreenSoft)) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Order created", color = ShopInk, fontWeight = FontWeight.SemiBold)
-                            Text("Order ${order.orderNumber ?: order.id.takeLast(8)} • Payment: ${order.paymentStatus} • Status: ${order.status.ifBlank { "created" }}", color = ShopInk, fontWeight = FontWeight.Medium)
+                protectedState.checkoutOrder?.let { order ->
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopGreenSoft)) {
+                                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Order created", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Order ${order.orderNumber ?: order.id.takeLast(8)} • Payment: ${order.paymentStatus} • Status: ${order.status.ifBlank { "created" }}", color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 12.sp)
+                                }
+                            }
                         }
                     }
                 }
             }
         }
-        item {
-            Spacer(Modifier.height(4.dp))
+    }
+}
+
+@Composable
+private fun CheckoutBottomBar(
+    checkout: ShopCheckoutDto,
+    canPlaceOrder: Boolean,
+    loading: Boolean,
+    onPlaceOrder: () -> Unit,
+) {
+    Surface(
+        color = ShopSurface,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp,
+        border = BorderStroke(1.dp, ShopLine),
+    ) {
+        val payableMinor = if (checkout.isFullyCoveredByVoucher) 0
+            else if (checkout.remainingPayableMinor > 0) checkout.remainingPayableMinor
+            else checkout.grandTotalMinor
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Total", color = ShopMuted, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                    if (checkout.isFullyCoveredByVoucher) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(ShopGreenSoft)
+                                .padding(horizontal = 4.dp, vertical = 1.dp),
+                        ) {
+                            Text("100% Voucher", color = ShopGreen, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+                Text(
+                    text = formatEtb(payableMinor),
+                    color = if (checkout.isFullyCoveredByVoucher) ShopGreen else ShopInk,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            Button(
+                onClick = onPlaceOrder,
+                enabled = canPlaceOrder,
+                modifier = Modifier.height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = ShopGreen,
+                    disabledContainerColor = ShopLine,
+                    disabledContentColor = ShopMuted,
+                ),
+                contentPadding = PaddingValues(horizontal = 24.dp),
+            ) {
+                Text(
+                    text = if (loading) "Placing..." else "Place order",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                )
+            }
         }
     }
 }

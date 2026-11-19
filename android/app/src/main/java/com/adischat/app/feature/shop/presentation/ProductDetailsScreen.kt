@@ -88,6 +88,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import com.adischat.app.ui.home.AdaptiveFlowAround
+import com.adischat.app.ui.home.LocalSidebarBounds
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -285,57 +287,105 @@ internal fun ProductDetailsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item {
-                    ProductImageGallery(
-                        title = product.title,
-                        images = images,
-                        discountPercent = verifiedDiscountPercent(product),
-                        onImageClick = { fullscreenImage = it },
-                        targetImageIndex = targetImageIndex,
-                    )
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductImageGallery(
+                            title = product.title,
+                            images = images,
+                            discountPercent = verifiedDiscountPercent(product),
+                            onImageClick = { fullscreenImage = it },
+                            targetImageIndex = targetImageIndex,
+                        )
+                    }
                 }
                 item {
-                    ProductSummary(
-                        product = product,
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        selectedVariant = selectedVariant,
-                    )
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductSummary(
+                            product = product,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            selectedVariant = selectedVariant,
+                        )
+                    }
                 }
-                item { ProductHighlights(product, Modifier.padding(horizontal = 12.dp)) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductHighlights(product, Modifier.padding(horizontal = 4.dp))
+                    }
+                }
                 if (com.adischat.app.feature.shop.data.ShopBenefitFlags.buyerBadgesEnabled) {
-                    item { VerifiedBenefitDetails(product.verifiedBenefits, Modifier.padding(horizontal = 12.dp)) }
-                }
-                item { DeliveryBenefits(Modifier.padding(horizontal = 12.dp)) }
-                item {
-                    ProductOptionsSummary(
-                        product = product,
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                        selectedValues = purchaseOptionValues,
-                        onSelectOption = { code, value ->
-                            purchaseOptionValues[code] = value
-                            clearInvalidDependentSelections(product.variants, code, purchaseOptionValues)
-                        },
-                    )
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                            VerifiedBenefitDetails(product.verifiedBenefits, Modifier.padding(horizontal = 4.dp))
+                        }
+                    }
                 }
                 item {
-                    StoreMiniCard(
-                        product = product,
-                        onVisitStore = onVisitStore,
-                        onChatSeller = { onChatSeller(null) },
-                        modifier = Modifier.padding(horizontal = 12.dp),
-                    )
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        DeliveryBenefits(Modifier.padding(horizontal = 4.dp))
+                    }
                 }
-                item { ProductDetailsInformation(product, categories, Modifier.padding(horizontal = 12.dp)) }
-                item { ProductDescription(product, Modifier.padding(horizontal = 12.dp)) }
-                item { ProductReviewSummary(product, Modifier.padding(horizontal = 12.dp)) }
-                item { ReviewList(product, Modifier.padding(horizontal = 12.dp)) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductOptionsSummary(
+                            product = product,
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            selectedValues = purchaseOptionValues,
+                            onSelectOption = { code, value ->
+                                purchaseOptionValues[code] = value
+                                clearInvalidDependentSelections(product.variants, code, purchaseOptionValues)
+                            },
+                        )
+                    }
+                }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        StoreMiniCard(
+                            product = product,
+                            onVisitStore = onVisitStore,
+                            onChatSeller = { onChatSeller(null) },
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                    }
+                }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductDetailsInformation(product, categories, Modifier.padding(horizontal = 4.dp))
+                    }
+                }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductDescription(product, Modifier.padding(horizontal = 4.dp))
+                    }
+                }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ProductReviewSummary(product, Modifier.padding(horizontal = 4.dp))
+                    }
+                }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                        ReviewList(product, Modifier.padding(horizontal = 4.dp))
+                    }
+                }
                 if (similar.isNotEmpty()) {
-                    item { SimilarProductsSection(similar, onProduct) }
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                            SimilarProductsSection(similar, onProduct)
+                        }
+                    }
                 }
                 if (recommended.isNotEmpty()) {
-                    item { RecommendedProductsSection(recommended, onProduct) }
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                            RecommendedProductsSection(recommended, onProduct)
+                        }
+                    }
                 }
                 if (recent.isNotEmpty()) {
-                    item { RecentlyViewedSection(recent, onProduct) }
+                    item {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+                            RecentlyViewedSection(recent, onProduct)
+                        }
+                    }
                 }
             }
         }
@@ -1002,9 +1052,11 @@ internal fun ProductDetailsTopBar(
     onCart: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val sidebar = LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 8.dp
     Surface(modifier.fillMaxWidth(), color = ProductSurface, shadowElevation = 2.dp) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 8.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(start = startPad, end = 8.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {

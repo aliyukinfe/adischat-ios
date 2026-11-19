@@ -1366,11 +1366,15 @@ function adminError(raw = "") {
   if (normalized.includes("order-not-found")) return { code: "order_not_found", message: "Order not found.", status: 404 };
   if (normalized.includes("invalid-seller-application-state")) return { code: "invalid_state", message: "This seller application has already moved to another state.", status: 409 };
   if (normalized.includes("invalid-product-state")) return { code: "invalid_state", message: "This product has already moved to another state.", status: 409 };
+  if (normalized.includes("stale-product-review")) return { code: "stale_product_review", message: "This product changed. Refresh it before reviewing.", status: 409 };
+  if (normalized.includes("idempotency-conflict")) return { code: "idempotency_conflict", message: "This review request was already used.", status: 409 };
   if (normalized.includes("self-product-review-blocked")) return { code: "self_review_blocked", message: "A seller cannot review their own product.", status: 403 };
   if (normalized.includes("product-validation-failed")) return { code: "product_validation_failed", message: "Product is missing required details.", status: 409 };
   if (normalized.includes("missing-images")) return { code: "missing_images", message: "At least one product image is required.", status: 409 };
   if (normalized.includes("missing-stock")) return { code: "missing_stock", message: "Product stock is required before approval.", status: 409 };
+  if (normalized.includes("store-not-found")) return { code: "store_not_found", message: "Store not found.", status: 404 };
   if (normalized.includes("store-not-active")) return { code: "store_not_active", message: "The store must be active before approval.", status: 409 };
+  if (normalized.includes("unsupported-action")) return { code: "unsupported_action", message: "Unsupported moderation action.", status: 400 };
   if (normalized.includes("last-super-admin-protected")) return { code: "last_super_admin_protected", message: "At least one Super Admin must remain active.", status: 409 };
   if (normalized.includes("self-escalation-blocked")) return { code: "self_escalation_blocked", message: "Admins cannot assign roles to themselves.", status: 409 };
   return { code: "admin_action_failed", message: "Admin action could not be completed.", status: 500 };
@@ -1436,15 +1440,85 @@ async function adminProductDetail(request: Request) {
 }
 
 async function adminReviewProduct(request: Request) {
+  const { client, profileId } = await currentSession(request);
   const body = await jsonBody(request);
-  return adminRpc(request, "adishop_admin_review_product", {
-    p_product_id: String(body.productId || ""),
-    p_action: String(body.action || ""),
+
+  // 1. Verify authorized Shop Admin role (strictly SHOP_SUPER_ADMIN or SHOP_ADMIN; SUPPORT_AGENT and SELLER prohibited)
+  const { data: adminRoles, error: rolesError } = await client
+    .rpc("current_shop_roles", { target_profile_id: profileId });
+  const hasModerationRole = Array.isArray(adminRoles) && adminRoles.some((r: string) =>
+    ["SHOP_SUPER_ADMIN", "SHOP_ADMIN"].includes(r)
+  );
+  if (rolesError || !hasModerationRole) {
+    return structuredError("admin_forbidden", "You do not have access to AdisGebeya Admin.", 403);
+  }
+
+  // 2. Validate action and inputs
+  const action = String(body.action || "").trim().toLowerCase();
+  const allowedActions = ["start_review", "approve", "reject", "request_changes", "suspend", "reactivate", "archive"];
+  if (!allowedActions.includes(action)) {
+    return structuredError("unsupported_action", "Unsupported moderation action.", 400);
+  }
+
+  const productId = String(body.productId || "").trim();
+  if (!productId) {
+    return structuredError("product_id_required", "Product ID is required.", 400);
+  }
+
+  const reason = String(body.publicReason || body.reason || "").trim();
+  if (["reject", "request_changes", "suspend"].includes(action) && reason.length < 3) {
+    return structuredError("reason_required", "A clear reason is required.", 400);
+  }
+
+  // 3. Pre-check seller self-approval and cross-store integrity
+  const { data: productRecord, error: prodError } = await client
+    .from("shop_products")
+    .select("id, store_id, moderation_status, status, shop_stores(id, owner_profile_id, status, approval_status)")
+    .eq("id", productId)
+    .single();
+
+  if (prodError || !productRecord) {
+    return structuredError("product_not_found", "Product not found.", 404);
+  }
+
+  const store = productRecord.shop_stores as { id?: string; owner_profile_id?: string; status?: string; approval_status?: string } | null;
+  if (!store) {
+    return structuredError("store_not_found", "Store not found.", 404);
+  }
+
+  // Reject seller self-approval server-side
+  if (["approve", "reject", "request_changes", "suspend", "reactivate", "archive"].includes(action) &&
+      store.owner_profile_id === profileId) {
+    return structuredError("self_review_blocked", "A seller cannot review their own product.", 403);
+  }
+
+  // Validate allowed moderation status transitions
+  const currentModStatus = String(productRecord.moderation_status || productRecord.status || "").toLowerCase();
+  if (action === "start_review" && !["pending", "submitted", "under_review"].includes(currentModStatus)) {
+    return structuredError("invalid_state", "This product has already moved to another state.", 409);
+  }
+  if (["approve", "reject", "request_changes"].includes(action) &&
+      !["pending", "submitted", "under_review", "changes_requested", "approved", "rejected"].includes(currentModStatus)) {
+    return structuredError("invalid_state", "This product has already moved to another state.", 409);
+  }
+
+  // 4. Invoke RPC with strictly enforced moderator identity (preventing client override)
+  const { data, error } = await client.rpc("adishop_admin_review_product", {
+    p_actor_profile_id: profileId,
+    p_product_id: productId,
+    p_action: action,
     p_reason_code: String(body.reasonCode || ""),
-    p_public_reason: String(body.publicReason || body.reason || ""),
+    p_public_reason: reason,
     p_private_notes: String(body.privateNotes || ""),
     p_request_id: String(body.requestId || request.headers.get("x-request-id") || ""),
-  }, "productDetail", "p_actor_profile_id");
+  });
+
+  if (error) {
+    const mapped = adminError(error.message);
+    return structuredError(mapped.code, mapped.message, mapped.status, mapped.status >= 500);
+  }
+
+  return response({ ok: true, productDetail: data as Json });
 }
 
 async function adminOrders(request: Request) {

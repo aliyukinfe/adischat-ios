@@ -106,13 +106,18 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
         } catch (e: ApiException) {
         Log.w("AdisAuth", "Google sign-in failed with status=${e.statusCode}", e)
         val message = when (e.statusCode) {
-        GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "Google sign-in was cancelled."
+        GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> null
         GoogleSignInStatusCodes.SIGN_IN_CURRENTLY_IN_PROGRESS -> "Google sign-in is already in progress."
-        GoogleSignInStatusCodes.SIGN_IN_FAILED -> "Google sign-in failed. Please try again."
-        10 -> "Google sign-in is temporarily unavailable. Please sign in with email or try again later."
-        else -> "Google sign-in failed. Please try again."
+        GoogleSignInStatusCodes.SIGN_IN_FAILED -> "Google sign-in failed. Please verify your connection and try again."
+        10 -> "Google sign-in is misconfigured (Developer Error 10). Please check SHA-1 signing certificates in Firebase Console."
+        12500 -> "Google sign-in failed (Error 12500). Please check Google Play Services on your device."
+        else -> "Google sign-in failed (code ${e.statusCode}). Please try again."
         }
-        vm.showError(message)
+        if (message != null) {
+            vm.showError(message)
+        } else {
+            vm.resetState()
+        }
         } catch (e: Exception) {
         Log.w("AdisAuth", "Google sign-in failed", e)
         vm.showError("Google sign-in failed. Please try again.")
@@ -130,13 +135,14 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
             vm.showError("Google sign-in is unavailable in this QA build. Please sign in with email and password.")
             return
         }
+        vm.resetState()
         val gso = GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
             .requestIdToken(webClientId)
             .requestEmail()
             .build()
         val client = GoogleSignIn.getClient(context, gso)
         client.signOut().addOnCompleteListener {
-        googleLauncher.launch(client.signInIntent)
+            googleLauncher.launch(client.signInIntent)
         }
     }
 
@@ -175,6 +181,7 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
         onEmailChange    = { signUpEmail = it },
         onPasswordChange = { signUpPassword = it },
         onBack      = { page = AuthPage.WELCOME; vm.resetState() },
+        onGoogle      = { launchGoogle() },
         onSubmit      = { vm.signUp(signUpName, signUpPhone, signUpEmail, signUpPassword) },
         onLoginClick     = { page = AuthPage.WELCOME; vm.resetState() },
         )
@@ -192,6 +199,7 @@ fun AuthScreen(onAuthSuccess: () -> Unit) {
         loading      = state is AuthState.Loading,
         error      = (state as? AuthState.Error)?.message,
         onBack      = { page = AuthPage.WELCOME; vm.resetState() },
+        onGoogle      = { launchGoogle() },
         onSubmit      = { id, pw -> vm.login(id, pw) },
         onPasswordReset = { email, cb -> vm.sendPasswordReset(email, cb) },
         onSignUpClick   = { page = AuthPage.SIGNUP; vm.resetState() },
@@ -686,7 +694,9 @@ private fun SignUpPage(
     name: String, phone: String, email: String, password: String,
     onNameChange: (String) -> Unit, onPhoneChange: (String) -> Unit,
     onEmailChange: (String) -> Unit, onPasswordChange: (String) -> Unit,
-    onBack: () -> Unit, onSubmit: () -> Unit, onLoginClick: () -> Unit,
+    onBack: () -> Unit,
+    onGoogle: () -> Unit = {},
+    onSubmit: () -> Unit, onLoginClick: () -> Unit,
 ) {
     var confirmPassword by remember { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
@@ -1051,6 +1061,33 @@ private fun SignUpPage(
         }
         }
 
+        Spacer(Modifier.height(16.dp))
+
+        // - Google button for Sign-up -
+        Surface(
+            onClick  = onGoogle,
+            shape    = RoundedCornerShape(16.dp),
+            color    = if (isDark) Color(0xFF21262D) else Color.White,
+            border   = BorderStroke(1.dp, if (isDark) Color(0xFF30363D) else Color(0xFFD1D5DB)),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(52.dp),
+            shadowElevation = if (isDark) 0.dp else 1.dp,
+        ) {
+            Row(
+                Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text(tr("G"), color = Color(0xFF4285F4), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Sign up with Google",
+                    color      = if (isDark) Color(0xFFE6EDF3) else Color(0xFF111827),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize   = 15.sp,
+                )
+            }
+        }
+
         Spacer(Modifier.height(20.dp))
 
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
@@ -1280,6 +1317,7 @@ private fun EmailOtpPage(
 private fun LoginPage(
     loading: Boolean, error: String?,
     onBack: () -> Unit,
+    onGoogle: () -> Unit = {},
     onSubmit: (String, String) -> Unit,
     onPasswordReset: (String, (Boolean, String) -> Unit) -> Unit,
     onSignUpClick: () -> Unit,
@@ -1402,6 +1440,34 @@ private fun LoginPage(
         enabled  = canSubmit,
         modifier = Modifier.padding(horizontal = 20.dp),
         )
+
+        Spacer(Modifier.height(16.dp))
+
+        // - Google button for Login -
+        val isDark = isSystemInDarkTheme()
+        Surface(
+            onClick  = onGoogle,
+            shape    = RoundedCornerShape(16.dp),
+            color    = if (isDark) Color(0xFF21262D) else Color.White,
+            border   = BorderStroke(1.dp, if (isDark) Color(0xFF30363D) else Color(0xFFD1D5DB)),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).height(52.dp),
+            shadowElevation = if (isDark) 0.dp else 1.dp,
+        ) {
+            Row(
+                Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment     = Alignment.CenterVertically,
+            ) {
+                Text(tr("G"), color = Color(0xFF4285F4), fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Sign in with Google",
+                    color      = if (isDark) Color(0xFFE6EDF3) else Color(0xFF111827),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize   = 15.sp,
+                )
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {

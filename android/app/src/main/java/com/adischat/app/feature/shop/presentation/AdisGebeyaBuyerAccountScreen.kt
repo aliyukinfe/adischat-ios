@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.adischat.app.feature.shop.data.ShopProtectedState
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import com.adischat.app.ui.theme.AdisGebeyaColors
 
 private data class BuyerAccountAction(
@@ -92,20 +93,38 @@ internal fun AdisGebeyaBuyerAccountScreen(
 
     LazyColumn(
         Modifier.fillMaxSize().background(AdisGebeyaColors.Background),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 24.dp),
+        contentPadding = PaddingValues(top = 12.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        item { BuyerIdentityHeader(identity, identityConnected, onProfile) }
-        state.error?.let {
-            item { Text("Some account details could not be refreshed.", color = AdisGebeyaColors.Error, fontSize = 12.sp) }
-        }
-        item { AccountOrderSection(orderActions, state.ordersLoaded, onOrders) }
-        item { AccountActionGrid(quickActions) }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Account", color = AdisGebeyaColors.PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                AccountListRow("Shopping preferences", Icons.Default.Settings, onProfile)
-                if (state.adminSession != null) AccountListRow("AdisGebeya Admin", Icons.Default.AdminPanelSettings, onAdmin)
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                BuyerIdentityHeader(identity, identityConnected, onProfile)
+            }
+        }
+        state.error?.let {
+            item {
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                    Text("Some account details could not be refreshed.", color = AdisGebeyaColors.Error, fontSize = 12.sp)
+                }
+            }
+        }
+        item {
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                AccountOrderSection(orderActions, state.ordersLoaded, onOrders)
+            }
+        }
+        item {
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                AccountActionGrid(quickActions)
+            }
+        }
+        item {
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Account", color = AdisGebeyaColors.PrimaryText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    AccountListRow("Shopping preferences", Icons.Default.Settings, onProfile)
+                    if (state.adminSession != null) AccountListRow("AdisGebeya Admin", Icons.Default.AdminPanelSettings, onAdmin)
+                }
             }
         }
     }

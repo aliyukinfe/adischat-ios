@@ -38,6 +38,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import com.adischat.app.ui.home.LocalSidebarBounds
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -113,6 +114,8 @@ internal fun AdisGebeyaHomeTopBar(
     onDiscovery: (MarketplaceDiscoverySurface) -> Unit,
 ) {
     var showLanguages by remember { mutableStateOf(false) }
+    val sidebar = LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 12.dp
     Surface(
         color = AdisGebeyaHomeV2Colors.Surface,
         border = BorderStroke(1.dp, AdisGebeyaHomeV2Colors.Border),
@@ -121,7 +124,7 @@ internal fun AdisGebeyaHomeTopBar(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 3.dp),
+                .padding(start = startPad, end = 12.dp, top = 3.dp, bottom = 3.dp),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Row(Modifier.fillMaxWidth().height(48.dp), verticalAlignment = Alignment.CenterVertically) {

@@ -47,6 +47,7 @@ import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopCartItemDto
 import com.adischat.app.feature.shop.data.ShopProtectedState
 import com.adischat.app.feature.shop.data.ShopProductDto
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import com.adischat.app.ui.theme.AdisGebeyaColors
 
 @Composable
@@ -77,41 +78,63 @@ internal fun CartScreen(
     ) { innerPadding ->
         LazyColumn(
             Modifier.fillMaxSize().background(AdisGebeyaColors.Background).padding(innerPadding),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 18.dp),
+            contentPadding = PaddingValues(top = 12.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Cart (${cart?.items?.size ?: cartCount})", color = AdisGebeyaColors.PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
-                    if (!cart?.items.isNullOrEmpty()) {
-                        androidx.compose.material3.TextButton(onClick = onClear, enabled = !mutationPending) { Text("Clear", color = AdisGebeyaColors.Error) }
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Cart (${cart?.items?.size ?: cartCount})", color = AdisGebeyaColors.PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                        if (!cart?.items.isNullOrEmpty()) {
+                            androidx.compose.material3.TextButton(onClick = onClear, enabled = !mutationPending) { Text("Clear", color = AdisGebeyaColors.Error) }
+                        }
                     }
                 }
             }
             if (contentState == BuyerCartContentState.Loading) {
-                items(3) { SkeletonCard() }
+                items(3) {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        SkeletonCard()
+                    }
+                }
             } else if (contentState == BuyerCartContentState.Error) {
-                item { ErrorCardMessage(protectedState.error.orEmpty()) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        ErrorCardMessage(protectedState.error.orEmpty())
+                    }
+                }
             } else if (contentState == BuyerCartContentState.Empty) {
                 item {
-                    PremiumEmptyState(
-                        title = "Your cart is empty",
-                        message = "Products you add from Product Details will appear here.",
-                        icon = Icons.Default.ShoppingCart,
-                    )
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        PremiumEmptyState(
+                            title = "Your cart is empty",
+                            message = "Products you add from Product Details will appear here.",
+                            icon = Icons.Default.ShoppingCart,
+                        )
+                    }
                 }
             } else {
                 val groups = cartStoreGroups(cart?.items.orEmpty())
                 groups.forEach { (storeId, storeItems) ->
                     val storeName = storeItems.firstOrNull()?.product?.store?.name?.takeIf(String::isNotBlank) ?: "Marketplace store"
-                    item(key = "store-$storeId") { CartStoreHeader(storeName) }
+                    item(key = "store-$storeId") {
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            CartStoreHeader(storeName)
+                        }
+                    }
                     items(storeItems, key = { it.id }) { item ->
-                        CartItemRow(item, protectedState.cartAvailableQuantities[item.id], mutationPending, item.id in protectedState.busyIds, onUpdate, onProduct)
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            CartItemRow(item, protectedState.cartAvailableQuantities[item.id], mutationPending, item.id in protectedState.busyIds, onUpdate, onProduct)
+                        }
                     }
                 }
             }
             protectedState.error?.takeIf(String::isNotBlank)?.takeIf { cart != null }?.let { message ->
-                item { ErrorCardMessage(message) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        ErrorCardMessage(message)
+                    }
+                }
             }
         }
     }

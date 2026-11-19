@@ -11,14 +11,25 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = resolve(fileURLToPath(import.meta.url), "../..");
 
 const defaultTargets = [
-  "android/app/build/outputs/apk/release/app-release.apk",
-  "android/app/build/outputs/bundle/release/app-release.aab",
+  join(repoRoot, "android/app/build/outputs/apk/release/app-release.apk"),
+  join(repoRoot, "android/app/build/outputs/bundle/release/app-release.aab"),
 ];
 
 const args = process.argv.slice(2);
-const targets = args.length ? args : defaultTargets;
+let targets = args.length ? args.map((a) => resolve(repoRoot, a)) : defaultTargets.filter(existsSync);
+
+if (!args.length && targets.length === 0) {
+  const sourceRoot = join(repoRoot, "android/app/src/main");
+  if (existsSync(sourceRoot)) {
+    console.log("No compiled release bundle found; scanning release source tree: " + sourceRoot);
+    targets = [sourceRoot];
+  }
+}
 
 const secretEnvNames = [
   "ADISHOP_SUPABASE_SECRET_KEY",
