@@ -159,48 +159,49 @@ class RealHomeFeedCoordinator(
             val productsTask = async {
                 runCatching {
                     if (ShopSupabaseClient.isConfigured) productRepo.approvedProducts()
-                    else emptyList()
+                    else emptyList<ShopProductDto>()
                 }.getOrDefault(emptyList())
             }
             val storesTask = async {
                 runCatching {
                     if (ShopSupabaseClient.isConfigured) storeRepo.approvedStores()
-                    else emptyList()
+                    else emptyList<ShopStoreDto>()
                 }.getOrDefault(emptyList())
             }
             val restaurantsTask = async {
                 runCatching {
-                    restaurantRepo.listLiveRestaurants().getOrDefault(emptyList())
+                    restaurantRepo.listLiveRestaurants().getOrDefault(emptyList<RestaurantSummaryDto>())
                 }.getOrDefault(emptyList())
             }
             val channelsTask = async {
                 runCatching {
                     chatRepo.searchCommunities("channel", "").take(6)
-                }.getOrDefault(emptyList())
+                }.getOrDefault(emptyList<CommunityRoom>())
             }
 
-            val products = productsTask.await()
-            val stores = storesTask.await()
-            val restaurants = restaurantsTask.await()
-            val channels = channelsTask.await()
+            val products: List<ShopProductDto> = productsTask.await()
+            val stores: List<ShopStoreDto> = storesTask.await()
+            val restaurants: List<RestaurantSummaryDto> = restaurantsTask.await()
+            val channels: List<CommunityRoom> = channelsTask.await()
 
-            val storeMap = stores.associateBy { it.id }
+            val storeMap: Map<String, ShopStoreDto> = stores.associateBy { it.id }
 
             val cards = mutableListOf<RealFeedCard>()
 
             // 1. Map real products with promotional discount calculation
             products.forEach { prod ->
-                val discount = if (prod.compareAtPriceMinor != null && prod.compareAtPriceMinor > prod.priceMinor) {
+                val discount: Int? = if (prod.compareAtPriceMinor != null && prod.compareAtPriceMinor > prod.priceMinor) {
                     val diff = prod.compareAtPriceMinor - prod.priceMinor
                     ((diff.toDouble() / prod.compareAtPriceMinor) * 100).toInt()
                 } else null
 
                 val adminPromo = adminPromotions.firstOrNull { it.targetType == "product" && it.targetId == prod.id && it.isActive }
+                val resolvedStoreName: String? = prod.storeId?.let { id: String -> storeMap[id]?.name }
 
                 cards.add(
                     RealFeedCard.ProductCard(
                         product = prod,
-                        storeName = prod.storeId?.let { storeMap[it]?.name },
+                        storeName = resolvedStoreName,
                         discountPercent = discount,
                         isPromoted = adminPromo != null || discount != null,
                         customTitle = adminPromo?.customTitle,
