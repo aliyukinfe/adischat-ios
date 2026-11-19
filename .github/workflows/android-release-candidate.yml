@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Java 21 (Temurin)
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
@@ -32,10 +32,10 @@ jobs:
       - name: Prepare production environment and release signing
         env:
           ADISHOP_PUB_KEY: ${{ secrets.ADISHOP_SUPABASE_PUBLISHABLE_KEY }}
-          KEYSTORE_SECRET_B64: ${{ secrets.ADISCHAT_UPLOAD_KEYSTORE_BASE64 || secrets.ANDROID_KEYSTORE_BASE64 || secrets.UPLOAD_KEYSTORE_BASE64 || secrets.SIGNING_KEY }}
-          STORE_PASS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_STORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD || secrets.KEYSTORE_PASSWORD }}
-          KEY_PASS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_KEY_PASSWORD || secrets.ANDROID_KEY_PASSWORD || secrets.KEY_PASSWORD }}
-          KEY_ALIAS_SECRET: ${{ secrets.ADISCHAT_UPLOAD_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS || secrets.KEY_ALIAS }}
+          KEYSTORE_B64: ${{ secrets.ADISCHAT_UPLOAD_KEYSTORE_BASE64 }}
+          KEY_ALIAS: ${{ secrets.ADISCHAT_UPLOAD_KEY_ALIAS }}
+          STORE_PWD: ${{ secrets.ADISCHAT_UPLOAD_STORE_PASSWORD }}
+          KEY_PWD: ${{ secrets.ADISCHAT_UPLOAD_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           test -f android/app/google-services.json || { echo 'Production google-services.json is missing'; exit 1; }
@@ -46,24 +46,16 @@ jobs:
           mkdir -p android/app/keystore
           KEYSTORE_PATH="android/app/keystore/adischat-upload.jks"
 
-          if [ -n "$KEYSTORE_SECRET_B64" ]; then
-            echo "Keystore source: GitHub Actions Repository Secret"
-            printf '%s' "$KEYSTORE_SECRET_B64" | base64 -d > "$KEYSTORE_PATH"
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "Decoding release upload keystore..."
+            printf '%s' "$KEYSTORE_B64" | base64 -d > "$KEYSTORE_PATH"
           else
-            echo "Keystore source: Registered Official Upload Keystore"
-            printf '%s' "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" | base64 -d > "$KEYSTORE_PATH"
+            echo "ERROR: ADISCHAT_UPLOAD_KEYSTORE_BASE64 secret is not configured!"
+            exit 1
           fi
 
-          ALIAS="${KEY_ALIAS_SECRET:-upload}"
-          STORE_PWD="${STORE_PASS_SECRET:-pRbgHxsim+vhaFqD_DAUfpxvC673\$\$YX}"
-          KEY_PWD="${KEY_PASS_SECRET:-$STORE_PWD}"
-
-          cat <<EOF >> android/local.properties
-ADISCHAT_UPLOAD_STORE_FILE=keystore/adischat-upload.jks
-ADISCHAT_UPLOAD_KEY_ALIAS=$ALIAS
-ADISCHAT_UPLOAD_STORE_PASSWORD=$STORE_PWD
-ADISCHAT_UPLOAD_KEY_PASSWORD=$KEY_PWD
-EOF
+          ALIAS="${KEY_ALIAS:-upload}"
+          printf '\nADISCHAT_UPLOAD_STORE_FILE=keystore/adischat-upload.jks\nADISCHAT_UPLOAD_KEY_ALIAS=%s\nADISCHAT_UPLOAD_STORE_PASSWORD=%s\nADISCHAT_UPLOAD_KEY_PASSWORD=%s\n' "$ALIAS" "$STORE_PWD" "$KEY_PWD" >> android/local.properties
 
           echo "=== Keystore Preflight Certificate Check ==="
           keytool -list -v -keystore "$KEYSTORE_PATH" -alias "$ALIAS" -storepass "$STORE_PWD" | grep -E "Owner:|SHA1:|SHA256:"
@@ -75,6 +67,11 @@ EOF
 
       - name: Build Release Candidate AAB and APK
         working-directory: android
+        env:
+          ADISCHAT_UPLOAD_STORE_FILE: keystore/adischat-upload.jks
+          ADISCHAT_UPLOAD_KEY_ALIAS: ${{ secrets.ADISCHAT_UPLOAD_KEY_ALIAS }}
+          ADISCHAT_UPLOAD_STORE_PASSWORD: ${{ secrets.ADISCHAT_UPLOAD_STORE_PASSWORD }}
+          ADISCHAT_UPLOAD_KEY_PASSWORD: ${{ secrets.ADISCHAT_UPLOAD_KEY_PASSWORD }}
         run: |
           chmod +x ./gradlew
           if [ "${{ inputs.clean_build }}" = "true" ]; then
