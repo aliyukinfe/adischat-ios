@@ -1,5 +1,6 @@
 package com.adischat.app.feature.shop.presentation
 
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -249,8 +250,10 @@ internal fun MarketplaceVisualSearchScreen(
 
 @Composable
 private fun VisualSearchTopBar(title: String, onBack: () -> Unit) {
+    val sidebar = com.adischat.app.ui.home.LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 8.dp
     Surface(color = AdisGebeyaColors.Surface, border = BorderStroke(1.dp, AdisGebeyaColors.Border)) {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().height(62.dp).padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().statusBarsPadding().height(62.dp).padding(start = startPad, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = AdisGebeyaColors.PrimaryText) }
             Text(title, color = AdisGebeyaColors.PrimaryText, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
         }
@@ -319,36 +322,38 @@ private fun VisualSearchResults(
     onProduct: (ShopProductDto) -> Unit,
     onToggleFavorite: (ShopProductDto) -> Unit,
 ) {
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(54.dp), shape = RoundedCornerShape(12.dp), color = AdisGebeyaColors.SecondarySurface) {
-                source?.let { Image(it.asImageBitmap(), "Search source", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 8.dp) {
+        Column(Modifier.fillMaxSize()) {
+            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(Modifier.size(54.dp), shape = RoundedCornerShape(12.dp), color = AdisGebeyaColors.SecondarySurface) {
+                    source?.let { Image(it.asImageBitmap(), "Search source", Modifier.fillMaxSize(), contentScale = ContentScale.Crop) }
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Visual search", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.SemiBold)
+                    Text("${products.size} matching products", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+                }
+                OutlinedButton(onClick = onChangeImage) { Text("Change image") }
             }
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text("Visual search", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.SemiBold)
-                Text("${products.size} matching products", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+            LazyRow(contentPadding = PaddingValues(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                item { VisualControl("Categories") { onDiscovery(MarketplaceDiscoverySurface.Categories) } }
+                item { VisualControl("Filter") { onDiscovery(MarketplaceDiscoverySurface.Filters) } }
+                item { VisualControl("Sort") { onDiscovery(MarketplaceDiscoverySurface.Sort) } }
+                item { VisualControl("Price") { onDiscovery(MarketplaceDiscoverySurface.Price) } }
+                item { VisualControl("Rating") { onDiscovery(MarketplaceDiscoverySurface.Rating) } }
             }
-            OutlinedButton(onClick = onChangeImage) { Text("Change image") }
-        }
-        LazyRow(contentPadding = PaddingValues(horizontal = 10.dp), horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-            item { VisualControl("Categories") { onDiscovery(MarketplaceDiscoverySurface.Categories) } }
-            item { VisualControl("Filter") { onDiscovery(MarketplaceDiscoverySurface.Filters) } }
-            item { VisualControl("Sort") { onDiscovery(MarketplaceDiscoverySurface.Sort) } }
-            item { VisualControl("Price") { onDiscovery(MarketplaceDiscoverySurface.Price) } }
-            item { VisualControl("Rating") { onDiscovery(MarketplaceDiscoverySurface.Rating) } }
-        }
-        if (products.isEmpty()) {
-            VisualSearchMessage("No products match your filters", "Clear filters", onClearFilters)
-        } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(products, key = { it.id }) { product -> VisualResultCard(product, product.id in savedIds, { onProduct(product) }, { onToggleFavorite(product) }) }
+            if (products.isEmpty()) {
+                VisualSearchMessage("No products match your filters", "Clear filters", onClearFilters)
+            } else {
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(products, key = { it.id }) { product -> VisualResultCard(product, product.id in savedIds, { onProduct(product) }, { onToggleFavorite(product) }) }
+                }
             }
         }
     }

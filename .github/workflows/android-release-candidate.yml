@@ -127,3 +127,19 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload Native Debug Symbols Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adischat-release-native-debug-symbols
+          path: android/app/build/outputs/native-debug-symbols/release/*.zip
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload ProGuard R8 Mapping Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: adischat-release-r8-mapping
+          path: android/app/build/outputs/mapping/release/
+          if-no-files-found: ignore
+          retention-days: 7

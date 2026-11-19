@@ -56,13 +56,15 @@ internal fun ShopHomeBrowseScreen(
     onToggleFavorite: (ShopProductDto) -> Unit,
 ) {
     val products = homeBrowseProducts(section, state.products)
+    val sidebar = com.adischat.app.ui.home.LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 12.dp
     BoxWithConstraints(Modifier.fillMaxSize().background(AdisGebeyaHomeV2Colors.Background)) {
         val columns = if (maxWidth >= 600.dp) 3 else 2
         val cardWidth = (maxWidth - 24.dp - 8.dp * (columns - 1)) / columns
         val cardHeight = homeProductCardHeight(cardWidth, LocalDensity.current.fontScale)
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
-            contentPadding = PaddingValues(start = 12.dp, end = 12.dp, bottom = 16.dp),
+            contentPadding = PaddingValues(start = startPad, end = 12.dp, top = 4.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {

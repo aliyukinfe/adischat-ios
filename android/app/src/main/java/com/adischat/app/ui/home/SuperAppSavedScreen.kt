@@ -40,8 +40,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -53,15 +53,18 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.adischat.app.R
+import com.adischat.app.feature.shop.presentation.ShopViewModel
 
 /**
- * Saved item model representing local bookmarked items across services.
- * Purely local fixtures for QA preview — zero backend mutations.
+ * Saved item model representing saved products and items across services.
  */
 data class SavedItem(
     val id: String,
@@ -74,62 +77,9 @@ data class SavedItem(
     val badge: String? = null,
 )
 
-private val defaultSavedItems = listOf(
-    SavedItem(
-        id = "saved-1",
-        title = "Habesha Cultural Restaurant",
-        subtitle = "Authentic Injera, Kitfo & Cultural Ambience • Bole",
-        category = "Restaurants",
-        priceOrRating = "4.8 ★ (180+)",
-        imageUrl = "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=600&q=80",
-        targetService = SuperAppService.RESTAURANTS,
-        badge = "FAVORITE DINE-IN",
-    ),
-    SavedItem(
-        id = "saved-2",
-        title = "Addis Organic Wild Honey (500g)",
-        subtitle = "100% Raw Forest Honey • Green Addis Market",
-        category = "Products",
-        priceOrRating = "ETB 450",
-        imageUrl = "https://images.unsplash.com/photo-1587049352846-4a222e784d38?auto=format&fit=crop&w=600&q=80",
-        targetService = SuperAppService.ADISGEBEYA,
-        badge = "WISHLIST",
-    ),
-    SavedItem(
-        id = "saved-3",
-        title = "Welcome Voucher 15% OFF",
-        subtitle = "Save up to ETB 350 on first order • Code ADIS15",
-        category = "Deals",
-        priceOrRating = "15% DISCOUNT",
-        imageUrl = "https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?auto=format&fit=crop&w=600&q=80",
-        targetService = SuperAppService.PROMOTIONS,
-        badge = "ACTIVE CODE",
-    ),
-    SavedItem(
-        id = "saved-4",
-        title = "Traditional Handwoven Netela",
-        subtitle = "Pure Ethiopian Cotton & Hand-Embroidered Tibeb",
-        category = "Products",
-        priceOrRating = "ETB 850",
-        imageUrl = "https://images.unsplash.com/photo-1523381210434-271e8be1f52b?auto=format&fit=crop&w=600&q=80",
-        targetService = SuperAppService.ADISGEBEYA,
-        badge = "WISHLIST",
-    ),
-    SavedItem(
-        id = "saved-5",
-        title = "Addis Flame Grill & Steakhouse",
-        subtitle = "Prime cuts, burgers & sizzling ribs • Kazanchis",
-        category = "Restaurants",
-        priceOrRating = "4.7 ★ (95+)",
-        imageUrl = "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=600&q=80",
-        targetService = SuperAppService.RESTAURANTS,
-        badge = "RECOMMENDED",
-    ),
-)
-
 /**
  * SuperAppSavedScreen — Approved bottom tab destination for "Saved".
- * Displays local bookmarked products, favorite restaurants, and vouchers.
+ * Displays saved products, favorite restaurants, and vouchers.
  * Tapping the AdisChat logo returns to the unified Home promotional feed.
  */
 @Composable
@@ -146,11 +96,32 @@ fun SuperAppSavedScreen(
     val mutedColor = if (isLight) Color(0xFF64748B) else Color(0xFF94A3B8)
     val mintAccent = Color(0xFF34D399)
 
+    val shopVm: ShopViewModel = viewModel()
+    val protectedState by shopVm.protectedState.collectAsStateWithLifecycle()
+
+    LaunchedEffect(Unit) {
+        shopVm.loadFavorites()
+    }
+
     var selectedCategory by remember { mutableStateOf("All") }
     val categories = remember { listOf("All", "Products", "Restaurants", "Deals") }
 
-    val savedItems = remember { mutableStateListOf(*defaultSavedItems.toTypedArray()) }
-    val filteredItems = remember(selectedCategory, savedItems.size) {
+    val savedItems = remember(protectedState.favorites) {
+        protectedState.favorites.mapNotNull { fav ->
+            val p = fav.product ?: return@mapNotNull null
+            SavedItem(
+                id = fav.id.ifBlank { fav.productId },
+                title = p.title,
+                subtitle = p.store?.name ?: p.brand ?: "AdisGebeya",
+                category = "Products",
+                priceOrRating = if (p.priceMinor > 0) "ETB ${p.priceMinor / 100}" else "Free",
+                imageUrl = p.images?.firstOrNull()?.imageUrl ?: "",
+                targetService = SuperAppService.ADISGEBEYA,
+                badge = if ((p.discountPercent ?: 0) > 0) "${p.discountPercent}% OFF" else "SAVED",
+            )
+        }
+    }
+    val filteredItems = remember(selectedCategory, savedItems) {
         if (selectedCategory == "All") savedItems
         else savedItems.filter { it.category.equals(selectedCategory, ignoreCase = true) }
     }
@@ -232,34 +203,7 @@ fun SuperAppSavedScreen(
             }
         }
 
-        // 2. QA Notice Banner
-        Surface(
-            shape = RoundedCornerShape(0.dp),
-            color = Color(0xFFFEF3C7).copy(alpha = if (isLight) 0.9f else 0.15f),
-            border = BorderStroke(1.dp, Color(0xFFF59E0B).copy(alpha = 0.3f)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = null,
-                    tint = Color(0xFFD97706),
-                    modifier = Modifier.size(15.dp),
-                )
-                Text(
-                    text = "QA PREVIEW • Local bookmarks only. Zero backend mutations or charges.",
-                    color = if (isLight) Color(0xFF92400E) else Color(0xFFFCD34D),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-
-        // 3. Category Filter Chips
+        // 2. Category Filter Chips
         LazyRow(
             modifier = Modifier
                 .fillMaxWidth()
@@ -302,17 +246,65 @@ fun SuperAppSavedScreen(
         ) {
             if (filteredItems.isEmpty()) {
                 item {
-                    Box(
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = cardBg,
+                        border = BorderStroke(1.dp, cardBorder),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(top = 40.dp),
-                        contentAlignment = Alignment.Center,
+                            .padding(top = 24.dp),
                     ) {
-                        Text(
-                            text = "No saved items in this category.",
-                            color = mutedColor,
-                            fontSize = 13.sp,
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(14.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(mintAccent.copy(alpha = 0.12f)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Bookmark,
+                                    contentDescription = null,
+                                    tint = mintAccent,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                            }
+                            Text(
+                                text = "No saved items yet",
+                                color = textColor,
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = "Items and products you save while browsing will appear here.",
+                                color = mutedColor,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                lineHeight = 18.sp,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Button(
+                                onClick = { onNavigateService(SuperAppService.ADISGEBEYA) },
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = mintAccent,
+                                    contentColor = Color.Black,
+                                ),
+                                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
+                            ) {
+                                Text(
+                                    text = "Explore AdisGebeya",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.5.sp,
+                                )
+                            }
+                        }
                     }
                 }
             } else {

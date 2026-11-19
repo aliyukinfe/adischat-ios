@@ -96,6 +96,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
@@ -643,15 +644,40 @@ private fun ConversationsListScreen(
 
     val communityMode = activeTab != MessageTab.Chats
     val screenBg = if (isInDarkTheme) AdisBg else MaterialTheme.colorScheme.background
+    val isImeVisible = WindowInsets.isImeVisible
+    val focusManager = LocalFocusManager.current
+
+    BackHandler(enabled = activeSearch.isNotBlank()) {
+        if (isImeVisible) {
+            focusManager.clearFocus()
+        } else {
+            if (activeTab == MessageTab.Chats) {
+                searchQuery = ""
+                onChatQueryChange("")
+            } else {
+                onCommunityQueryChange("")
+            }
+        }
+    }
 
     Scaffold(
         containerColor = screenBg,
         snackbarHost = {
-        errorMsg?.let {
-        Snackbar(
-        action = { TextButton(onClick = onDismissError) { Text(tr("OK"), color = accent) } },
-        ) { Text(it) }
-        }
+            errorMsg?.let {
+                Snackbar(
+                    action = { TextButton(onClick = onDismissError) { Text(tr("OK"), color = accent) } },
+                ) { Text(it) }
+            }
+        },
+        bottomBar = {
+            TabDock(
+                activeTab   = activeTab,
+                onTabChange = { activeTab = it },
+                accent      = accent,
+                chatBadge    = chatUnread,
+                channelBadge = channelUnread,
+                groupBadge   = groupUnread,
+            )
         },
     ) { innerPadding ->
         PullToRefreshBox(
@@ -659,7 +685,7 @@ private fun ConversationsListScreen(
         onRefresh    = onRefresh,
         modifier     = Modifier.fillMaxSize().padding(innerPadding),
         ) {
-        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        Column(Modifier.fillMaxSize()) {
 
         ListScreenHeader(
         title = listTitle,
@@ -703,7 +729,7 @@ private fun ConversationsListScreen(
         else ->
         LazyColumn(
         modifier       = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(top = 4.dp, bottom = 92.dp),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 16.dp),
         ) {
         // Payments channel entry (all transaction notifications live here)
         // Hidden while the wallet feature is paused.
@@ -777,16 +803,6 @@ private fun ConversationsListScreen(
         }
         }
         }
-
-        TabDock(
-        activeTab   = activeTab,
-        onTabChange = { activeTab = it },
-        accent      = accent,
-        chatBadge    = chatUnread,
-        channelBadge = channelUnread,
-        groupBadge   = groupUnread,
-        modifier    = Modifier.align(Alignment.BottomCenter),
-        )
         }
     }
 }
@@ -863,6 +879,7 @@ private fun ListScreenHeader(
 private fun ChatSearchBar(value: String, onValueChange: (String) -> Unit, placeholder: String, accent: Color = brandAccent) {
     val sidebar = LocalSidebarBounds.current
     val startPad = if (sidebar != null) 60.dp else 20.dp
+    val focusManager = LocalFocusManager.current
     Surface(
         modifier = Modifier
         .fillMaxWidth()
@@ -889,6 +906,8 @@ private fun ChatSearchBar(value: String, onValueChange: (String) -> Unit, placeh
         value = value,
         onValueChange = onValueChange,
         singleLine = true,
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
         textStyle = TextStyle(
         color = MaterialTheme.colorScheme.onSurface,
         fontSize = 14.sp,
@@ -1614,7 +1633,7 @@ private fun CommunityListPanel(
 
     if (rooms.isEmpty()) {
         Box(
-        modifier      = Modifier.fillMaxSize().padding(bottom = 96.dp),
+        modifier      = Modifier.fillMaxSize().padding(bottom = 16.dp),
         contentAlignment = Alignment.Center,
         ) {
         Column(
@@ -1664,7 +1683,7 @@ private fun CommunityListPanel(
     }
     LazyColumn(
         modifier       = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 10.dp, bottom = 112.dp),
+        contentPadding = PaddingValues(start = 0.dp, end = 0.dp, top = 10.dp, bottom = 16.dp),
     ) {
         items(sorted, key = { it.id }) { room ->
         PremiumCommunityRow(room = room, onOpen = { onOpen(room) }, onJoin = { onJoin(room) }, accent = accent)
@@ -1924,27 +1943,20 @@ private fun TabDock(
     groupBadge   : Int = 0,
     modifier   : Modifier = Modifier,
 ) {
-    Box(
+    Surface(
         modifier = modifier
-        .fillMaxWidth()
-        .navigationBarsPadding()
-        .padding(start = 16.dp, end = 16.dp, bottom = 0.dp),
-        contentAlignment = Alignment.BottomCenter,
-    ) {
-        Surface(
-        modifier = Modifier
-        .fillMaxWidth()
-        .shadow(18.dp, RoundedCornerShape(28.dp), ambientColor = Color.Black.copy(alpha = 0.40f), spotColor = Color.Black.copy(alpha = 0.28f)),
-        shape = RoundedCornerShape(26.dp),
+            .fillMaxWidth()
+            .navigationBarsPadding(),
+        shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         color = AdisSurface,
         border = BorderStroke(1.dp, AdisBorder),
         tonalElevation = 0.dp,
-        ) {
+    ) {
         Row(
         modifier = Modifier
         .fillMaxWidth()
-        .height(64.dp)
-        .padding(horizontal = 10.dp, vertical = 5.dp),
+        .height(58.dp)
+        .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -1993,7 +2005,6 @@ private fun TabDock(
         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
         color = if (active) accent else AdisTextSec.copy(alpha = 0.7f),
         )
-        }
         }
         }
         }

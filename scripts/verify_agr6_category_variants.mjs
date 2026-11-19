@@ -779,10 +779,10 @@ test('ShopViewModel.kt selectedSellerProductStore safely resolves active store f
   assert.ok(code.includes('uploadSellerProductMediaBatch'));
 });
 
-test('build.gradle version is incremented to 128 (1.0.128)', () => {
+test('build.gradle version is incremented to 129 (1.0.129)', () => {
   const gradle = fs.readFileSync(path.join(REPO_ROOT, 'android/app/build.gradle'), 'utf8');
-  assert.ok(gradle.includes('versionCode 128'));
-  assert.ok(gradle.includes('versionName "1.0.128"'));
+  assert.ok(gradle.includes('versionCode 129'));
+  assert.ok(gradle.includes('versionName "1.0.129"'));
 });
 
 console.log('\n--- 8. AG-R6.8 Category Hierarchy & Product-Specific Attributes Tests ---');

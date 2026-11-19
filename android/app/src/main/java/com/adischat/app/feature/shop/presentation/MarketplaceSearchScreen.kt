@@ -1,5 +1,16 @@
 package com.adischat.app.feature.shop.presentation
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
+import com.adischat.app.ui.home.AdaptiveFlowAround
+import com.adischat.app.ui.home.LocalSidebarBounds
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +28,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
@@ -73,10 +85,31 @@ internal fun MarketplaceSearchScreen(
     val active = searchState.key == key
     val results = if (active) searchState.products else emptyList()
     val listState = rememberLazyListState()
+    val focusRequester = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
     var previousKey by remember { mutableStateOf(key) }
+
+    val isImeVisible = WindowInsets.isImeVisible
+
+    BackHandler {
+        if (isImeVisible) {
+            focusManager.clearFocus()
+        } else if (query.isNotEmpty()) {
+            query = ""
+            onClearSearch()
+        } else {
+            onBack()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        if (query.isEmpty()) {
+            focusRequester.requestFocus()
+        }
+    }
+
     LaunchedEffect(key) {
         if (previousKey != key) {
-            listState.scrollToItem(0)
             previousKey = key
         }
         if (term.length < 2) onClearSearch()
@@ -93,49 +126,66 @@ internal fun MarketplaceSearchScreen(
         }
     }
 
-    LazyColumn(
-        state = listState,
+    Column(
         modifier = Modifier.fillMaxSize().background(AdisGebeyaColors.Background),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = AdisGebeyaColors.PrimaryText)
-                }
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    placeholder = { Text("Search products or brands", color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = AdisGebeyaColors.SecondaryText) },
-                    shape = RoundedCornerShape(15.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedContainerColor = AdisGebeyaColors.SecondarySurface,
-                        unfocusedContainerColor = AdisGebeyaColors.SecondarySurface,
-                        focusedBorderColor = AdisGebeyaColors.Primary,
-                        unfocusedBorderColor = AdisGebeyaColors.Divider,
-                        focusedTextColor = AdisGebeyaColors.PrimaryText,
-                        unfocusedTextColor = AdisGebeyaColors.PrimaryText,
-                        cursorColor = AdisGebeyaColors.Primary,
-                    ),
-                )
+        val sidebar = LocalSidebarBounds.current
+        val startPad = if (sidebar != null) 60.dp else 8.dp
+        Row(
+            Modifier.fillMaxWidth().padding(start = startPad, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = AdisGebeyaColors.PrimaryText)
             }
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                modifier = Modifier
+                    .weight(1f)
+                    .focusRequester(focusRequester),
+                singleLine = true,
+                placeholder = { Text("Search products or brands", color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = AdisGebeyaColors.SecondaryText) },
+                trailingIcon = {
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = ""; onClearSearch() }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = AdisGebeyaColors.SecondaryText)
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { focusManager.clearFocus() }),
+                shape = RoundedCornerShape(15.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedContainerColor = AdisGebeyaColors.SecondarySurface,
+                    unfocusedContainerColor = AdisGebeyaColors.SecondarySurface,
+                    focusedBorderColor = AdisGebeyaColors.Primary,
+                    unfocusedBorderColor = AdisGebeyaColors.Divider,
+                    focusedTextColor = AdisGebeyaColors.PrimaryText,
+                    unfocusedTextColor = AdisGebeyaColors.PrimaryText,
+                    cursorColor = AdisGebeyaColors.Primary,
+                ),
+            )
         }
+
+        LazyColumn(
+            state = listState,
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
         if (query.isBlank()) {
-            if (loading && categories.isEmpty()) item { SkeletonCard() }
+            if (loading && categories.isEmpty()) item { AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) { SkeletonCard() } }
             if (categories.isNotEmpty()) {
                 item {
-                    SearchSection("Browse categories") {
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            items(categories, key = { it.id }) { category ->
-                                SearchChip(category.name, false) { onCategory(category) }
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        SearchSection("Browse categories") {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                items(categories, key = { it.id }) { category ->
+                                    SearchChip(category.name, false) { onCategory(category) }
+                                }
                             }
                         }
                     }
@@ -143,61 +193,73 @@ internal fun MarketplaceSearchScreen(
             }
             if (recentlyViewed.isNotEmpty()) {
                 item {
-                    Column(Modifier.padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Recently viewed", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
-                        ProductGridSection(null, recentlyViewed, onProduct, onToggleFavorite, savedIds, maxItems = 6)
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Column(Modifier.padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Recently viewed", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                            ProductGridSection(null, recentlyViewed, onProduct, onToggleFavorite, savedIds, maxItems = 6)
+                        }
                     }
                 }
             }
             if (categories.isEmpty() && recentlyViewed.isEmpty() && !loading) {
-                item { PremiumEmptyState("Start searching", "Find products, stores and categories in AdisGebeya.", Icons.Default.Search, Modifier.padding(horizontal = 16.dp)) }
+                item { AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) { PremiumEmptyState("Start searching", "Find products, stores and categories in AdisGebeya.", Icons.Default.Search, Modifier.padding(horizontal = 16.dp)) } }
             }
         } else if (term.length < 2) {
             item {
-                PremiumEmptyState(
-                    "Keep typing",
-                    "Enter at least two letters or numbers to search products.",
-                    Icons.Default.Search,
-                    Modifier.padding(horizontal = 16.dp),
-                )
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    PremiumEmptyState(
+                        "Keep typing",
+                        "Enter at least two letters or numbers to search products.",
+                        Icons.Default.Search,
+                        Modifier.padding(horizontal = 16.dp),
+                    )
+                }
             }
         } else {
             item {
-                Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        if (!active || searchState.loading && !searchState.loaded) "Searching..." else buyerSearchCountLabel(results.size),
-                        color = AdisGebeyaColors.PrimaryText,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                    )
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(BuyerSearchSort.entries) { option -> SearchChip(option.label, sort == option) { sort = option } }
-                        item { SearchChip("In stock", inStockOnly) { inStockOnly = !inStockOnly } }
-                    }
-                    if (categories.isNotEmpty()) {
+                AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                    Column(Modifier.padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text(
+                            if (!active || searchState.loading && !searchState.loaded) "Searching..." else buyerSearchCountLabel(results.size),
+                            color = AdisGebeyaColors.PrimaryText,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium,
+                        )
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            item { SearchChip("All", categorySlug == null) { categorySlug = null } }
-                            items(categories, key = { it.id }) { category ->
-                                SearchChip(category.name, categorySlug == category.slug) { categorySlug = category.slug }
+                            items(BuyerSearchSort.entries) { option -> SearchChip(option.label, sort == option) { sort = option } }
+                            item { SearchChip("In stock", inStockOnly) { inStockOnly = !inStockOnly } }
+                        }
+                        if (categories.isNotEmpty()) {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                item { SearchChip("All", categorySlug == null) { categorySlug = null } }
+                                items(categories, key = { it.id }) { category ->
+                                    SearchChip(category.name, categorySlug == category.slug) { categorySlug = category.slug }
+                                }
                             }
                         }
                     }
                 }
             }
             when {
-                !active || searchState.loading && !searchState.loaded -> items(2) { SkeletonCard() }
+                !active || searchState.loading && !searchState.loaded -> items(2) { AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) { SkeletonCard() } }
                 searchState.error != null && results.isEmpty() -> item {
-                    SearchRetry(searchState.error, onRetry)
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        SearchRetry(searchState.error, onRetry)
+                    }
                 }
                 results.isEmpty() -> item {
-                    PremiumEmptyState("No products found", "Try another search or remove a filter.", Icons.Default.Search, Modifier.padding(horizontal = 16.dp))
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        PremiumEmptyState("No products found", "Try another search or remove a filter.", Icons.Default.Search, Modifier.padding(horizontal = 16.dp))
+                    }
                 }
                 else -> {
                     items(results.chunked(2), key = { "search-${it.first().id}" }) { row ->
-                        SearchProductRow(row, savedIds, onProduct, onToggleFavorite)
+                        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                            SearchProductRow(row, savedIds, onProduct, onToggleFavorite)
+                        }
                     }
-                    if (searchState.loading) item { SkeletonCard() }
-                    searchState.error?.let { error -> item { SearchRetry(error, onRetry) } }
+                    if (searchState.loading) item { AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) { SkeletonCard() } }
+                    searchState.error?.let { error -> item { AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) { SearchRetry(error, onRetry) } } }
                 }
             }
         }

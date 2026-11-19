@@ -1,5 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
+import com.adischat.app.ui.home.AdaptiveFlowAround
+import com.adischat.app.ui.home.LocalSidebarBounds
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -169,7 +171,9 @@ internal fun SellerOrderDetailPage(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val sidebar = LocalSidebarBounds.current
+            val startPad = if (sidebar != null) 60.dp else 8.dp
+            Row(Modifier.fillMaxWidth().padding(start = startPad, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back to seller orders") }
                 Column {
                     Text("Seller Order Details", color = AdisGebeyaColors.PrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
@@ -178,7 +182,9 @@ internal fun SellerOrderDetailPage(
             }
         }
         item {
-            SellerOrderGroupCard(group, busy, onSellerAction, onDeadlineReached)
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 14.dp) {
+                SellerOrderGroupCard(group, busy, onSellerAction, onDeadlineReached)
+            }
         }
     }
 }
@@ -253,7 +259,9 @@ internal fun ShopTrackingScreen(
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val sidebar = LocalSidebarBounds.current
+            val startPad = if (sidebar != null) 60.dp else 8.dp
+            Row(Modifier.fillMaxWidth().padding(start = startPad, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Back to order details") }
                 Column {
                     Text("Order Tracking", color = AdisGebeyaColors.PrimaryText, fontSize = 23.sp, fontWeight = FontWeight.SemiBold)
@@ -262,49 +270,49 @@ internal fun ShopTrackingScreen(
             }
         }
         item {
-            Card(
-                colors = CardDefaults.cardColors(Color(0xFFF1F0FF)),
-                shape = RoundedCornerShape(14.dp),
-                border = BorderStroke(1.dp, Color(0xFFC7C4F2)),
-            ) {
-                Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                    Text("Current status", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
-                    Text(
-                        marketplaceStatusLabel(latest?.nextStatus ?: latest?.status ?: order.fulfillmentStatus ?: order.status),
-                        color = Color(0xFF1E1B4B),
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    latest?.publicMessage?.takeIf(String::isNotBlank)?.let {
-                        Text(it, color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp)
-                    }
-                    Text(buyerTrackingMessage(order), color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp)
-                }
-            }
-        }
-        item { BuyerDeliveryCodeSection(order, deliveryCode, codeBusy, onRevealCode) }
-        if (BuyerCancellationFlag.enabled && buyerCancellationEligible(order)) {
-            item { TextButton(onClick = { confirmCancellation = true }) { Text("Cancel order") } }
-        }
-        order.groups.orEmpty().filter { it.sellerResponseStatus == "pending" }.forEach { group ->
-            item { SellerResponseDeadlineCard(group, SellerResponseAudience.BUYER, onRefresh) }
-        }
-        if (events.isEmpty()) {
-            item {
-                Card(colors = CardDefaults.cardColors(AdisGebeyaColors.Surface), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, AdisGebeyaColors.Border)) {
-                    Text("No tracking events have been recorded yet.", modifier = Modifier.padding(18.dp), color = AdisGebeyaColors.SecondaryText)
-                }
-            }
-        } else {
-            item {
-                Card(colors = CardDefaults.cardColors(AdisGebeyaColors.Surface), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, AdisGebeyaColors.Border)) {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        events.forEachIndexed { index, event ->
-                            TrackingTimelineRow(
-                                event = event,
-                                current = index == events.lastIndex,
-                                showConnector = index < events.lastIndex,
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 14.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Card(
+                        colors = CardDefaults.cardColors(Color(0xFFF1F0FF)),
+                        shape = RoundedCornerShape(14.dp),
+                        border = BorderStroke(1.dp, Color(0xFFC7C4F2)),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("Current status", color = AdisGebeyaColors.SecondaryText, fontSize = 12.sp)
+                            Text(
+                                marketplaceStatusLabel(latest?.nextStatus ?: latest?.status ?: order.fulfillmentStatus ?: order.status),
+                                color = Color(0xFF1E1B4B),
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.SemiBold,
                             )
+                            latest?.publicMessage?.takeIf(String::isNotBlank)?.let {
+                                Text(it, color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp)
+                            }
+                            Text(buyerTrackingMessage(order), color = AdisGebeyaColors.SecondaryText, fontSize = 13.sp)
+                        }
+                    }
+                    BuyerDeliveryCodeSection(order, deliveryCode, codeBusy, onRevealCode)
+                    if (BuyerCancellationFlag.enabled && buyerCancellationEligible(order)) {
+                        TextButton(onClick = { confirmCancellation = true }) { Text("Cancel order") }
+                    }
+                    order.groups.orEmpty().filter { it.sellerResponseStatus == "pending" }.forEach { group ->
+                        SellerResponseDeadlineCard(group, SellerResponseAudience.BUYER, onRefresh)
+                    }
+                    if (events.isEmpty()) {
+                        Card(colors = CardDefaults.cardColors(AdisGebeyaColors.Surface), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, AdisGebeyaColors.Border)) {
+                            Text("No tracking events have been recorded yet.", modifier = Modifier.padding(18.dp), color = AdisGebeyaColors.SecondaryText)
+                        }
+                    } else {
+                        Card(colors = CardDefaults.cardColors(AdisGebeyaColors.Surface), shape = RoundedCornerShape(14.dp), border = BorderStroke(1.dp, AdisGebeyaColors.Border)) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                events.forEachIndexed { index, event ->
+                                    TrackingTimelineRow(
+                                        event = event,
+                                        current = index == events.lastIndex,
+                                        showConnector = index < events.lastIndex,
+                                    )
+                                }
+                            }
                         }
                     }
                 }

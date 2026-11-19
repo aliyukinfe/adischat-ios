@@ -1488,19 +1488,21 @@ private fun CategoryProductsScreen(
             )
         }
         item {
-            CategoryBreadcrumbsTrail(
-                category = activeCategory,
-                categories = fullCategories,
-                onSelect = { activeCategory = it },
-            )
-        }
-        item { PageTitle(activeCategory.name, "${products.size} products available") }
-        if (childCategories.isNotEmpty()) {
-            item { SubcategoryIconCards(childCategories) { activeCategory = it } }
-        }
-        item {
-            if (products.isEmpty()) EmptyCard("No products available in this category yet.")
-            else ProductGridSection("Products", products, onProduct, onToggleFavorite, protectedState.favorites.map { it.productId }.toSet(), maxItems = Int.MAX_VALUE)
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    CategoryBreadcrumbsTrail(
+                        category = activeCategory,
+                        categories = fullCategories,
+                        onSelect = { activeCategory = it },
+                    )
+                    PageTitle(activeCategory.name, "${products.size} products available")
+                    if (childCategories.isNotEmpty()) {
+                        SubcategoryIconCards(childCategories) { activeCategory = it }
+                    }
+                    if (products.isEmpty()) EmptyCard("No products available in this category yet.")
+                    else ProductGridSection("Products", products, onProduct, onToggleFavorite, protectedState.favorites.map { it.productId }.toSet(), maxItems = Int.MAX_VALUE)
+                }
+            }
         }
     }
 }
@@ -3757,11 +3759,14 @@ internal fun ShopHeader(
     onFilter: () -> Unit = {},
     activeFilterCount: Int = 0,
 ) {
+    val sidebar = com.adischat.app.ui.home.LocalSidebarBounds.current
+    val startPad = if (sidebar != null) 60.dp else 8.dp
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
     Surface(color = ShopBg.copy(alpha = .96f), tonalElevation = 0.dp) {
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 4.dp, bottom = 8.dp),
+                .padding(start = startPad, end = 8.dp, top = 4.dp, bottom = 8.dp),
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -3784,6 +3789,8 @@ internal fun ShopHeader(
                         value = query,
                         onValueChange = onQuery,
                         singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { focusManager.clearFocus() }),
                         textStyle = androidx.compose.ui.text.TextStyle(color = ShopInk, fontSize = 13.sp, fontWeight = FontWeight.Medium),
                         modifier = Modifier.weight(1f),
                         decorationBox = { inner ->
@@ -6223,15 +6230,19 @@ internal fun ProtectedPage(
         if (showHeader) {
             stickyHeader { ShopHeader(cartCount = cartCount, onBack = onBack, onCart = {}) }
         }
-        item { PageTitle(title, "") }
-        if (protectedState.loading) {
-            item { SkeletonCard() }
-        }
-        protectedState.error?.let { message ->
-            item { EmptyCard("Couldn't load this page. Check your connection and try again.") }
-        }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    PageTitle(title, "")
+                    if (protectedState.loading) {
+                        SkeletonCard()
+                    }
+                    protectedState.error?.let { message ->
+                        EmptyCard("Couldn't load this page. Check your connection and try again.")
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
+                }
+            }
         }
     }
 }
@@ -6240,10 +6251,12 @@ internal fun ProtectedPage(
 private fun PlaceholderShopPage(title: String, message: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize().background(ShopBg).statusBarsPadding().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         ShopHeader(cartCount = 0, onBack = onBack, onCart = {})
-        Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(ShopSurface)) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(title, color = ShopInk, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                Text(message, color = ShopMuted, lineHeight = 20.sp)
+        AdaptiveFlowAround(besideStart = 60.dp, belowStart = 16.dp) {
+            Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(ShopSurface)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(title, color = ShopInk, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+                    Text(message, color = ShopMuted, lineHeight = 20.sp)
+                }
             }
         }
     }

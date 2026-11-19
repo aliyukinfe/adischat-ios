@@ -1,5 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
+import com.adischat.app.ui.home.AdaptiveFlowAround
+import com.adischat.app.ui.home.LocalSidebarBounds
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -77,7 +79,9 @@ internal fun BuyerReviewsScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            val sidebar = LocalSidebarBounds.current
+            val startPad = if (sidebar != null) 60.dp else 0.dp
+            Row(Modifier.fillMaxWidth().padding(start = startPad), verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = onBack) {
                     Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to account")
                 }
@@ -96,41 +100,55 @@ internal fun BuyerReviewsScreen(
             }
         } else {
             if (eligibleOrders.isNotEmpty()) {
-                item { Text("Ready to review", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Text("Ready to review", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
                 items(eligibleOrders, key = { "eligible-${it.id}" }) { order ->
-                    ReviewOrderCard(order, onOrder)
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        ReviewOrderCard(order, onOrder)
+                    }
                 }
             }
             if (reviewItems.isNotEmpty()) {
-                item { Text("Your feedback", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold) }
+                item {
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Text("Your feedback", color = AdisGebeyaColors.PrimaryText, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
                 items(reviewItems, key = { "${it.type}-${it.review.id}" }) { item ->
-                    SubmittedReviewCard(item)
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        SubmittedReviewCard(item)
+                    }
                 }
             }
             if (eligibleOrders.isEmpty() && reviewItems.isEmpty()) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(AdisGebeyaColors.Surface),
-                        shape = RoundedCornerShape(14.dp),
-                        border = BorderStroke(1.dp, AdisGebeyaColors.Border),
-                    ) {
-                        Column(
-                            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                    AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
+                        Card(
+                            colors = CardDefaults.cardColors(AdisGebeyaColors.Surface),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, AdisGebeyaColors.Border),
                         ) {
-                            Icon(
-                                Icons.Default.RateReview,
-                                contentDescription = null,
-                                tint = AdisGebeyaColors.Primary,
-                                modifier = Modifier.size(30.dp),
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Text("No reviews yet", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                "Eligible completed purchases will appear here.",
-                                color = AdisGebeyaColors.SecondaryText,
-                                fontSize = 13.sp,
-                            )
+                            Column(
+                                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                            ) {
+                                Icon(
+                                    Icons.Default.RateReview,
+                                    contentDescription = null,
+                                    tint = AdisGebeyaColors.Primary,
+                                    modifier = Modifier.size(30.dp),
+                                )
+                                Spacer(Modifier.height(12.dp))
+                                Text("No reviews yet", color = AdisGebeyaColors.PrimaryText, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Eligible completed purchases will appear here.",
+                                    color = AdisGebeyaColors.SecondaryText,
+                                    fontSize = 13.sp,
+                                )
+                            }
                         }
                     }
                 }

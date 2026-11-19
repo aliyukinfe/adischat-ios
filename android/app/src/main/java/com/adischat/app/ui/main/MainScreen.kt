@@ -46,6 +46,7 @@ import com.adischat.app.ui.UserViewModel
 import com.adischat.app.ui.admin.AdminScreen
 import com.adischat.app.ui.chat.ChatScreen
 import com.adischat.app.ui.discover.DiscoverScreen
+import com.adischat.app.ui.explore.ExploreNearbyScreen
 import com.adischat.app.feature.shop.presentation.SellerAccountRootScreen
 import com.adischat.app.feature.shop.presentation.AdisChatAccountIdentity
 import com.adischat.app.feature.shop.presentation.ShopRootScreen
@@ -505,7 +506,6 @@ fun MainScreen(
         val shouldShowCompactSidebar = FeatureFlags.SUPER_APP_HOME_ENABLED &&
             !isSellerCenter &&
             ((activeSidebarService != null && activeSidebarService != SuperAppService.HOME) || centerOverlayActive || sellerAccountOpen) &&
-            !keyboardOpen &&
             restaurantsQaRoute == null &&
             pendingRestaurantQrToken == null
 
@@ -673,64 +673,23 @@ fun MainScreen(
                                 onGoHome = onGoHome,
                                 onNavigateService = onSelectSidebarService,
                             )
-                            1 -> Column(modifier = Modifier.fillMaxSize()) {
-                                Surface(
-                                    color = if (lightMode) Color.White else Color(0xFF12151C),
-                                    tonalElevation = 2.dp,
-                                    shadowElevation = 4.dp,
-                                    border = BorderStroke(1.dp, if (lightMode) Color(0xFFE2E8F0) else Color(0xFF1F2530)),
-                                    modifier = Modifier.fillMaxWidth().statusBarsPadding(),
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                            modifier = Modifier.clickable(onClick = onGoHome),
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(48.dp)
-                                                    .clip(RoundedCornerShape(10.dp))
-                                                    .background(if (lightMode) Color(0xFFF1F5F9) else Color(0xFF1E2532)),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Home,
-                                                    contentDescription = "Return to Home",
-                                                    tint = Color(0xFF10B981),
-                                                    modifier = Modifier.size(20.dp),
-                                                )
-                                            }
-                                            Column {
-                                                Text(
-                                                    text = "Explore",
-                                                    style = MaterialTheme.typography.titleMedium.copy(
-                                                        fontSize = 16.sp,
-                                                        fontWeight = FontWeight.Bold,
-                                                        color = if (lightMode) Color(0xFF0F172A) else Color(0xFFF8FAFC),
-                                                    ),
-                                                )
-                                                Text(
-                                                    text = "Discover services",
-                                                    style = MaterialTheme.typography.labelSmall.copy(
-                                                        fontSize = 10.sp,
-                                                        color = if (lightMode) Color(0xFF64748B) else Color(0xFF94A3B8),
-                                                    ),
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                                Box(modifier = Modifier.weight(1f)) {
-                                    DiscoverScreen(onOpenUrl = onOpenUrl)
-                                }
-                            }
+                            1 -> ExploreNearbyScreen(
+                                onGoHome = onGoHome,
+                                onNavigateService = onSelectSidebarService,
+                                onNavigateRestaurant = { restaurantId ->
+                                    pendingHomeRestaurantId = restaurantId
+                                    onSelectSidebarService(SuperAppService.RESTAURANTS)
+                                },
+                                onNavigateStore = { store ->
+                                    shopRoute = ShopRoute.Store(store)
+                                    onSelectSidebarService(SuperAppService.ADISGEBEYA)
+                                },
+                                onNavigateCommunity = { room ->
+                                    pendingHomeChatTarget = HomeSearchTarget.Community(room)
+                                    onSelectSidebarService(SuperAppService.CHAT)
+                                },
+                                onOpenUrl = onOpenUrl,
+                            )
                             2 -> ScanScreen(
                                 prefs = prefs,
                                 onOpenUrl = onOpenUrl,
@@ -890,7 +849,23 @@ fun MainScreen(
                             },
                             onSelectSidebarService = onSelectSidebarService,
                         )
-                        1 -> DiscoverScreen(onOpenUrl = onOpenUrl)
+                        1 -> ExploreNearbyScreen(
+                            onGoHome = onGoHome,
+                            onNavigateService = onSelectSidebarService,
+                            onNavigateRestaurant = { restaurantId ->
+                                pendingHomeRestaurantId = restaurantId
+                                onSelectSidebarService(SuperAppService.RESTAURANTS)
+                            },
+                            onNavigateStore = { store ->
+                                shopRoute = ShopRoute.Store(store)
+                                onSelectSidebarService(SuperAppService.ADISGEBEYA)
+                            },
+                            onNavigateCommunity = { room ->
+                                pendingHomeChatTarget = HomeSearchTarget.Community(room)
+                                onSelectSidebarService(SuperAppService.CHAT)
+                            },
+                            onOpenUrl = onOpenUrl,
+                        )
                         2 -> ScanScreen(
                             prefs = prefs,
                             onOpenUrl = onOpenUrl,

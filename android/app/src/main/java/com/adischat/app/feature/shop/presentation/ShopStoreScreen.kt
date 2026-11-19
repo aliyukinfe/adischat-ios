@@ -1,6 +1,6 @@
 package com.adischat.app.feature.shop.presentation
 
-
+import com.adischat.app.ui.home.AdaptiveFlowAround
 import android.content.Intent
 import android.content.Context
 import android.graphics.Bitmap
@@ -250,87 +250,83 @@ internal fun StoreDetailsScreen(
     LazyColumn(Modifier.fillMaxSize().background(StoreBackground).statusBarsPadding().navigationBarsPadding(), contentPadding = PaddingValues(start = 10.dp, end = 10.dp, top = 8.dp, bottom = 18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             ShopHeader(cartCount = state.cartCount, onBack = onBack, onCart = onCart)
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
+            AdaptiveFlowAround(besideStart = 60.dp, belowStart = 10.dp) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(StoreGreenSoft), contentAlignment = Alignment.Center) {
-                        ShopAssetImage(store.coverUrl, store.name, Modifier.fillMaxSize(), iconSize = 64.dp)
-                    }
-                    Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)).background(StoreSoft), contentAlignment = Alignment.Center) {
-                            ShopAssetImage(store.logoUrl, store.name, Modifier.fillMaxSize(), iconSize = 34.dp)
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(store.name, color = StoreText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                if (store.approvalStatus.equals("approved", ignoreCase = true)) {
-                                    Spacer(Modifier.width(6.dp))
-                                    Icon(Icons.Default.Verified, contentDescription = "Approved store", tint = StoreGreen, modifier = Modifier.size(18.dp))
+                    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Box(Modifier.fillMaxWidth().height(112.dp).clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp)).background(StoreGreenSoft), contentAlignment = Alignment.Center) {
+                                ShopAssetImage(store.coverUrl, store.name, Modifier.fillMaxSize(), iconSize = 64.dp)
+                            }
+                            Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.size(58.dp).clip(RoundedCornerShape(14.dp)).background(StoreSoft), contentAlignment = Alignment.Center) {
+                                    ShopAssetImage(store.logoUrl, store.name, Modifier.fillMaxSize(), iconSize = 34.dp)
+                                }
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(store.name, color = StoreText, fontWeight = FontWeight.SemiBold, fontSize = 20.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (store.approvalStatus.equals("approved", ignoreCase = true)) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Icon(Icons.Default.Verified, contentDescription = "Approved store", tint = StoreGreen, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                    Text(
+                                        listOfNotNull(
+                                            store.category?.trim()?.takeIf(String::isNotEmpty),
+                                            store.city?.trim()?.takeIf(String::isNotEmpty),
+                                        ).joinToString(" • ").ifBlank { "Marketplace" },
+                                        color = StoreMuted,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                    )
                                 }
                             }
+                            if (!store.description.isNullOrBlank()) {
+                                Text(store.description, color = StoreMuted, lineHeight = 20.sp, modifier = Modifier.padding(horizontal = 16.dp))
+                            }
+                            Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                MiniStat("Products", storeProducts.size.toString())
+                                MiniStat("Rating", store.averageStoreRating?.let { "%.1f".format(it) } ?: "New")
+                                MiniStat("Sales", store.totalSales?.toString() ?: "New")
+                            }
                             Text(
-                                listOfNotNull(
-                                    store.category?.trim()?.takeIf(String::isNotEmpty),
-                                    store.city?.trim()?.takeIf(String::isNotEmpty),
-                                ).joinToString(" • ").ifBlank { "Marketplace" },
+                                "Joined ${formatMarketplaceDate(store.createdAt, "date unavailable")}",
                                 color = StoreMuted,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                             )
                         }
                     }
-                    if (!store.description.isNullOrBlank()) {
-                        Text(store.description, color = StoreMuted, lineHeight = 20.sp, modifier = Modifier.padding(horizontal = 16.dp))
-                    }
-                    Row(Modifier.padding(horizontal = 16.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MiniStat("Products", storeProducts.size.toString())
-                        MiniStat("Rating", store.averageStoreRating?.let { "%.1f".format(it) } ?: "New")
-                        MiniStat("Sales", store.totalSales?.toString() ?: "New")
-                    }
-                    Text(
-                        "Joined ${formatMarketplaceDate(store.createdAt, "date unavailable")}",
-                        color = StoreMuted,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        placeholder = { Text("Search in store") },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = shopOutlinedTextFieldColors(),
+                        singleLine = true,
                     )
-                }
-            }
-        }
-        item {
-            OutlinedTextField(
-                value = query,
-                onValueChange = { query = it },
-                placeholder = { Text("Search in store") },
-                modifier = Modifier.fillMaxWidth(),
-                colors = shopOutlinedTextFieldColors(),
-                singleLine = true,
-            )
-        }
-        item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(categories) { category ->
-                    FilterChipLike(category, selectedCategory == category) { selectedCategory = category }
-                }
-            }
-        }
-        item {
-            PremiumSectionHeader("Products", subtitle = "${filtered.size} available")
-            if (filtered.isEmpty()) {
-                EmptyCard("No products match this store filter.")
-            } else {
-                ProductGridSection("Available now", filtered, onProduct, onToggleFavorite, savedIds, maxItems = Int.MAX_VALUE)
-            }
-        }
-        item {
-            Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SectionTitle("Policies")
-                    Text("Orders use AdisGebeya checkout, protected seller fulfillment and customer delivery confirmation where available.", color = StoreMuted, lineHeight = 20.sp)
-                    storeProducts.firstOrNull()?.let {
-                        OutlinedButton(onClick = { onChatSeller(it) }, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
-                            Icon(Icons.Default.Message, contentDescription = null, tint = StoreGreen)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Chat with seller", color = StoreGreen, fontWeight = FontWeight.SemiBold)
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(categories) { category ->
+                            FilterChipLike(category, selectedCategory == category) { selectedCategory = category }
+                        }
+                    }
+                    PremiumSectionHeader("Products", subtitle = "${filtered.size} available")
+                    if (filtered.isEmpty()) {
+                        EmptyCard("No products match this store filter.")
+                    } else {
+                        ProductGridSection("Available now", filtered, onProduct, onToggleFavorite, savedIds, maxItems = Int.MAX_VALUE)
+                    }
+                    Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(StoreSurface), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            SectionTitle("Policies")
+                            Text("Orders use AdisGebeya checkout, protected seller fulfillment and customer delivery confirmation where available.", color = StoreMuted, lineHeight = 20.sp)
+                            storeProducts.firstOrNull()?.let {
+                                OutlinedButton(onClick = { onChatSeller(it) }, shape = RoundedCornerShape(16.dp), border = androidx.compose.foundation.BorderStroke(1.dp, StoreLine)) {
+                                    Icon(Icons.Default.Message, contentDescription = null, tint = StoreGreen)
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Chat with seller", color = StoreGreen, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
                         }
                     }
                 }

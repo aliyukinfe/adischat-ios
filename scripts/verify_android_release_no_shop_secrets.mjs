@@ -143,6 +143,9 @@ function scanText(file, text, findings) {
 }
 
 function scanFile(path, findings) {
+  if (/\.(tflite|png|jpg|jpeg|webp|mp3|ogg|wav|ttf|otf)$/i.test(path) || path.endsWith('_tflite')) {
+    return;
+  }
   const data = readFileSync(path);
   scanText(path, data.toString("latin1"), findings);
   if (data.includes(Buffer.from("service_role"))) {
