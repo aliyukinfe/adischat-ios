@@ -1278,12 +1278,22 @@ test('ShopScreen.kt CheckoutScreen implements compact address selection with sho
 
 test('ShopScreen.kt CheckoutScreen displays Telebirr and Chapa Coming Soon cards', () => {
   const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('Text("Payment & Vouchers"'));
+  assert.ok(code.includes('TelebirrLogo'));
+  assert.ok(code.includes('ChapaLogo'));
   assert.ok(code.includes('"Telebirr"'));
   assert.ok(code.includes('"Chapa"'));
   assert.ok(code.includes('"Coming Soon"'));
   assert.ok(code.includes('"Direct mobile wallet"'));
   assert.ok(code.includes('"Cards & Bank transfer"'));
   assert.ok(!code.includes('Cash on delivery (available)'));
+  // Ensure Store Voucher appears before Telebirr/Chapa in Payment & Vouchers
+  const paymentIdx = code.indexOf('Text("Payment & Vouchers"');
+  const voucherIdx = code.indexOf('Store Voucher', paymentIdx);
+  const telebirrIdx = code.indexOf('TelebirrLogo()', paymentIdx);
+  assert.ok(paymentIdx > 0);
+  assert.ok(voucherIdx > paymentIdx);
+  assert.ok(telebirrIdx > voucherIdx);
 });
 
 test('ShopScreen.kt CheckoutScreen preserves strict gating on canPlaceOrder without simulation', () => {
