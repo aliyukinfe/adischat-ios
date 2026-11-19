@@ -196,7 +196,7 @@ class RealHomeFeedCoordinator(
                 } else null
 
                 val adminPromo = adminPromotions.firstOrNull { it.targetType == "product" && it.targetId == prod.id && it.isActive }
-                val resolvedStoreName: String? = prod.storeId?.let { id: String -> storeMap[id]?.name }
+                val resolvedStoreName: String? = prod.store?.name ?: prod.store?.id?.let { storeMap[it]?.name }
 
                 cards.add(
                     RealFeedCard.ProductCard(
