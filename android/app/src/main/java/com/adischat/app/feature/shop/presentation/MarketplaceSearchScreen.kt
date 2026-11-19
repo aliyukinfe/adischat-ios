@@ -1,6 +1,7 @@
 package com.adischat.app.feature.shop.presentation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.text.KeyboardActions
@@ -60,6 +61,7 @@ import com.adischat.app.ui.theme.AdisGebeyaColors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MarketplaceSearchScreen(
     searchState: BuyerSearchState,
@@ -264,6 +266,7 @@ internal fun MarketplaceSearchScreen(
             }
         }
     }
+}
 }
 
 @Composable

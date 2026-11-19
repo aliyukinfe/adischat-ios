@@ -238,7 +238,7 @@ private enum class MessageTab { Chats, Channels, Groups }
 
 // ENTRY POINT
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     pendingAdisLink: AdisLinkTarget? = null,
