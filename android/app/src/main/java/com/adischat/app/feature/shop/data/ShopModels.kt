@@ -82,6 +82,7 @@ data class ShopProductStoreDto(
     val city: String? = null,
     @SerializedName("approval_status") val approvalStatus: String? = null,
     val status: String? = null,
+    @SerializedName("owner_profile_id") val ownerProfileId: String? = null,
     @SerializedName("average_store_rating") val averageStoreRating: Double? = null,
     @SerializedName("total_sales") val totalSales: Int? = null,
     @SerializedName("created_at") val createdAt: String? = null,

@@ -198,6 +198,7 @@ import com.adischat.app.feature.shop.data.ShopAdminStoreDetailDto
 import com.adischat.app.feature.shop.data.ShopAdminStoreDto
 import com.adischat.app.feature.shop.data.ShopCartDto
 import com.adischat.app.feature.shop.data.ShopCartItemDto
+import com.adischat.app.feature.shop.data.ShopCheckoutDto
 import com.adischat.app.feature.shop.data.ShopFavoriteDto
 import com.adischat.app.feature.shop.data.ShopHomeState
 import com.adischat.app.feature.shop.data.ShopIssueOptionsDto
@@ -3234,7 +3235,7 @@ internal fun AdminPromotionsManagementCard(
 
     val approvedProducts = products.filter { product ->
         val modStatus = product.moderationStatus.orEmpty().ifBlank { product.status.orEmpty() }
-        modStatus.lowercase() == "approved" || product.status.lowercase() == "active"
+        modStatus.lowercase() == "approved" || product.status?.lowercase() == "active"
     }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -4710,10 +4711,10 @@ private fun CheckoutScreen(
                 }
             }
             if (checkout == null) {
-                protectedState.error?.let {
+                protectedState.error?.let { err ->
                     item {
                         AdaptiveFlowAround(besideStart = 60.dp, belowStart = 12.dp) {
-                            ErrorCardMessage(it)
+                            ErrorCardMessage(err)
                         }
                     }
                 }
@@ -4891,7 +4892,7 @@ private fun CheckoutScreen(
                                                 )
                                             }
                                             Text(
-                                                formatEtb(item.totalPriceMinor),
+                                                formatEtb(item.quantity * item.unitPriceMinor),
                                                 color = ShopInk,
                                                 fontSize = 12.5.sp,
                                                 fontWeight = FontWeight.SemiBold,
