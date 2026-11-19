@@ -1692,69 +1692,74 @@ private fun PremiumCommunityRow(
         } else if (isEmpty()) append(preview)
     }
 
-    Row(
-        modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 10.dp, vertical = 3.dp)
-        .clip(RoundedCornerShape(20.dp))
-        .background(
-        if (isInDarkTheme) { if (unread) accent.copy(alpha = 0.10f) else AdisCard }
-        else MaterialTheme.colorScheme.surface,
-        )
-        .clickable { onOpen() }
-        .padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    AdaptiveFlowAround(
+        besideStart = 60.dp,
+        belowStart = 10.dp,
     ) {
-        Box(
-        modifier = Modifier.size(56.dp),
-        contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 3.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    if (isInDarkTheme) { if (unread) accent.copy(alpha = 0.10f) else AdisCard }
+                    else MaterialTheme.colorScheme.surface,
+                )
+                .clickable { onOpen() }
+                .padding(start = 12.dp, end = 14.dp, top = 11.dp, bottom = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-        ChatAvatar(room.photoUrl, initialsOf(room.name), 48.dp, accent)
-        }
-        Spacer(Modifier.width(13.dp))
+            Box(
+                modifier = Modifier.size(56.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                ChatAvatar(room.photoUrl, initialsOf(room.name), 48.dp, accent)
+            }
+            Spacer(Modifier.width(13.dp))
 
-        Column(Modifier.weight(1f)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-        text = room.name,
-        fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
-        fontSize = 16.sp,
-        color = MaterialTheme.colorScheme.onBackground,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.weight(1f, fill = false),
-        )
-        if (room.verified) {
-        Spacer(Modifier.width(5.dp))
-        ChannelVerifiedBadge(Modifier.size(18.dp))
-        }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-        text = metaText.ifBlank { preview },
-        fontSize = 13.sp,
-        fontWeight = if (unread) FontWeight.Medium else FontWeight.Normal,
-        color = if (unread && isInDarkTheme) AdisTextPri else secondary,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        )
-        }
-        Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = room.name,
+                        fontWeight = if (unread) FontWeight.Bold else FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (room.verified) {
+                        Spacer(Modifier.width(5.dp))
+                        ChannelVerifiedBadge(Modifier.size(18.dp))
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = metaText.ifBlank { preview },
+                    fontSize = 13.sp,
+                    fontWeight = if (unread) FontWeight.Medium else FontWeight.Normal,
+                    color = if (unread && isInDarkTheme) AdisTextPri else secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
 
-        Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
-        Text(
-        text = channelActivityTime(activityAt),
-        fontSize = 13.sp,
-        fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
-        color = if (unread) accent else MaterialTheme.colorScheme.onSurfaceVariant,
-        maxLines = 1,
-        )
-        Spacer(Modifier.height(7.dp))
-        when {
-        !room.joined -> ChannelNotificationStatus(muted = true, label = "Join", accent = accent, onClick = onJoin)
-        room.unreadCount > 0 -> UnreadPostBadge(count = room.unreadCount, accent = accent)
-        else -> ChannelNotificationStatus(muted = false, label = "On", accent = accent)
-        }
+            Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = channelActivityTime(activityAt),
+                    fontSize = 13.sp,
+                    fontWeight = if (unread) FontWeight.Bold else FontWeight.Medium,
+                    color = if (unread) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Spacer(Modifier.height(7.dp))
+                when {
+                    !room.joined -> ChannelNotificationStatus(muted = true, label = "Join", accent = accent, onClick = onJoin)
+                    room.unreadCount > 0 -> UnreadPostBadge(count = room.unreadCount, accent = accent)
+                    else -> ChannelNotificationStatus(muted = false, label = "On", accent = accent)
+                }
+            }
         }
     }
 }

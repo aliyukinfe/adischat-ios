@@ -1249,5 +1249,49 @@ test('agr7_2_admin_promotions_proposal.sql exists and contains administrative pr
   assert.ok(sql.includes('STATUS: BLOCKED PENDING SEPARATE ARCHITECT & SECURITY REVIEW'));
 });
 
+console.log('\n--- 13. Phase H3 — Adaptive Flow-Around UI Completion & Checkout Redesign Tests ---');
+
+test('AdaptiveFlowAround.kt calculates density-aware width and eliminates Float vs Dp comparison', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/home/AdaptiveFlowAround.kt'), 'utf8');
+  assert.ok(code.includes('LocalDensity.current'));
+  assert.ok(code.includes('sidebarBounds.width.toDp()'));
+  assert.ok(!code.includes('sidebarBounds.width > 70.dp'));
+});
+
+test('ChatScreen.kt wraps PremiumCommunityRow in AdaptiveFlowAround for channels and groups', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/ui/chat/ChatScreen.kt'), 'utf8');
+  assert.ok(code.includes('AdaptiveFlowAround'));
+  const rowIdx = code.indexOf('private fun PremiumCommunityRow(');
+  assert.ok(rowIdx > 0);
+  const rowDef = code.slice(rowIdx, rowIdx + 1500);
+  assert.ok(rowDef.includes('AdaptiveFlowAround('));
+  assert.ok(rowDef.includes('besideStart = 60.dp'));
+});
+
+test('ShopScreen.kt CheckoutScreen implements compact address selection with showAddressSelector', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('var showAddressSelector by remember { mutableStateOf(false) }'));
+  assert.ok(code.includes('showAddressSelector = !showAddressSelector'));
+  assert.ok(code.includes('if (showAddressSelector) "Done" else "Change"'));
+  assert.ok(code.includes('activeAddress.label.ifBlank'));
+});
+
+test('ShopScreen.kt CheckoutScreen displays Telebirr and Chapa Coming Soon cards', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('"Telebirr"'));
+  assert.ok(code.includes('"Chapa"'));
+  assert.ok(code.includes('"Coming Soon"'));
+  assert.ok(code.includes('"Direct mobile wallet"'));
+  assert.ok(code.includes('"Cards & Bank transfer"'));
+  assert.ok(!code.includes('Cash on delivery (available)'));
+});
+
+test('ShopScreen.kt CheckoutScreen preserves strict gating on canPlaceOrder without simulation', () => {
+  const code = fs.readFileSync(path.join(REPO_ROOT, 'android/app/src/main/java/com/adischat/app/feature/shop/presentation/ShopScreen.kt'), 'utf8');
+  assert.ok(code.includes('val canPlaceOrder = addressFlow.selectedAddressId.isNotBlank() &&'));
+  assert.ok(code.includes('(checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0) || (selectedPaymentMethod.isNotBlank() && eligiblePaymentMethods.any { it.code == selectedPaymentMethod }))'));
+  assert.ok(code.includes('enabled = canPlaceOrder'));
+});
+
 console.log(`\nVerification complete: ${passed}/${total} tests passed.`);
 if (passed !== total) process.exit(1);

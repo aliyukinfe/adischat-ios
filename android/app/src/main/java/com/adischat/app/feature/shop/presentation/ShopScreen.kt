@@ -4193,6 +4193,7 @@ private fun CheckoutScreen(
     var couponInput by remember { mutableStateOf("") }
     var voucherInput by remember { mutableStateOf("") }
     var couponExpanded by remember { mutableStateOf(!checkout?.couponCode.isNullOrBlank()) }
+    var showAddressSelector by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { onLoadAddresses() }
     LaunchedEffect(protectedState.addresses, checkout) {
         if (addressFlow.selectedAddressId.isBlank()) {
@@ -4230,33 +4231,113 @@ private fun CheckoutScreen(
         if (checkout != null) {
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Delivery address", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-                        if (protectedState.addresses.isEmpty()) {
-                            Text("Add a delivery address before confirming checkout.", color = ShopMuted, lineHeight = 20.sp)
-                        } else {
-                            protectedState.addresses.forEach { address ->
-                                val selected = addressFlow.selectedAddressId == address.id
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(if (selected) ShopGreenSoft else ShopSoft)
-                                        .clickable { addressFlow = addressFlow.select(address.id) }
-                                        .padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text("Delivery address", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            if (protectedState.addresses.isNotEmpty() && !addressFlow.formOpen) {
+                                TextButton(
+                                    onClick = { showAddressSelector = !showAddressSelector },
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
                                 ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(address.label.ifBlank { "Address" }, color = ShopInk, fontWeight = FontWeight.Medium)
-                                        Text("${address.recipientName} • ${address.phone}", color = ShopMuted, fontSize = 12.sp)
-                                        Text("${address.addressLine1}, ${address.city}", color = ShopMuted, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                    }
-                                    if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
+                                    Text(
+                                        if (showAddressSelector) "Done" else "Change",
+                                        color = ShopGreen,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                    )
                                 }
                             }
                         }
-                        if (!addressFlow.formOpen) {
-                            OutlinedButton(onClick = { addressFlow = addressFlow.open() }) { Text("Add delivery address") }
+                        if (protectedState.addresses.isEmpty()) {
+                            Text("Add a delivery address before confirming checkout.", color = ShopMuted, lineHeight = 18.sp, fontSize = 13.sp)
+                            if (!addressFlow.formOpen) {
+                                OutlinedButton(
+                                    onClick = { addressFlow = addressFlow.open() },
+                                    shape = RoundedCornerShape(10.dp),
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Add delivery address", fontSize = 13.sp)
+                                }
+                            }
+                        } else if (!showAddressSelector) {
+                            val activeAddress = protectedState.addresses.firstOrNull { it.id == addressFlow.selectedAddressId }
+                                ?: protectedState.addresses.firstOrNull { it.isDefault }
+                                ?: protectedState.addresses.first()
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(ShopSoft)
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    Icons.Default.LocationOn,
+                                    contentDescription = null,
+                                    tint = ShopGreen,
+                                    modifier = Modifier.size(22.dp),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(activeAddress.label.ifBlank { "Delivery Address" }, color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.5.sp)
+                                        if (activeAddress.isDefault) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(ShopGreenSoft)
+                                                    .padding(horizontal = 5.dp, vertical = 1.dp)
+                                            ) {
+                                                Text("Default", color = ShopGreen, fontSize = 9.5.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                    Text("${activeAddress.recipientName} • ${activeAddress.phone}", color = ShopMuted, fontSize = 12.sp)
+                                    Text("${activeAddress.addressLine1}, ${activeAddress.city}", color = ShopMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                protectedState.addresses.forEach { address ->
+                                    val selected = addressFlow.selectedAddressId == address.id
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(if (selected) ShopGreenSoft else ShopSoft)
+                                            .clickable {
+                                                addressFlow = addressFlow.select(address.id)
+                                                showAddressSelector = false
+                                            }
+                                            .padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(address.label.ifBlank { "Address" }, color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 13.sp)
+                                            Text("${address.recipientName} • ${address.phone}", color = ShopMuted, fontSize = 11.5.sp)
+                                            Text("${address.addressLine1}, ${address.city}", color = ShopMuted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(18.dp))
+                                    }
+                                }
+                                if (!addressFlow.formOpen) {
+                                    OutlinedButton(
+                                        onClick = { addressFlow = addressFlow.open() },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(Modifier.width(6.dp))
+                                        Text("Add new address", fontSize = 13.sp)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -4427,8 +4508,8 @@ private fun CheckoutScreen(
             }
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 17.sp)
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Order summary", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         InfoRow("Subtotal", formatEtb(checkout.subtotalMinor))
                         if (checkout.couponDiscountMinor > 0) {
                             InfoRow("Coupon discount (${checkout.couponCode.orEmpty()})", "- " + formatEtb(checkout.couponDiscountMinor))
@@ -4445,19 +4526,19 @@ private fun CheckoutScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(ShopGreenSoft)
-                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                                .padding(horizontal = 10.dp, vertical = 7.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Total payable", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            Text(formatEtb(payableMinor), color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Total payable", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                            Text(formatEtb(payableMinor), color = ShopGreen, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                         if (checkout.isFullyCoveredByVoucher || (payableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
                             Row(
-                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 6.dp),
+                                Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(ShopGreenSoft).padding(horizontal = 10.dp, vertical = 5.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(15.dp))
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(14.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("100% Covered by Voucher — No payment due", color = ShopGreen, fontWeight = FontWeight.SemiBold, fontSize = 11.5.sp)
                             }
@@ -4477,8 +4558,8 @@ private fun CheckoutScreen(
             }
             item {
                 Card(shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Payment method", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Payment method", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                         if (checkout.isFullyCoveredByVoucher || (checkout.remainingPayableMinor == 0 && checkout.voucherAppliedMinor > 0)) {
                             Row(
                                 Modifier
@@ -4489,7 +4570,7 @@ private fun CheckoutScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text("Prepaid Store Voucher", color = ShopInk, fontWeight = FontWeight.Medium)
+                                    Text("Prepaid Store Voucher", color = ShopInk, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                                     Text("Order will be confirmed automatically with zero additional charge.", color = ShopMuted, fontSize = 12.sp)
                                 }
                                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
@@ -4510,6 +4591,72 @@ private fun CheckoutScreen(
                                 ) {
                                     Text(method.label, color = ShopInk, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
                                     if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = ShopGreen)
+                                }
+                            }
+                        }
+
+                        // Upcoming online payment options (Telebirr & Chapa)
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("Upcoming online payment options", color = ShopMuted, fontSize = 11.5.sp, fontWeight = FontWeight.Medium)
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                // Telebirr Card (Coming Soon)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(ShopSoft)
+                                        .border(1.dp, ShopLine, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Telebirr", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(ShopLine)
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text("Coming Soon", color = ShopMuted, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                            }
+                                        }
+                                        Text("Direct mobile wallet", color = ShopMuted, fontSize = 10.5.sp)
+                                    }
+                                }
+                                // Chapa Card (Coming Soon)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(ShopSoft)
+                                        .border(1.dp, ShopLine, RoundedCornerShape(10.dp))
+                                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                                ) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text("Chapa", color = ShopInk, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(ShopLine)
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text("Coming Soon", color = ShopMuted, fontSize = 9.sp, fontWeight = FontWeight.Medium)
+                                            }
+                                        }
+                                        Text("Cards & Bank transfer", color = ShopMuted, fontSize = 10.5.sp)
+                                    }
                                 }
                             }
                         }

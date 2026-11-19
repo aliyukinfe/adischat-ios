@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -47,13 +48,22 @@ fun overlapsSidebar(rowTop: Float, rowBottom: Float, sidebar: Rect?): Boolean =
 fun AdaptiveFlowAround(
     modifier: Modifier = Modifier,
     sidebarBounds: Rect? = LocalSidebarBounds.current,
-    besideStart: Dp = if (sidebarBounds != null && sidebarBounds.width > 70.dp) 114.dp else 60.dp,
+    besideStart: Dp? = null,
     belowStart: Dp = 12.dp,
     content: @Composable (isBeside: Boolean) -> Unit,
 ) {
+    val density = LocalDensity.current
+    val effectiveBesideStart = besideStart ?: run {
+        if (sidebarBounds != null) {
+            val widthDp = with(density) { sidebarBounds.width.toDp() }
+            if (widthDp > 70.dp) 114.dp else 60.dp
+        } else {
+            60.dp
+        }
+    }
     var besideSidebar by remember { mutableStateOf(sidebarBounds != null) }
     val startPadding by animateDpAsState(
-        targetValue = if (besideSidebar) besideStart else belowStart,
+        targetValue = if (besideSidebar) effectiveBesideStart else belowStart,
         animationSpec = tween(160),
         label = "flowAroundSidebar",
     )
