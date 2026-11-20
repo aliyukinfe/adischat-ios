@@ -158,6 +158,7 @@ private fun RestaurantsDiscoverScaffoldBody(
     onRegisterRestaurantClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val extColors = RestaurantsLightTheme.colors
     BoxWithConstraints(
         modifier = modifier,
         contentAlignment = Alignment.TopCenter,
