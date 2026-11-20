@@ -497,7 +497,7 @@ fun RestaurantsQaHost(
                             onStartReview = {
                                 controller.onAdminBackendActionBlocked("Start application review")
                             },
-                            onApproveApplication = { _, _ ->
+                            onApproveApplication = { _, _, _ ->
                                 controller.onAdminBackendActionBlocked("Approve restaurant application")
                             },
                             onRequestChanges = { _, _ ->

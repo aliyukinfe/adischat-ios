@@ -838,12 +838,17 @@ class RestaurantsRepository(
 
     suspend fun adminApproveApplication(
         applicationId: String,
-        slug: String? = null,
+        slug: String,
         notes: String? = null,
     ): Result<AdminApproveResultDto?> = runAdminEdge { auth, edge ->
         edge.adminApproveApplication(
             bearerAuth = auth,
-            body = AdminReviewActionRequest(applicationId, slug, notes),
+            action = "approve",
+            body = AdminReviewActionRequest(
+                applicationId = applicationId,
+                slug = slug.trim().lowercase(),
+                notes = notes?.trim().orEmpty(),
+            ),
         ).result
     }
 

@@ -9,21 +9,28 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.AdminPanelSettings
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -32,6 +39,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -64,7 +72,7 @@ fun RestaurantAdminScreen(
     onSelectApplication: (String) -> Unit,
     onInspectDocument: (applicationId: String, documentId: String) -> Unit,
     onStartReview: (applicationId: String) -> Unit,
-    onApproveApplication: (applicationId: String, notes: String?) -> Unit,
+    onApproveApplication: (applicationId: String, slug: String, notes: String?) -> Unit,
     onRequestChanges: (applicationId: String, notes: String) -> Unit,
     onRejectApplication: (applicationId: String, notes: String) -> Unit,
     onSuspendRestaurant: (restaurantId: String, reason: String) -> Unit,
@@ -132,9 +140,17 @@ fun RestaurantAdminScreen(
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             if (!state.errorBanner.isNullOrBlank()) {
+                                val errorTitle = when {
+                                    state.errorBanner.contains("slug", ignoreCase = true) -> "Invalid Restaurant Slug"
+                                    state.errorBanner.contains("license", ignoreCase = true) -> "Missing License Document"
+                                    state.errorBanner.contains("self-approval", ignoreCase = true) -> "Self-Approval Forbidden"
+                                    state.errorBanner.contains("session", ignoreCase = true) || state.errorBanner.contains("sign in", ignoreCase = true) -> "Session Expired"
+                                    state.errorBanner.contains("permission", ignoreCase = true) || state.errorBanner.contains("admin", ignoreCase = true) -> "Unauthorized"
+                                    else -> "Admin Action Failed"
+                                }
                                 RestaurantsStateMessageCard(
                                     icon = Icons.Rounded.ErrorOutline,
-                                    title = "Admin Action Blocked",
+                                    title = errorTitle,
                                     message = state.errorBanner,
                                     isError = true,
                                     modifier = Modifier.padding(0.dp),
@@ -197,9 +213,10 @@ fun RestaurantAdminScreen(
                                     AdminApplicationDetailCard(
                                         application = selected,
                                         actorUid = state.activeAccountUid,
+                                        isWorking = state.isWorking,
                                         onInspectDocument = { docId -> onInspectDocument(selected.id, docId) },
                                         onStartReview = { onStartReview(selected.id) },
-                                        onApprove = { notes -> onApproveApplication(selected.id, notes) },
+                                        onApprove = { slug, notes -> onApproveApplication(selected.id, slug, notes) },
                                         onRequestChanges = { notes -> onRequestChanges(selected.id, notes) },
                                         onReject = { notes -> onRejectApplication(selected.id, notes) },
                                     )
@@ -291,14 +308,29 @@ private fun AdminApplicationQueueCard(
 private fun AdminApplicationDetailCard(
     application: AdminApplicationUi,
     actorUid: String?,
+    isWorking: Boolean,
     onInspectDocument: (documentId: String) -> Unit,
     onStartReview: () -> Unit,
-    onApprove: (notes: String?) -> Unit,
+    onApprove: (slug: String, notes: String?) -> Unit,
     onRequestChanges: (notes: String) -> Unit,
     onReject: (notes: String) -> Unit,
 ) {
     var notes by rememberSaveable(application.id) { mutableStateOf("") }
+    var showApproveDialog by rememberSaveable(application.id) { mutableStateOf(false) }
     val isSelfApplicant = application.applicantProfileId == actorUid
+
+    if (showApproveDialog) {
+        AdminApproveConfirmationDialog(
+            application = application,
+            initialNotes = notes,
+            isWorking = isWorking,
+            onDismiss = { showApproveDialog = false },
+            onConfirm = { finalSlug, finalNotes ->
+                showApproveDialog = false
+                onApprove(finalSlug, finalNotes)
+            },
+        )
+    }
 
     Surface(
         shape = RoundedCornerShape(RestaurantsUiDefaults.CardRadius),
@@ -346,20 +378,169 @@ private fun AdminApplicationDetailCard(
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 if (application.status == RestaurantApplicationStatus.SUBMITTED) {
-                    OutlinedButton(onClick = onStartReview) { Text("Start Review") }
+                    OutlinedButton(
+                        enabled = !isWorking,
+                        onClick = onStartReview,
+                    ) { Text("Start Review") }
                 }
                 if (application.status == RestaurantApplicationStatus.SUBMITTED ||
                     application.status == RestaurantApplicationStatus.UNDER_REVIEW
                 ) {
-                    Button(enabled = !isSelfApplicant, onClick = { onApprove(notes.ifBlank { null }) }) {
+                    Button(
+                        enabled = !isSelfApplicant && !isWorking,
+                        onClick = { showApproveDialog = true },
+                    ) {
                         Text("Approve")
                     }
-                    OutlinedButton(onClick = { onRequestChanges(notes) }) { Text("Request Changes") }
-                    OutlinedButton(onClick = { onReject(notes) }) { Text("Reject") }
+                    OutlinedButton(
+                        enabled = !isWorking,
+                        onClick = { onRequestChanges(notes) },
+                    ) { Text("Request Changes") }
+                    OutlinedButton(
+                        enabled = !isWorking,
+                        onClick = { onReject(notes) },
+                    ) { Text("Reject") }
                 }
             }
         }
     }
+}
+
+@Composable
+fun AdminApproveConfirmationDialog(
+    application: AdminApplicationUi,
+    initialNotes: String,
+    isWorking: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (slug: String, notes: String?) -> Unit,
+) {
+    var slug by rememberSaveable(application.id) {
+        mutableStateOf(RestaurantSlugHelper.generateSlug(application.brandName, application.legalName))
+    }
+    var notes by rememberSaveable(application.id) { mutableStateOf(initialNotes) }
+    val slugError = RestaurantSlugHelper.getSlugValidationError(slug)
+    val isValidSlug = slugError == null
+
+    AlertDialog(
+        onDismissRequest = { if (!isWorking) onDismiss() },
+        title = {
+            Text(
+                text = "Approve Restaurant Application",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = application.brandName,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        if (application.legalName.isNotBlank() && application.legalName != application.brandName) {
+                            Text(
+                                text = "Legal: ${application.legalName}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            text = "Applicant: ${application.applicantProfileId}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        val contact = application.contactEmail.ifBlank { application.contactPhone }
+                        if (contact.isNotBlank()) {
+                            Text(
+                                text = "Contact: $contact",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Text(
+                            text = "Current Status: ${application.status.label}",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = slug,
+                    onValueChange = { slug = it.lowercase().trim() },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Restaurant URL Slug *") },
+                    placeholder = { Text("e.g. lala-habesha") },
+                    singleLine = true,
+                    isError = !isValidSlug,
+                    supportingText = {
+                        if (slugError != null) {
+                            Text(slugError, color = MaterialTheme.colorScheme.error)
+                        } else {
+                            Text("Lowercase letters, numbers, hyphens (3-50 chars)")
+                        }
+                    },
+                )
+
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Approval notes (optional)") },
+                    placeholder = { Text("Notes for the audit log") },
+                    maxLines = 3,
+                )
+
+                Text(
+                    text = "Upon approval, the restaurant will be initialized in 'pending_setup' status with 1 owner membership.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onConfirm(slug.trim(), notes.ifBlank { null }) },
+                enabled = isValidSlug && !isWorking,
+            ) {
+                if (isWorking) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text("Approving...")
+                } else {
+                    Text("Confirm Approval")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isWorking,
+            ) {
+                Text("Cancel")
+            }
+        },
+    )
 }
 
 @Composable
@@ -436,7 +617,7 @@ private fun RestaurantAdminPreview() {
         onSelectApplication = {},
         onInspectDocument = { _, _ -> },
         onStartReview = {},
-        onApproveApplication = { _, _ -> },
+        onApproveApplication = { _, _, _ -> },
         onRequestChanges = { _, _ -> },
         onRejectApplication = { _, _ -> },
         onSuspendRestaurant = { _, _ -> },

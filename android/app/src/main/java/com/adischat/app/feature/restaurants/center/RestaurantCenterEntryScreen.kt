@@ -123,8 +123,8 @@ fun RestaurantCenterEntryScreen(accountUid: String, onBack: () -> Unit) {
                 onSelectApplication = adminCoordinator::selectApplication,
                 onInspectDocument = adminCoordinator::inspectDocument,
                 onStartReview = adminCoordinator::startReview,
-                onApproveApplication = { appId, notes ->
-                    adminCoordinator.approveApplication(appId, notes = notes)
+                onApproveApplication = { appId, slug, notes ->
+                    adminCoordinator.approveApplication(appId, slug = slug, notes = notes)
                 },
                 onRequestChanges = adminCoordinator::requestChanges,
                 onRejectApplication = adminCoordinator::rejectApplication,

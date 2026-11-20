@@ -495,7 +495,9 @@ data class SubmitApplicationRequest(
 data class AdminReviewActionRequest(
     @SerializedName("application_id")
     val applicationId: String,
+    @SerializedName("slug")
     val slug: String? = null,
+    @SerializedName("notes")
     val notes: String? = null,
 )
 

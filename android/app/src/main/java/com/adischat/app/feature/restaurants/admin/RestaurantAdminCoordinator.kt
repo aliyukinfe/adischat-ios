@@ -208,7 +208,8 @@ class RestaurantAdminCoordinator(
         }
     }
 
-    fun approveApplication(applicationId: String, slug: String? = null, notes: String? = null) {
+    fun approveApplication(applicationId: String, slug: String, notes: String? = null) {
+        if (_state.value.isWorking) return
         val uid = requireAuthorizedAdminUid() ?: return
         val app = _state.value.applications.firstOrNull { it.id == applicationId } ?: return
 
@@ -227,31 +228,44 @@ class RestaurantAdminCoordinator(
             return
         }
 
+        val cleanSlug = slug.trim().lowercase()
+        val slugErr = RestaurantSlugHelper.getSlugValidationError(cleanSlug)
+        if (slugErr != null) {
+            _state.update {
+                it.copy(errorBanner = slugErr)
+            }
+            return
+        }
+
         val startEpoch = flowEpoch.get()
         runAdminMutation(startEpoch, uid) {
-            val res = dataSource.approveApplication(applicationId, slug, notes).getOrThrow()
+            val res = dataSource.approveApplication(applicationId, cleanSlug, notes).getOrThrow()
             val result = res.result
+            val refreshedApps = dataSource.loadApplications().getOrElse {
+                _state.value.applications.map { existing ->
+                    if (existing.id == applicationId) {
+                        existing.copy(
+                            status = RestaurantApplicationStatus.APPROVED,
+                            approvedRestaurantId = result?.restaurantId,
+                            reviewNotes = notes,
+                        )
+                    } else {
+                        existing
+                    }
+                }
+            }
             val refreshedRests = dataSource.loadRestaurantsAndBranches().getOrElse { _state.value.restaurants }
             val refreshedLogs = dataSource.loadAuditLogs().getOrElse { emptyList() }.map { dto ->
                 AdminAuditEntryUi(dto.id, dto.restaurantId, dto.actorProfileId, dto.action, dto.targetType, dto.targetId, dto.createdAt)
             }
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
+                val restRef = result?.restaurantId ?: "New Restaurant"
                 current.copy(
-                    applications = current.applications.map { existing ->
-                        if (existing.id == applicationId) {
-                            existing.copy(
-                                status = RestaurantApplicationStatus.APPROVED,
-                                approvedRestaurantId = result?.restaurantId,
-                                reviewNotes = notes,
-                            )
-                        } else {
-                            existing
-                        }
-                    },
+                    applications = refreshedApps,
                     restaurants = refreshedRests,
                     auditLogs = refreshedLogs,
-                    actionNotice = "Approved application. Restaurant created in Pending Activation state.",
+                    actionNotice = "Restaurant Approved: $restRef. Status: Pending Setup.",
                 )
             }
         }
@@ -365,6 +379,7 @@ class RestaurantAdminCoordinator(
         uid: String,
         block: suspend () -> Unit,
     ) {
+        if (_state.value.isWorking) return
         _state.update { it.copy(isWorking = true, errorBanner = null, actionNotice = null) }
         scope.launch {
             try {

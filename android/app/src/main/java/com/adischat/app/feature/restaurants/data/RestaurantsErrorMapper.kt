@@ -159,13 +159,27 @@ object RestaurantsErrorMapper {
     private fun mapBackendErrorCode(code: String, rawMessage: String): RestaurantsFailure? {
         if (code.isEmpty()) return null
         return when (code) {
+            "invalid_slug" ->
+                RestaurantsFailure.Validation(code, sanitizeMessage(rawMessage, "A valid lowercase restaurant slug (3-50 letters, numbers, or hyphens) is required."))
+            "slug_already_taken" ->
+                RestaurantsFailure.Conflict(code, sanitizeMessage(rawMessage, "This restaurant URL slug is already taken. Please choose another slug."))
+            "missing_business_license" ->
+                RestaurantsFailure.Validation(code, sanitizeMessage(rawMessage, "A verified business license document is required before approval."))
+            "invalid_application_transition", "invalid_application_status" ->
+                RestaurantsFailure.Conflict(code, sanitizeMessage(rawMessage, "Only Submitted or Under Review applications can be approved."))
+            "self_approval_forbidden" ->
+                RestaurantsFailure.Forbidden(code, sanitizeMessage(rawMessage, "Self-approval is forbidden: applicants cannot approve their own restaurant."))
+            "forbidden_not_platform_admin" ->
+                RestaurantsFailure.Forbidden(code, sanitizeMessage(rawMessage, "Platform Super Admin permissions are required for this action."))
+            "application_not_found" ->
+                RestaurantsFailure.NotFound(code, sanitizeMessage(rawMessage, "The specified restaurant application was not found."))
             "missing_token", "invalid_token", "missing_assertion", "invalid_assertion", "assertion_replayed" ->
                 RestaurantsFailure.Unauthenticated(code, "Your restaurant session expired. Please sign in again.")
-            "account_inactive", "forbidden", "forbidden_not_platform_admin", "forbidden_owner_only",
+            "account_inactive", "forbidden", "forbidden_owner_only",
             "forbidden_suspended_restaurant", "forbidden_not_branch_staff", "forbidden_staff_invite",
-            "forbidden_staff_revoke", "self_approval_forbidden", "branch_mismatch" ->
+            "forbidden_staff_revoke", "branch_mismatch" ->
                 RestaurantsFailure.Forbidden(code, sanitizeMessage(rawMessage, "Access denied for this restaurant account."))
-            "not_found", "document_not_found", "restaurant_not_found", "application_not_found" ->
+            "not_found", "document_not_found", "restaurant_not_found" ->
                 RestaurantsFailure.NotFound(code, sanitizeMessage(rawMessage, "Requested item was not found."))
             "session_code_required", "invalid_session_code", "missing_qr_token", "invalid_order_request",
             "invalid_sync_cursor", "notes_required", "rejection_reason_required" ->

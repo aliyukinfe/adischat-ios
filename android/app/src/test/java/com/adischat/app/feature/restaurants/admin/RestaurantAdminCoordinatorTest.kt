@@ -34,7 +34,7 @@ class RestaurantAdminCoordinatorTest {
         )
 
         coordinator.loadAdminWorkspace()
-        coordinator.approveApplication("app-1")
+        coordinator.approveApplication("app-1", slug = "habesha-hearth")
         delay(30)
 
         assertEquals(0, fake.calls.get())
@@ -69,7 +69,7 @@ class RestaurantAdminCoordinatorTest {
         adminCoordinator.loadAdminWorkspace()
         delay(40)
 
-        adminCoordinator.approveApplication("app-self")
+        adminCoordinator.approveApplication("app-self", slug = "conflict-bistro")
         delay(30)
         assertNotNull(adminCoordinator.state.value.errorBanner)
         assertEquals(
@@ -108,7 +108,7 @@ class RestaurantAdminCoordinatorTest {
         assertNotNull(doc.lastInspectedUrlPreview)
 
         // Approve app-1 -> restaurant starts in PENDING_SETUP with live ordering OFF
-        coordinator.approveApplication("app-1", notes = "Verified documents")
+        coordinator.approveApplication("app-1", slug = "habesha-hearth", notes = "Verified documents")
         delay(40)
         assertEquals(
             RestaurantApplicationStatus.APPROVED,
@@ -248,13 +248,13 @@ private class FakeAdminDataSource : RestaurantAdminDataSource {
         return Result.success("https://signed-mock.invalid/private-doc/$documentId")
     }
 
-    override suspend fun approveApplication(applicationId: String, slug: String?, notes: String?): Result<AdminApproveResponse> {
+    override suspend fun approveApplication(applicationId: String, slug: String, notes: String?): Result<AdminApproveResponse> {
         calls.incrementAndGet()
         restaurants.add(
             AdminRestaurantOverviewUi(
                 id = "rest-new-1",
                 name = "Habesha Hearth",
-                slug = slug ?: "habesha-hearth",
+                slug = slug,
                 status = RestaurantOperationalStatus.PENDING_SETUP,
                 isLiveOrderingEnabled = false,
             ),

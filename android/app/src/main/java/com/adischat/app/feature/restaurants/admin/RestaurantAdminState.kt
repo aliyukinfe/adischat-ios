@@ -104,7 +104,7 @@ interface RestaurantAdminDataSource {
     suspend fun loadAuditLogs(): Result<List<RestaurantAuditLogDto>>
     suspend fun startReview(applicationId: String, notes: String?): Result<AdminApplicationStatusResponse>
     suspend fun inspectDocument(applicationId: String, documentId: String): Result<String?>
-    suspend fun approveApplication(applicationId: String, slug: String?, notes: String?): Result<AdminApproveResponse>
+    suspend fun approveApplication(applicationId: String, slug: String, notes: String?): Result<AdminApproveResponse>
     suspend fun rejectApplication(applicationId: String, notes: String): Result<AdminApplicationStatusResponse>
     suspend fun requestChanges(applicationId: String, notes: String): Result<AdminApplicationStatusResponse>
     suspend fun suspendRestaurant(restaurantId: String, reason: String): Result<AdminRestaurantStatusResponse>

@@ -123,7 +123,7 @@ class RemoteRestaurantAdminDataSource(
 
     override suspend fun approveApplication(
         applicationId: String,
-        slug: String?,
+        slug: String,
         notes: String?,
     ): Result<AdminApproveResponse> =
         repository.adminApproveApplication(applicationId, slug, notes).map { result ->
