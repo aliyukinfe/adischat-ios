@@ -102,8 +102,11 @@ class RemoteRestaurantCenterDataSource(
         source = source,
     )
 
-    override suspend fun submitApplication(applicationId: String): Result<CenterApplicationUi> =
-        repository.submitApplication(applicationId).mapCatching { dto ->
+    override suspend fun submitApplication(
+        applicationId: String,
+        idempotencyKey: String?,
+    ): Result<CenterApplicationUi> =
+        repository.submitApplication(applicationId, idempotencyKey).mapCatching { dto ->
             dto?.let(::mapApplicationDto)
                 ?: throw RestaurantsFailure.Server("invalid_application_response", "Missing submitted application.")
         }
@@ -392,6 +395,18 @@ class RemoteRestaurantCenterDataSource(
         } else {
             0
         }
+        var primaryBranchName = ""
+        var streetAddress = ""
+        var cityAndArea = ""
+        if (dto.draftBranchesJson?.isJsonArray == true && dto.draftBranchesJson.asJsonArray.size() > 0) {
+            val first = dto.draftBranchesJson.asJsonArray.get(0)
+            if (first.isJsonObject) {
+                val obj = first.asJsonObject
+                primaryBranchName = obj.get("name")?.asString.orEmpty()
+                streetAddress = obj.get("address")?.asString.orEmpty()
+                cityAndArea = obj.get("city")?.asString.orEmpty()
+            }
+        }
         return CenterApplicationUi(
             id = dto.id,
             applicantProfileId = dto.applicantProfileId.orEmpty(),
@@ -402,6 +417,13 @@ class RemoteRestaurantCenterDataSource(
             contactPhone = dto.contactPhone,
             contactEmail = dto.contactEmail,
             tinNumber = dto.tinNumber,
+            registrationNumber = dto.registrationNumber.orEmpty().ifEmpty { dto.tinNumber },
+            operatingHoursSummary = dto.operatingHoursSummary.orEmpty(),
+            isDineInAvailable = dto.isDineInAvailable,
+            clientDraftKey = dto.clientDraftKey,
+            primaryBranchName = primaryBranchName,
+            streetAddress = streetAddress,
+            cityAndArea = cityAndArea,
             logoPath = dto.logoPath,
             coverPath = dto.coverPath,
             status = RestaurantApplicationStatus.fromWireValue(dto.status),

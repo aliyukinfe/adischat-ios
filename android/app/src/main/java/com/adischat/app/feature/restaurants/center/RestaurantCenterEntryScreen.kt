@@ -146,31 +146,73 @@ fun RestaurantCenterEntryScreen(accountUid: String, onBack: () -> Unit) {
                     RestaurantCenterPortalScreen(
                         onBackToProfile = onBack,
                         existingApplication = state.applications.firstOrNull(),
-                        onSubmitApplication = { draft ->
-                            val branches = if (draft.primaryBranchName.isNotBlank() || draft.streetAddress.isNotBlank()) {
-                                listOf(
-                                    DraftBranchInputDto(
-                                        code = "MAIN",
-                                        name = draft.primaryBranchName.ifBlank { draft.brandName.ifBlank { "Main Branch" } },
-                                        address = draft.streetAddress.ifBlank { "Primary Location" },
-                                        city = draft.cityAndArea.takeIf { it.isNotBlank() },
-                                    )
-                                )
-                            } else null
+                        isWorking = state.isWorking,
+                        errorBanner = state.errorBanner,
+                        actionFeedback = state.actionFeedback,
+                        onSaveDraft = { draft ->
+                            val branch = DraftBranchInputDto(
+                                code = "MAIN",
+                                name = draft.primaryBranchName.ifBlank { draft.brandName.ifBlank { "Main Branch" } },
+                                address = draft.streetAddress.ifBlank { "Primary Location" },
+                                city = draft.cityAndArea.takeIf { it.isNotBlank() },
+                            )
+                            val appId = draft.draftId.takeIf {
+                                it.length > 20 && !it.startsWith("local-") && !it.startsWith("draft-")
+                            }
+                            val clientDraftKey = "draft-${state.activeAccountUid ?: "user"}"
+                            val cuisines = draft.selectedCuisines.joinToString(", ").ifBlank { "restaurant" }
 
                             val req = SaveApplicationDraftRequest(
-                                applicationId = draft.draftId.takeIf { it.startsWith("app-") || it.length > 20 },
+                                applicationId = appId,
+                                clientDraftKey = clientDraftKey,
                                 legalName = draft.legalName,
                                 brandName = draft.brandName,
                                 description = draft.description,
-                                businessType = "RESTAURANT",
+                                businessType = cuisines,
                                 contactPhone = draft.contactPhone,
                                 contactEmail = draft.contactEmail,
                                 tinNumber = draft.registrationNumber,
-                                branches = branches,
+                                registrationNumber = draft.registrationNumber,
+                                operatingHoursSummary = draft.operatingHoursSummary,
+                                isDineInAvailable = draft.isDineInAvailable,
+                                branches = listOf(branch),
+                            )
+                            coordinator.saveApplicationDraft(
+                                request = req,
+                                pendingLicenseSource = draft.businessLicenseDoc?.binarySource,
+                            )
+                        },
+                        onSubmitApplication = { draft ->
+                            val branch = DraftBranchInputDto(
+                                code = "MAIN",
+                                name = draft.primaryBranchName.ifBlank { draft.brandName.ifBlank { "Main Branch" } },
+                                address = draft.streetAddress.ifBlank { "Primary Location" },
+                                city = draft.cityAndArea.takeIf { it.isNotBlank() },
+                            )
+                            val appId = draft.draftId.takeIf {
+                                it.length > 20 && !it.startsWith("local-") && !it.startsWith("draft-")
+                            }
+                            val clientDraftKey = "draft-${state.activeAccountUid ?: "user"}"
+                            val cuisines = draft.selectedCuisines.joinToString(", ").ifBlank { "restaurant" }
+
+                            val req = SaveApplicationDraftRequest(
+                                applicationId = appId,
+                                clientDraftKey = clientDraftKey,
+                                legalName = draft.legalName,
+                                brandName = draft.brandName,
+                                description = draft.description,
+                                businessType = cuisines,
+                                contactPhone = draft.contactPhone,
+                                contactEmail = draft.contactEmail,
+                                tinNumber = draft.registrationNumber,
+                                registrationNumber = draft.registrationNumber,
+                                operatingHoursSummary = draft.operatingHoursSummary,
+                                isDineInAvailable = draft.isDineInAvailable,
+                                branches = listOf(branch),
                             )
                             coordinator.submitDraftApplication(
                                 draft = req,
+                                pendingLicenseSource = draft.businessLicenseDoc?.binarySource,
                                 onSuccess = {
                                     coordinator.loadCenter()
                                 },

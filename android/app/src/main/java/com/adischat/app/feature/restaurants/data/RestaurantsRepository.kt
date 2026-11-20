@@ -343,11 +343,17 @@ class RestaurantsRepository(
         )
     }
 
-    suspend fun submitApplication(applicationId: String): Result<RestaurantApplicationDto?> =
+    suspend fun submitApplication(
+        applicationId: String,
+        idempotencyKey: String? = null,
+    ): Result<RestaurantApplicationDto?> =
         runPartnerEdge { auth, edge ->
             edge.submitApplication(
                 bearerAuth = auth,
-                body = SubmitApplicationRequest(applicationId),
+                body = SubmitApplicationRequest(
+                    applicationId = applicationId,
+                    idempotencyKey = idempotencyKey,
+                ),
             ).application
         }
 

@@ -98,6 +98,7 @@ data class RestaurantApplicationAttachmentUi(
     val fileName: String,
     val mimeType: String,
     val byteSize: Long?,
+    val binarySource: RestaurantsBinaryUploadSource? = null,
 )
 
 /**
@@ -280,15 +281,20 @@ object RestaurantApplicationValidator {
 
     fun toSaveApplicationDraftRequest(draft: RestaurantApplicationDraftUiState): SaveApplicationDraftRequest {
         val branchSummary = RestaurantApplicationAttachmentHelper.formatBranchSummary(draft)
+        val clientDraftKey = "draft-${draft.applicantProfileId ?: "user"}"
         return SaveApplicationDraftRequest(
-            applicationId = draft.draftId.takeIf { !it.startsWith("local-") },
+            applicationId = draft.draftId.takeIf { !it.startsWith("local-") && !it.startsWith("draft-") },
+            clientDraftKey = clientDraftKey,
             legalName = draft.legalName.trim(),
             brandName = draft.brandName.trim(),
             description = draft.description.trim(),
-            businessType = draft.selectedCuisines.joinToString(", "),
+            businessType = draft.selectedCuisines.joinToString(", ").ifBlank { "restaurant" },
             contactPhone = draft.contactPhone.trim(),
             contactEmail = draft.contactEmail.trim(),
             tinNumber = draft.registrationNumber.trim(),
+            registrationNumber = draft.registrationNumber.trim(),
+            operatingHoursSummary = draft.operatingHoursSummary.trim(),
+            isDineInAvailable = draft.isDineInAvailable,
             logoPath = draft.logoAttachment?.fileName,
             coverPath = draft.coverAttachment?.fileName,
             branches = listOf(branchSummary),
@@ -434,6 +440,7 @@ object RestaurantApplicationAttachmentHelper {
         fileName = source.fileName.trim().ifEmpty { "selected-file" },
         mimeType = source.mimeType.trim().ifEmpty { "application/octet-stream" },
         byteSize = source.byteSize,
+        binarySource = source,
     )
 
     fun formatBranchSummary(draft: RestaurantApplicationDraftUiState): DraftBranchInputDto {

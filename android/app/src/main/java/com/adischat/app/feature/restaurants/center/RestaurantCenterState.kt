@@ -287,12 +287,19 @@ data class CenterApplicationUi(
     val contactPhone: String,
     val contactEmail: String,
     val tinNumber: String,
+    val registrationNumber: String = "",
+    val operatingHoursSummary: String = "",
+    val isDineInAvailable: Boolean = true,
+    val clientDraftKey: String? = null,
     val logoPath: String? = null,
     val coverPath: String? = null,
     val status: RestaurantApplicationStatus,
     val reviewNotes: String? = null,
     val approvedRestaurantId: String? = null,
     val branchDraftCount: Int = 0,
+    val primaryBranchName: String = "",
+    val streetAddress: String = "",
+    val cityAndArea: String = "",
     val documents: List<CenterApplicationDocUi> = emptyList(),
 )
 
@@ -511,7 +518,10 @@ interface RestaurantCenterDataSource {
         source: RestaurantsBinaryUploadSource,
     ): Result<String> =
         Result.failure(UnsupportedOperationException("uploadApplicationMedia not implemented"))
-    suspend fun submitApplication(applicationId: String): Result<CenterApplicationUi>
+    suspend fun submitApplication(
+        applicationId: String,
+        idempotencyKey: String? = null,
+    ): Result<CenterApplicationUi>
 
     suspend fun loadAccessibleRestaurants(): Result<List<CenterRestaurantUi>>
     suspend fun loadBranches(restaurantId: String): Result<List<CenterBranchUi>>

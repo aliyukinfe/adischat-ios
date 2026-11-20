@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -256,31 +257,67 @@ class RestaurantCenterCoordinator(
     // Application draft & submission
     // ========================================================================
 
-    fun saveApplicationDraft(request: SaveApplicationDraftRequest) {
+    fun saveApplicationDraft(
+        request: SaveApplicationDraftRequest,
+        pendingLicenseSource: RestaurantsBinaryUploadSource? = null,
+        onSuccess: (CenterApplicationUi) -> Unit = {},
+    ) {
         val uid = requireEnabledAndUid() ?: return
         val startEpoch = flowEpoch.get()
         runMutation(startEpoch, uid) {
             val saved = dataSource.saveApplicationDraft(request).getOrThrow()
-            val updatedApps = (_state.value.applications.filterNot { it.id == saved.id } + saved)
+            var currentApp = saved
+            if (pendingLicenseSource != null) {
+                val doc = dataSource.uploadAndConfirmApplicationDocument(
+                    applicationId = saved.id,
+                    docType = "business_license",
+                    source = pendingLicenseSource,
+                ).getOrThrow()
+                val updatedDocs = currentApp.documents.filterNot { it.id == doc.id } + doc
+                currentApp = currentApp.copy(documents = updatedDocs)
+            }
+            val updatedApps = (_state.value.applications.filterNot { it.id == currentApp.id } + currentApp)
             _state.update {
                 if (!isStillValid(startEpoch, uid)) return@update it
                 it.copy(
                     applications = updatedApps,
-                    actionFeedback = "Application draft saved (${saved.status.label}).",
+                    actionFeedback = "Application draft saved (${currentApp.status.label}).",
                 )
             }
+            onSuccess(currentApp)
         }
     }
 
     fun submitDraftApplication(
         draft: SaveApplicationDraftRequest,
+        pendingLicenseSource: RestaurantsBinaryUploadSource? = null,
         onSuccess: () -> Unit = {},
     ) {
         val uid = requireEnabledAndUid() ?: return
         val startEpoch = flowEpoch.get()
         runMutation(startEpoch, uid) {
             val saved = dataSource.saveApplicationDraft(draft).getOrThrow()
-            val submitted = dataSource.submitApplication(saved.id).getOrThrow()
+            var currentApp = saved
+            if (pendingLicenseSource != null) {
+                val doc = dataSource.uploadAndConfirmApplicationDocument(
+                    applicationId = saved.id,
+                    docType = "business_license",
+                    source = pendingLicenseSource,
+                ).getOrThrow()
+                val updatedDocs = currentApp.documents.filterNot { it.id == doc.id } + doc
+                currentApp = currentApp.copy(documents = updatedDocs)
+            }
+            val hasLicense = currentApp.documents.any {
+                it.docType.equals("business_license", ignoreCase = true)
+            }
+            if (!hasLicense) {
+                throw RestaurantsFailure.Validation(
+                    code = "missing_business_license",
+                    message = "At least one business license document is required before submitting.",
+                )
+            }
+            val idempotencyKey = "sub-${saved.id}-${UUID.randomUUID().toString().take(12)}"
+            val submitted = dataSource.submitApplication(saved.id, idempotencyKey).getOrThrow()
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
                 val updatedApps = (current.applications.filterNot { it.id == submitted.id } + submitted)
@@ -503,7 +540,8 @@ class RestaurantCenterCoordinator(
         }
         val startEpoch = flowEpoch.get()
         runMutation(startEpoch, uid) {
-            val submitted = dataSource.submitApplication(applicationId).getOrThrow()
+            val idempotencyKey = "sub-${applicationId}-${UUID.randomUUID().toString().take(12)}"
+            val submitted = dataSource.submitApplication(applicationId, idempotencyKey).getOrThrow()
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
                 current.copy(

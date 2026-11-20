@@ -315,6 +315,8 @@ data class DraftMenuInputDto(
 data class SaveApplicationDraftRequest(
     @SerializedName("application_id")
     val applicationId: String? = null,
+    @SerializedName("client_draft_key")
+    val clientDraftKey: String? = null,
     @SerializedName("legal_name")
     val legalName: String,
     @SerializedName("brand_name")
@@ -328,6 +330,12 @@ data class SaveApplicationDraftRequest(
     val contactEmail: String,
     @SerializedName("tin_number")
     val tinNumber: String = "",
+    @SerializedName("registration_number")
+    val registrationNumber: String? = null,
+    @SerializedName("operating_hours_summary")
+    val operatingHoursSummary: String? = null,
+    @SerializedName("is_dine_in_available")
+    val isDineInAvailable: Boolean? = null,
     @SerializedName("logo_path")
     val logoPath: String? = null,
     @SerializedName("cover_path")
@@ -354,6 +362,14 @@ data class RestaurantApplicationDto(
     val contactEmail: String = "",
     @SerializedName("tin_number")
     val tinNumber: String = "",
+    @SerializedName("registration_number")
+    val registrationNumber: String? = null,
+    @SerializedName("operating_hours_summary")
+    val operatingHoursSummary: String? = null,
+    @SerializedName("is_dine_in_available")
+    val isDineInAvailable: Boolean = true,
+    @SerializedName("client_draft_key")
+    val clientDraftKey: String? = null,
     @SerializedName("logo_path")
     val logoPath: String? = null,
     @SerializedName("cover_path")
@@ -468,6 +484,8 @@ data class MediaUploadUrlResponse(
 data class SubmitApplicationRequest(
     @SerializedName("application_id")
     val applicationId: String,
+    @SerializedName("idempotency_key")
+    val idempotencyKey: String? = null,
 )
 
 // ============================================================================

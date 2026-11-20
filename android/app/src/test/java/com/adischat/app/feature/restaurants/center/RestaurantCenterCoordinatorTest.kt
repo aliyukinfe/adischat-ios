@@ -334,6 +334,54 @@ class RestaurantCenterCoordinatorTest {
         assertEquals(callsBefore, fake.calls.get())
     }
 
+    @Test
+    fun `submitDraftApplication uploads business license and transitions application to SUBMITTED`() = runTest {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            dataSource = fake,
+            environmentProvider = ::enabledCenterEnv,
+            accountUidProvider = { "owner-1" },
+            scope = this,
+        )
+        coordinator.loadCenter()
+        delay(40)
+
+        var submittedCallbackInvoked = false
+        val licenseSource = RestaurantsBinaryUploadSource(
+            fileName = "trade_license.pdf",
+            mimeType = "application/pdf",
+            byteSize = 100_000L,
+            openStream = { java.io.ByteArrayInputStream(ByteArray(10)) },
+        )
+        val draftReq = SaveApplicationDraftRequest(
+            applicationId = "app-draft",
+            clientDraftKey = "draft-owner-1",
+            legalName = "Hearth PLC",
+            brandName = "Habesha Hearth",
+            businessType = "restaurant",
+            contactPhone = "+251900000001",
+            contactEmail = "partner@example.invalid",
+            tinNumber = "0041234",
+            registrationNumber = "0041234",
+            operatingHoursSummary = "08:00-22:00",
+            isDineInAvailable = true,
+        )
+
+        coordinator.submitDraftApplication(
+            draft = draftReq,
+            pendingLicenseSource = licenseSource,
+            onSuccess = { submittedCallbackInvoked = true },
+        )
+        delay(40)
+
+        assertTrue(submittedCallbackInvoked)
+        assertNull(coordinator.state.value.errorBanner)
+        assertEquals("Application submitted for Admin review.", coordinator.state.value.actionFeedback)
+        val app = coordinator.state.value.applications.first { it.id == "app-draft" }
+        assertEquals(RestaurantApplicationStatus.SUBMITTED, app.status)
+        assertTrue(app.documents.any { it.docType == "business_license" })
+    }
+
     private fun enabledCenterEnv() = RestaurantsEnvironment(
         supabaseUrl = "https://test.supabase.co",
         supabasePublishableKey = "pk_test",
@@ -415,7 +463,23 @@ private class FakeCenterDataSource : RestaurantCenterDataSource {
         return Result.success(CenterApplicationDocUi("d1", request.docType, request.fileName, request.mimeType, request.byteSize))
     }
 
-    override suspend fun submitApplication(applicationId: String): Result<CenterApplicationUi> {
+    override suspend fun uploadAndConfirmApplicationDocument(
+        applicationId: String,
+        docType: String,
+        source: RestaurantsBinaryUploadSource,
+    ): Result<CenterApplicationDocUi> {
+        calls.incrementAndGet()
+        val doc = CenterApplicationDocUi("d-license", docType, source.fileName, source.mimeType, source.byteSize)
+        applications = applications.map {
+            if (it.id == applicationId) it.copy(documents = it.documents + doc) else it
+        }
+        return Result.success(doc)
+    }
+
+    override suspend fun submitApplication(
+        applicationId: String,
+        idempotencyKey: String?,
+    ): Result<CenterApplicationUi> {
         calls.incrementAndGet()
         applications = applications.map {
             if (it.id == applicationId) it.copy(status = RestaurantApplicationStatus.SUBMITTED) else it

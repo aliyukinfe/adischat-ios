@@ -467,7 +467,10 @@ class RestaurantsUploadUxTest {
             )
         }
 
-        override suspend fun submitApplication(applicationId: String): Result<CenterApplicationUi> = error("unused")
+        override suspend fun submitApplication(
+            applicationId: String,
+            idempotencyKey: String?,
+        ): Result<CenterApplicationUi> = error("unused")
         override suspend fun loadAccessibleRestaurants(): Result<List<CenterRestaurantUi>> = Result.success(listOf(restaurant))
         override suspend fun loadBranches(restaurantId: String): Result<List<CenterBranchUi>> = Result.success(
             listOf(CenterBranchUi("br-1", restaurantId, "MAIN", "Main", "Bole", "Addis Ababa", true, false, true, "active")),

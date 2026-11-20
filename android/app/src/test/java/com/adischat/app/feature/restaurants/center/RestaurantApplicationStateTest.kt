@@ -116,6 +116,10 @@ class RestaurantApplicationStateTest {
         val dto = RestaurantApplicationValidator.toSaveApplicationDraftRequest(completeValidDraft())
         assertEquals("Habesha Hearth", dto.brandName)
         assertEquals(1, dto.branches?.size)
+        assertEquals("ET-AA-TR-2026-0091", dto.registrationNumber)
+        assertEquals("Mon-Sun 07:30-22:00", dto.operatingHoursSummary)
+        assertEquals(true, dto.isDineInAvailable)
+        assertEquals("draft-firebase-uid-owner-1", dto.clientDraftKey)
     }
 
     @Test

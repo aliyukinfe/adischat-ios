@@ -46,6 +46,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -61,6 +62,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -100,6 +102,10 @@ fun RestaurantCenterPortalScreen(
     onBackToProfile: () -> Unit,
     modifier: Modifier = Modifier,
     existingApplication: CenterApplicationUi? = null,
+    isWorking: Boolean = false,
+    errorBanner: String? = null,
+    actionFeedback: String? = null,
+    onSaveDraft: ((RestaurantApplicationDraftUiState) -> Unit)? = null,
     onSubmitApplication: ((RestaurantApplicationDraftUiState) -> Unit)? = null,
     environment: RestaurantsEnvironment = remember { RestaurantsConfig.currentEnvironment },
 ) {
@@ -112,16 +118,57 @@ fun RestaurantCenterPortalScreen(
         val authenticatedUid = remember { resolveAuthenticatedFirebaseUidOrNull() }
         val initialDraft = remember(existingApplication, authenticatedUid) {
             if (existingApplication != null) {
+                val existingLicense = existingApplication.documents.firstOrNull {
+                    it.docType.equals(DOC_TYPE_BUSINESS_LICENSE, ignoreCase = true) ||
+                        it.docType.equals("BUSINESS_LICENSE", ignoreCase = true)
+                }
+                val licenseAttachment = existingLicense?.let {
+                    RestaurantApplicationAttachmentUi(
+                        localId = it.id,
+                        docType = DOC_TYPE_BUSINESS_LICENSE,
+                        label = "Business License",
+                        fileName = it.fileName,
+                        mimeType = it.mimeType,
+                        byteSize = it.byteSize,
+                        binarySource = null,
+                    )
+                }
+                val otherDocs = existingApplication.documents.filterNot {
+                    it.id == existingLicense?.id
+                }.map {
+                    RestaurantApplicationAttachmentUi(
+                        localId = it.id,
+                        docType = it.docType,
+                        label = it.fileName,
+                        fileName = it.fileName,
+                        mimeType = it.mimeType,
+                        byteSize = it.byteSize,
+                        binarySource = null,
+                    )
+                }
+                val cuisines = if (existingApplication.businessType.isNotBlank()) {
+                    existingApplication.businessType.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                } else {
+                    emptyList()
+                }
                 RestaurantApplicationDraftUiState(
                     draftId = existingApplication.id,
-                    applicantProfileId = existingApplication.applicantProfileId,
+                    applicantProfileId = existingApplication.applicantProfileId.ifBlank { authenticatedUid },
                     status = existingApplication.status,
                     legalName = existingApplication.legalName,
                     brandName = existingApplication.brandName,
                     description = existingApplication.description,
                     contactPhone = existingApplication.contactPhone,
                     contactEmail = existingApplication.contactEmail,
-                    registrationNumber = existingApplication.tinNumber,
+                    registrationNumber = existingApplication.registrationNumber.ifBlank { existingApplication.tinNumber },
+                    primaryBranchName = existingApplication.primaryBranchName,
+                    streetAddress = existingApplication.streetAddress,
+                    cityAndArea = existingApplication.cityAndArea,
+                    selectedCuisines = cuisines,
+                    operatingHoursSummary = existingApplication.operatingHoursSummary,
+                    isDineInAvailable = existingApplication.isDineInAvailable,
+                    businessLicenseDoc = licenseAttachment,
+                    supportingDocs = otherDocs,
                     reviewNotes = existingApplication.reviewNotes,
                     hasLocalDraftSave = true,
                 )
@@ -135,6 +182,39 @@ fun RestaurantCenterPortalScreen(
             mutableStateOf(initialDraft)
         }
         var isWizardOpen by remember { mutableStateOf(false) }
+
+        LaunchedEffect(existingApplication) {
+            if (existingApplication != null) {
+                if (existingApplication.status != draftState.status || draftState.draftId != existingApplication.id) {
+                    draftState = draftState.copy(
+                        draftId = existingApplication.id,
+                        status = existingApplication.status,
+                        reviewNotes = existingApplication.reviewNotes,
+                    )
+                    if (existingApplication.status == RestaurantApplicationStatus.SUBMITTED) {
+                        isWizardOpen = false
+                    }
+                }
+            }
+        }
+
+        LaunchedEffect(errorBanner) {
+            if (!errorBanner.isNullOrBlank()) {
+                draftState = draftState.copy(
+                    statusBannerMessage = errorBanner,
+                    isStatusBannerError = true,
+                )
+            }
+        }
+
+        LaunchedEffect(actionFeedback) {
+            if (!actionFeedback.isNullOrBlank()) {
+                draftState = draftState.copy(
+                    statusBannerMessage = actionFeedback,
+                    isStatusBannerError = false,
+                )
+            }
+        }
 
         val handleBack: () -> Unit = {
             if (isWizardOpen) {
@@ -226,29 +306,51 @@ fun RestaurantCenterPortalScreen(
                     ApplicationWizardBottomBar(
                         draft = draftState,
                         canSubmitAttempt = draftState.currentStep == RestaurantApplicationStep.REVIEW,
+                        isWorking = isWorking,
                         onPreviousClick = {
-                            draftState = RestaurantApplicationReducer.previousStep(draftState)
+                            if (!isWorking) {
+                                draftState = RestaurantApplicationReducer.previousStep(draftState)
+                            }
                         },
                         onSaveDraftClick = {
-                            draftState = RestaurantApplicationReducer.saveLocalDraft(
-                                state = draftState,
-                                nowEpochMs = System.currentTimeMillis(),
-                            )
+                            if (!isWorking) {
+                                draftState = RestaurantApplicationReducer.saveLocalDraft(
+                                    state = draftState,
+                                    nowEpochMs = System.currentTimeMillis(),
+                                )
+                                onSaveDraft?.invoke(draftState)
+                            }
                         },
                         onNextClick = {
-                            draftState = RestaurantApplicationReducer.nextStep(draftState)
+                            if (!isWorking) {
+                                draftState = RestaurantApplicationReducer.nextStep(draftState)
+                            }
                         },
                         onSubmitClick = {
-                            draftState = RestaurantApplicationReducer.attemptSubmit(
-                                state = draftState,
-                                authenticatedUid = authenticatedUid,
-                                environment = environment,
-                                nowEpochMs = System.currentTimeMillis(),
+                            if (isWorking) return@ApplicationWizardBottomBar
+                            val validation = RestaurantApplicationValidator.validateStep(
+                                step = RestaurantApplicationStep.REVIEW,
+                                draft = draftState,
                             )
-                            if (!draftState.isStatusBannerError && onSubmitApplication != null) {
-                                onSubmitApplication(draftState)
-                                isWizardOpen = false
+                            if (!validation.isValid) {
+                                val firstError = validation.fieldErrors.values.firstOrNull()
+                                    ?: "Complete all required fields before submitting."
+                                draftState = draftState.copy(
+                                    stepErrors = validation.fieldErrors,
+                                    statusBannerMessage = firstError,
+                                    isStatusBannerError = true,
+                                )
+                                return@ApplicationWizardBottomBar
                             }
+                            if (draftState.businessLicenseDoc == null) {
+                                draftState = draftState.copy(
+                                    stepErrors = mapOf(ApplicationFieldKey.BUSINESS_LICENSE to "Business license document is required."),
+                                    statusBannerMessage = "Attach a business license before submitting.",
+                                    isStatusBannerError = true,
+                                )
+                                return@ApplicationWizardBottomBar
+                            }
+                            onSubmitApplication?.invoke(draftState)
                         },
                     )
                 }
@@ -327,6 +429,13 @@ private fun RestaurantCenterHubOverview(
             .padding(horizontal = RestaurantsUiDefaults.ScreenHorizontalPadding, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        if (!draft.statusBannerMessage.isNullOrBlank()) {
+            WizardFeedbackBanner(
+                message = draft.statusBannerMessage,
+                isError = draft.isStatusBannerError,
+            )
+        }
+
         BackendConnectionNoticeCard(
             environment = environment,
             authenticatedUid = authenticatedUid,
@@ -1588,6 +1697,7 @@ private fun ReviewSectionCard(
 private fun ApplicationWizardBottomBar(
     draft: RestaurantApplicationDraftUiState,
     canSubmitAttempt: Boolean,
+    isWorking: Boolean = false,
     onPreviousClick: () -> Unit,
     onSaveDraftClick: () -> Unit,
     onNextClick: () -> Unit,
@@ -1610,6 +1720,7 @@ private fun ApplicationWizardBottomBar(
             if (draft.currentStep.previousOrNull() != null) {
                 OutlinedButton(
                     onClick = onPreviousClick,
+                    enabled = !isWorking,
                     shape = RoundedCornerShape(RestaurantsUiDefaults.InnerRadius),
                 ) {
                     Text("Back")
@@ -1617,12 +1728,14 @@ private fun ApplicationWizardBottomBar(
             }
             OutlinedButton(
                 onClick = onSaveDraftClick,
+                enabled = !isWorking,
                 shape = RoundedCornerShape(RestaurantsUiDefaults.InnerRadius),
             ) {
                 Text("Save Draft")
             }
             Button(
                 onClick = if (canSubmitAttempt) onSubmitClick else onNextClick,
+                enabled = !isWorking,
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(RestaurantsUiDefaults.InnerRadius),
                 colors = ButtonDefaults.buttonColors(
@@ -1630,12 +1743,25 @@ private fun ApplicationWizardBottomBar(
                     contentColor = Color.White,
                 ),
             ) {
-                Text(
-                    text = if (canSubmitAttempt) "Submit Application" else "Continue",
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (isWorking && canSubmitAttempt) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = Color.White,
+                        strokeWidth = 2.dp,
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Submitting...",
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                } else {
+                    Text(
+                        text = if (canSubmitAttempt) "Submit Application" else "Continue",
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
         }
     }
