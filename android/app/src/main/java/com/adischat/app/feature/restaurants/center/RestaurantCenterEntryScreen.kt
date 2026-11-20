@@ -150,9 +150,10 @@ fun RestaurantCenterEntryScreen(accountUid: String, onBack: () -> Unit) {
                             val branches = if (draft.primaryBranchName.isNotBlank() || draft.streetAddress.isNotBlank()) {
                                 listOf(
                                     DraftBranchInputDto(
-                                        name = draft.primaryBranchName.ifBlank { draft.brandName },
-                                        address = draft.streetAddress,
-                                        city = draft.cityAndArea,
+                                        code = "MAIN",
+                                        name = draft.primaryBranchName.ifBlank { draft.brandName.ifBlank { "Main Branch" } },
+                                        address = draft.streetAddress.ifBlank { "Primary Location" },
+                                        city = draft.cityAndArea.takeIf { it.isNotBlank() },
                                     )
                                 )
                             } else null

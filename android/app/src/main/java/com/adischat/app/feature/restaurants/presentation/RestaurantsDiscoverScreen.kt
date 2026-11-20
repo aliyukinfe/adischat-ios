@@ -263,8 +263,8 @@ private fun RestaurantsDiscoverScaffoldBody(
                             } else {
                                 Surface(
                                     shape = RoundedCornerShape(16.dp),
-                                    color = extColors.cardBackground,
-                                    border = BorderStroke(1.dp, extColors.border),
+                                    color = extColors.cardSurface,
+                                    border = BorderStroke(1.dp, extColors.cardBorder),
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 8.dp),
