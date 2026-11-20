@@ -80,6 +80,7 @@ fun RestaurantsCustomerRootScreen(
     onInitialQrTokenConsumed: () -> Unit = {},
     initialSearchRestaurantId: String? = null,
     onInitialSearchRestaurantConsumed: () -> Unit = {},
+    onOpenRestaurantCenter: (() -> Unit)? = null,
 ) {
     val allowed = FeatureFlags.RESTAURANTS_DINE_IN_ENABLED &&
         RestaurantsAppIntegrationGuards.isCustomerDineInFlowAllowed(environment)
@@ -309,6 +310,7 @@ fun RestaurantsCustomerRootScreen(
                         scanReturnRestaurantId = null
                         coordinator.openTableScan()
                     },
+                    onRegisterRestaurantClick = onOpenRestaurantCenter,
                     modifier = modifier,
                 )
             }

@@ -12,14 +12,15 @@ object FeatureFlags {
     const val WALLET_ENABLED = FEATURE_WALLET_ENABLED
     const val VIDEO_CALLS_ENABLED = false
 
-    // AdisChat Restaurants — Customer Dine-In & Restaurant Center enabled for production release.
-    // Admin review and QA preview/synthetic harnesses remain strictly restricted.
+    // AdisChat Restaurants — Customer Dine-In, Restaurant Center, and Platform Admin Review enabled.
+    // Platform Admin console access is dynamically verified via authenticated am-i-admin endpoint.
+    // QA preview and synthetic harnesses remain strictly restricted to QA builds.
     val RESTAURANTS_DINE_IN_ENABLED: Boolean
         get() = true
     val RESTAURANT_CENTER_ENABLED: Boolean
         get() = true
     val RESTAURANT_ADMIN_ENABLED: Boolean
-        get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
+        get() = true
     val RESTAURANTS_QA_PREVIEW_ENABLED: Boolean
         get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
 

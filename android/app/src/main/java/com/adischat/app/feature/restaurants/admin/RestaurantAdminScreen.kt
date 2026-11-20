@@ -78,11 +78,11 @@ fun RestaurantAdminScreen(
         topBar = {
             RestaurantsTopBar(
                 title = "Platform Restaurant Admin",
-                subtitle = "Offline Mock Moderation Console",
+                subtitle = "Platform Moderation & Application Review",
                 onBackClick = onBackClick,
                 trailingContent = {
                     RestaurantTagPill(
-                        label = "Admin Only",
+                        label = "Super Admin",
                         containerColor = RestaurantsUiDefaults.WarmAmberSoft,
                         contentColor = RestaurantsUiDefaults.WarmAmberAccent,
                     )
@@ -165,8 +165,8 @@ fun RestaurantAdminScreen(
                     ) {
                         item {
                             DineInNoticeBanner(
-                                headline = "Mocked Offline Admin Console",
-                                supportingText = "Hidden and disabled in production. Self-approval by applicants is strictly blocked.",
+                                headline = "Platform Admin Review Console",
+                                supportingText = "Authorized moderation of partner applications and audit logs. Self-approval is strictly forbidden.",
                                 icon = Icons.Rounded.AdminPanelSettings,
                             )
                         }

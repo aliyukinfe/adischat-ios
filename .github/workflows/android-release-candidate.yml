@@ -123,7 +123,7 @@ jobs:
       - name: Upload Versioned Signed AAB Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: AdisChat-v1.0.130-signed.aab
+          name: AdisChat-v1.0.131-signed.aab
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 7

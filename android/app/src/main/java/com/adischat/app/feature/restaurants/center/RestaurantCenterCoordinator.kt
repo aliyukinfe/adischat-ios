@@ -272,6 +272,27 @@ class RestaurantCenterCoordinator(
         }
     }
 
+    fun submitDraftApplication(
+        draft: SaveApplicationDraftRequest,
+        onSuccess: () -> Unit = {},
+    ) {
+        val uid = requireEnabledAndUid() ?: return
+        val startEpoch = flowEpoch.get()
+        runMutation(startEpoch, uid) {
+            val saved = dataSource.saveApplicationDraft(draft).getOrThrow()
+            val submitted = dataSource.submitApplication(saved.id).getOrThrow()
+            _state.update { current ->
+                if (!isStillValid(startEpoch, uid)) return@update current
+                val updatedApps = (current.applications.filterNot { it.id == submitted.id } + submitted)
+                current.copy(
+                    applications = updatedApps,
+                    actionFeedback = "Application submitted for Admin review.",
+                )
+            }
+            onSuccess()
+        }
+    }
+
     fun confirmApplicationDocument(request: ConfirmDocumentRequest) {
         val uid = requireEnabledAndUid() ?: return
         val app = _state.value.applications.firstOrNull { it.id == request.applicationId }

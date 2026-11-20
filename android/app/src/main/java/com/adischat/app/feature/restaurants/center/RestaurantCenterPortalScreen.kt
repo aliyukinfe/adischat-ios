@@ -99,6 +99,8 @@ import com.google.firebase.auth.FirebaseAuth
 fun RestaurantCenterPortalScreen(
     onBackToProfile: () -> Unit,
     modifier: Modifier = Modifier,
+    existingApplication: CenterApplicationUi? = null,
+    onSubmitApplication: ((RestaurantApplicationDraftUiState) -> Unit)? = null,
     environment: RestaurantsEnvironment = remember { RestaurantsConfig.currentEnvironment },
 ) {
     RestaurantsSystemBarAppearance(useDarkIcons = true)
@@ -108,12 +110,29 @@ fun RestaurantCenterPortalScreen(
             RestaurantsAppIntegrationGuards.isRestaurantCenterEntryAllowed(environment)
 
         val authenticatedUid = remember { resolveAuthenticatedFirebaseUidOrNull() }
-        var draftState by remember {
-            mutableStateOf(
+        val initialDraft = remember(existingApplication, authenticatedUid) {
+            if (existingApplication != null) {
+                RestaurantApplicationDraftUiState(
+                    draftId = existingApplication.id,
+                    applicantProfileId = existingApplication.applicantProfileId,
+                    status = existingApplication.status,
+                    legalName = existingApplication.legalName,
+                    brandName = existingApplication.brandName,
+                    description = existingApplication.description,
+                    contactPhone = existingApplication.contactPhone,
+                    contactEmail = existingApplication.contactEmail,
+                    registrationNumber = existingApplication.tinNumber,
+                    reviewNotes = existingApplication.reviewNotes,
+                    hasLocalDraftSave = true,
+                )
+            } else {
                 RestaurantApplicationDraftUiState(
                     applicantProfileId = authenticatedUid,
-                ),
-            )
+                )
+            }
+        }
+        var draftState by remember(initialDraft) {
+            mutableStateOf(initialDraft)
         }
         var isWizardOpen by remember { mutableStateOf(false) }
 
@@ -226,6 +245,10 @@ fun RestaurantCenterPortalScreen(
                                 environment = environment,
                                 nowEpochMs = System.currentTimeMillis(),
                             )
+                            if (!draftState.isStatusBannerError && onSubmitApplication != null) {
+                                onSubmitApplication(draftState)
+                                isWizardOpen = false
+                            }
                         },
                     )
                 }
@@ -343,8 +366,10 @@ private fun RestaurantCenterHubOverview(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = if (hasStartedDraft) {
-                                "Step ${draft.currentStep.stepNumber} of 5 · Local application draft ready"
+                            text = if (draft.status == RestaurantApplicationStatus.SUBMITTED || draft.status == RestaurantApplicationStatus.UNDER_REVIEW) {
+                                "Your application has been submitted and is currently pending platform review."
+                            } else if (hasStartedDraft) {
+                                "Step ${draft.currentStep.stepNumber} of 5 · Application draft ready"
                             } else {
                                 "Prepare your restaurant onboarding application across 5 guided steps."
                             },
@@ -392,10 +417,13 @@ private fun RestaurantCenterHubOverview(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = if (hasStartedDraft) {
-                            "Continue Application Draft"
-                        } else {
-                            "Start Restaurant Application"
+                        text = when (draft.status) {
+                            RestaurantApplicationStatus.SUBMITTED,
+                            RestaurantApplicationStatus.UNDER_REVIEW -> "Application Pending Review"
+                            RestaurantApplicationStatus.CHANGES_REQUESTED -> "Review Notes & Update"
+                            RestaurantApplicationStatus.APPROVED -> "Application Approved"
+                            RestaurantApplicationStatus.REJECTED -> "Application Rejected"
+                            RestaurantApplicationStatus.DRAFT -> if (hasStartedDraft) "Continue Application Draft" else "Start Restaurant Application"
                         },
                         fontWeight = FontWeight.SemiBold,
                     )

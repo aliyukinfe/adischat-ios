@@ -258,17 +258,7 @@ fun MainScreen(
         lastUid = uid
 
         if (!uid.isNullOrBlank()) {
-            if (FeatureFlags.RESTAURANT_CENTER_ENABLED) {
-                RestaurantsRepository().checkRestaurantCenterEligibility()
-                    .onSuccess { eligibility ->
-                        isRestaurantCenterEligible = eligibility.isEligible || (currentUser?.role == "admin")
-                    }
-                    .onFailure {
-                        isRestaurantCenterEligible = currentUser?.role == "admin"
-                    }
-            } else {
-                isRestaurantCenterEligible = currentUser?.role == "admin"
-            }
+            isRestaurantCenterEligible = FeatureFlags.RESTAURANT_CENTER_ENABLED
 
             SellerRepository().status()
                 .onSuccess { (status, _) ->
@@ -575,6 +565,13 @@ fun MainScreen(
                                         restaurantsCustomerOpen = false
                                         onGoHome()
                                     },
+                                    onOpenRestaurantCenter = {
+                                        if (currentUser?.uid != null) {
+                                            restaurantCenterNativeOpen = true
+                                        } else {
+                                            activeBottomTab = 4
+                                        }
+                                    },
                                     onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
                                         {
                                             restaurantsCustomerOpen = false
@@ -603,6 +600,13 @@ fun MainScreen(
                             pendingRestaurantQrToken = null
                             restaurantsCustomerOpen = false
                             onGoHome()
+                        },
+                        onOpenRestaurantCenter = {
+                            if (currentUser?.uid != null) {
+                                restaurantCenterNativeOpen = true
+                            } else {
+                                activeBottomTab = 4
+                            }
                         },
                         onOpenQaPreview = if (FeatureFlags.RESTAURANTS_QA_PREVIEW_ENABLED) {
                             {

@@ -41,14 +41,17 @@ import androidx.compose.material.icons.rounded.LocationOn
 import androidx.compose.material.icons.rounded.LunchDining
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.RestaurantMenu
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SoupKitchen
+import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -65,6 +68,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -89,6 +93,7 @@ fun RestaurantsDiscoverScreen(
     onRetryClick: () -> Unit = {},
     onBackClick: (() -> Unit)? = null,
     onScanQrClick: (() -> Unit)? = null,
+    onRegisterRestaurantClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     RestaurantsLightTheme {
@@ -131,6 +136,8 @@ fun RestaurantsDiscoverScreen(
                 onCuisineFilterSelected = onCuisineFilterSelected,
                 onRestaurantClick = onRestaurantClick,
                 onRetryClick = onRetryClick,
+                onScanQrClick = onScanQrClick,
+                onRegisterRestaurantClick = onRegisterRestaurantClick,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(innerPadding)
@@ -147,6 +154,8 @@ private fun RestaurantsDiscoverScaffoldBody(
     onCuisineFilterSelected: (String) -> Unit,
     onRestaurantClick: (RestaurantCardUiModel) -> Unit,
     onRetryClick: () -> Unit,
+    onScanQrClick: (() -> Unit)? = null,
+    onRegisterRestaurantClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     BoxWithConstraints(
@@ -239,24 +248,117 @@ private fun RestaurantsDiscoverScaffoldBody(
                         item(span = { GridItemSpan(columns) }) {
                             val hasActiveFilter = state.searchQuery.isNotBlank() ||
                                 state.selectedCuisineFilter != RestaurantsDiscoverUiState.ALL_CUISINES
-                            RestaurantsStateMessageCard(
-                                icon = Icons.Rounded.Restaurant,
-                                title = if (hasActiveFilter) "No matching restaurants" else "No restaurants listed yet",
-                                message = if (hasActiveFilter) {
-                                    "Try clearing your search or switching cuisine filters."
-                                } else {
-                                    "Approved dine-in partner restaurants will appear here."
-                                },
-                                actionLabel = if (hasActiveFilter) "Clear Filters" else null,
-                                onActionClick = if (hasActiveFilter) {
-                                    {
+                            if (hasActiveFilter) {
+                                RestaurantsStateMessageCard(
+                                    icon = Icons.Rounded.Restaurant,
+                                    title = "No matching restaurants",
+                                    message = "Try clearing your search or switching cuisine filters.",
+                                    actionLabel = "Clear Filters",
+                                    onActionClick = {
                                         onSearchQueryChange("")
                                         onCuisineFilterSelected(RestaurantsDiscoverUiState.ALL_CUISINES)
+                                    },
+                                )
+                            } else {
+                                Surface(
+                                    shape = RoundedCornerShape(16.dp),
+                                    color = extColors.cardBackground,
+                                    border = BorderStroke(1.dp, extColors.border),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 8.dp),
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(54.dp)
+                                                .clip(CircleShape)
+                                                .background(extColors.brandGreenSoft),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.RestaurantMenu,
+                                                contentDescription = null,
+                                                tint = extColors.brandGreenDeep,
+                                                modifier = Modifier.size(28.dp),
+                                            )
+                                        }
+                                        Text(
+                                            text = "Welcome to AdisChat Restaurants",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = extColors.primaryText,
+                                        )
+                                        Text(
+                                            text = "Explore partner dining menus, order straight from your table, or partner with AdisChat to list your restaurant.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = extColors.secondaryText,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 18.sp,
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            if (onScanQrClick != null) {
+                                                Button(
+                                                    onClick = onScanQrClick,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(42.dp),
+                                                    shape = RoundedCornerShape(RestaurantsUiDefaults.InnerRadius),
+                                                    colors = ButtonDefaults.buttonColors(
+                                                        containerColor = extColors.brandGreen,
+                                                        contentColor = Color.White,
+                                                    ),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.QrCodeScanner,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "Scan Table QR",
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontSize = 12.sp,
+                                                    )
+                                                }
+                                            }
+                                            if (onRegisterRestaurantClick != null) {
+                                                OutlinedButton(
+                                                    onClick = onRegisterRestaurantClick,
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(42.dp),
+                                                    shape = RoundedCornerShape(RestaurantsUiDefaults.InnerRadius),
+                                                    border = BorderStroke(1.dp, extColors.brandGreen),
+                                                    colors = ButtonDefaults.outlinedButtonColors(
+                                                        contentColor = extColors.brandGreenDeep,
+                                                    ),
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Rounded.Storefront,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp),
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = "Register Restaurant",
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        fontSize = 12.sp,
+                                                    )
+                                                }
+                                            }
+                                        }
                                     }
-                                } else {
-                                    null
-                                },
-                            )
+                                }
+                            }
                         }
                     } else {
                         items(

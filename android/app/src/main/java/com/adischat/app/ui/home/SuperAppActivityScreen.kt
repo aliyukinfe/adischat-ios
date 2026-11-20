@@ -634,7 +634,7 @@ fun SuperAppActivityScreen(
                                                 fontWeight = FontWeight.Bold,
                                             )
                                             Text(
-                                                text = "Dining Operations & KDS",
+                                                text = "Dining Operations & Partner Portal",
                                                 color = mutedColor,
                                                 fontSize = 10.sp,
                                             )
@@ -648,7 +648,7 @@ fun SuperAppActivityScreen(
                                             .padding(horizontal = 6.dp, vertical = 2.dp),
                                     ) {
                                         Text(
-                                            text = "AUTHORIZED",
+                                            text = "PARTNER",
                                             color = orangeAccent,
                                             fontSize = 8.5.sp,
                                             fontWeight = FontWeight.Bold,
@@ -658,7 +658,7 @@ fun SuperAppActivityScreen(
 
                                 Spacer(Modifier.height(8.dp))
                                 Text(
-                                    text = "Manage restaurant branches, dining menus, live orders, waiter calls, and kitchen display system (KDS).",
+                                    text = "Manage restaurant branches, dining menus, live orders, waiter calls, and staff, or apply to register a new restaurant partner.",
                                     color = if (isLight) Color(0xFF334155) else Color(0xFFCBD5E1),
                                     fontSize = 11.5.sp,
                                     lineHeight = 16.sp,

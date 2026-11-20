@@ -173,19 +173,7 @@ fun HomeScreen(
 
     LaunchedEffect(appUser?.uid) {
         val uid = appUser?.uid
-        if (com.adischat.app.FeatureFlags.RESTAURANT_CENTER_ENABLED && !uid.isNullOrBlank()) {
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    RestaurantsRepository().checkRestaurantCenterEligibility()
-                }.getOrNull()?.onSuccess { eligibility ->
-                    isRestaurantCenterEligible = eligibility.isEligible
-                }?.onFailure {
-                    isRestaurantCenterEligible = false
-                }
-            }
-        } else {
-            isRestaurantCenterEligible = false
-        }
+        isRestaurantCenterEligible = com.adischat.app.FeatureFlags.RESTAURANT_CENTER_ENABLED && !uid.isNullOrBlank()
     }
 
     val firstName = appUser?.name?.split(" ")?.firstOrNull()?.takeIf { it.isNotBlank() } ?: "akab"
