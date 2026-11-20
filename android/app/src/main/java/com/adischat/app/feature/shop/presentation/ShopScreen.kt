@@ -251,6 +251,7 @@ private val ShopBlue = AdisGebeyaColors.Info
 private val ShopBlueSoft = AdisGebeyaColors.SoftBlue
 private val ShopPinkSoft = AdisGebeyaColors.SoftPink
 private val ShopAmberSoft = AdisGebeyaColors.SoftOrange
+private val ShopOrangeSoft = AdisGebeyaColors.SoftOrange
 private val ShopPurple = AdisGebeyaColors.Purple
 private val ShopPurpleSoft = AdisGebeyaColors.SoftPurple
 private val ShopOnColor = AdisGebeyaColors.OnColor
@@ -1088,6 +1089,24 @@ private fun ShopAdminRouteContent(
             onPreviewPublicContent = vm::previewPublicContent,
             onClosePublicContentPreview = vm::closePublicContentPreview,
             onDecidePublicContent = vm::decidePublicContent,
+            onCreatePromotion = vm::createAdminPromotion,
+            onUpdatePromotionStatus = vm::updateAdminPromotionStatus,
+            onCreateCoupon = { code, desc, type, value, minOrder, maxDiscount, scope, limit, expiresAt ->
+                vm.createAdminCoupon(
+                    code = code,
+                    description = desc,
+                    discountType = type,
+                    discountValue = value,
+                    minOrderMinor = minOrder,
+                    maxDiscountMinor = maxDiscount,
+                    scope = scope,
+                    usageLimit = limit,
+                    userLimit = 1,
+                    startsAt = "",
+                    expiresAt = expiresAt,
+                )
+            },
+            onUpdateCouponStatus = vm::updateAdminCouponStatus,
         )
         is ShopRoute.AdminProductDetail -> AdminProductDetailScreen(
             productId = route.productId,
@@ -1655,6 +1674,10 @@ private fun AdminCenterScreen(
     onPreviewPublicContent: (com.adischat.app.feature.shop.data.ShopPublicContentItemDto) -> Unit,
     onClosePublicContentPreview: () -> Unit,
     onDecidePublicContent: (String) -> Unit,
+    onCreatePromotion: ((title: String, subtitle: String, bannerUrl: String, targetType: String, targetId: String, placement: String, priority: Int, startsAt: String, endsAt: String?) -> Unit)? = null,
+    onUpdatePromotionStatus: ((campaignId: String, action: String, reason: String) -> Unit)? = null,
+    onCreateCoupon: ((code: String?, desc: String, type: String, value: Int, minOrder: Int, maxDiscount: Int?, scope: String, limit: Int, expiresAt: String?) -> Unit)? = null,
+    onUpdateCouponStatus: ((couponId: String, action: String, reason: String) -> Unit)? = null,
 ) {
     val selectedTab = AdminTab.entries.firstOrNull { it.label == protectedState.adminSelectedTab } ?: AdminTab.Sellers
     val allProductsQuery = protectedState.allAdminProductsQuery
@@ -1829,7 +1852,13 @@ private fun AdminCenterScreen(
                 }
             }
             AdminTab.Vouchers -> {
-                item { AdminVouchersManagementCard() }
+                item {
+                    AdminVouchersManagementCard(
+                        coupons = protectedState.adminCoupons,
+                        onCreateCoupon = onCreateCoupon,
+                        onUpdateCouponStatus = onUpdateCouponStatus,
+                    )
+                }
             }
             AdminTab.Promotions -> {
                 item {
@@ -1837,6 +1866,9 @@ private fun AdminCenterScreen(
                     AdminPromotionsManagementCard(
                         products = allAdminList,
                         onOpenProduct = onOpenProduct,
+                        promotions = protectedState.adminPromotions,
+                        onCreatePromotion = onCreatePromotion,
+                        onUpdatePromotionStatus = onUpdatePromotionStatus,
                     )
                 }
             }
@@ -2144,6 +2176,12 @@ private fun AdminStoreDetailScreen(
     val detail = protectedState.selectedAdminStore
     val store = detail?.store
     val busy = protectedState.busyIds.contains("admin-store-$storeId")
+    val isSelfApproval = !protectedState.ownerUid.isNullOrBlank() && (
+        protectedState.ownerUid == detail?.store?.ownerProfileId ||
+        protectedState.ownerUid == store?.ownerProfileId ||
+        protectedState.ownerUid == detail?.owner?.id ||
+        protectedState.ownerUid == detail?.owner?.adisChatUserId
+    )
 
     pendingAction?.let { action ->
         AlertDialog(
@@ -2151,7 +2189,12 @@ private fun AdminStoreDetailScreen(
             title = { Text("${backendLabel(action)} store", color = ShopInk, fontWeight = FontWeight.SemiBold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Confirm this action for ${store?.name ?: "the selected store"}. Historical orders stay preserved.", color = ShopMuted)
+                    Text(
+                        if (action == "suspend") "Suspending this store immediately hides its entire product catalog from public search and category feeds. Historical orders stay preserved."
+                        else if (action == "safe_delete") "Stores with historical orders cannot be hard-deleted from Postgres. Safe deleting deactivates and archives the store while preserving order records."
+                        else "Confirm this action for ${store?.name ?: "the selected store"}. Historical orders stay preserved.",
+                        color = ShopMuted,
+                    )
                     OutlinedTextField(reason, { reason = it }, label = { Text("Seller-visible reason") }, minLines = 2, modifier = Modifier.fillMaxWidth(), colors = shopOutlinedTextFieldColors())
                 }
             },
@@ -2209,13 +2252,40 @@ private fun AdminStoreDetailScreen(
                 Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(ShopSurface), border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine)) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         SectionTitle("Moderation actions")
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = { pendingAction = "warn" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Warn") }
-                            OutlinedButton(onClick = { pendingAction = "suspend" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Suspend") }
+                        if (isSelfApproval) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = ShopOrange.copy(alpha = 0.12f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, ShopOrange.copy(alpha = 0.35f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                            ) {
+                                Text(
+                                    "Self-approval prohibited: You are registered as the owner of this store. Another administrator must review and reactivate this store.",
+                                    color = ShopOrange,
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(10.dp),
+                                )
+                            }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { pendingAction = "reactivate" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp), colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)) { Text("Reactivate") }
+                            OutlinedButton(onClick = { pendingAction = "warn" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Warn") }
+                            OutlinedButton(onClick = { pendingAction = "suspend" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Suspend", color = ShopOrangeDark) }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                onClick = { pendingAction = "reactivate" },
+                                enabled = !busy && !isSelfApproval,
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = ShopGreen)
+                            ) {
+                                Text("Reactivate")
+                            }
                             TextButton(onClick = { pendingAction = "archive" }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Archive", color = ShopOrangeDark, fontWeight = FontWeight.SemiBold) }
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { pendingAction = "safe_delete" }, enabled = !busy, modifier = Modifier.fillMaxWidth()) { Text("Safe Delete (Deactivate)", color = ShopRed, fontWeight = FontWeight.SemiBold) }
                         }
                     }
                 }
@@ -2233,8 +2303,9 @@ private fun AdminStoreDetailScreen(
 
 private fun defaultStoreActionReason(action: String): String = when (action) {
     "warn" -> "Please review and follow AdisGebeya marketplace policies."
-    "suspend" -> "Store temporarily suspended for marketplace review."
+    "suspend" -> "Store temporarily suspended for marketplace review. Public catalog products are hidden."
     "archive" -> "Store archived by Admin after review."
+    "safe_delete" -> "Store deactivated and archived. Historical orders remain preserved."
     else -> "Store reactivated after Admin review."
 }
 
@@ -2461,6 +2532,14 @@ private fun AdminProductDetailScreen(
                         OutlinedButton(onClick = { pendingAction = "request_changes" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Changes") }
                         TextButton(onClick = { pendingAction = "reject" }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Reject", color = ShopRed, fontWeight = FontWeight.SemiBold) }
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { pendingAction = "suspend" }, enabled = !busy, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Suspend", color = ShopOrangeDark) }
+                        OutlinedButton(onClick = { pendingAction = "restore" }, enabled = !busy && !isSelfApproval, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Restore") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { pendingAction = "archive" }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Archive", color = ShopMuted) }
+                        TextButton(onClick = { pendingAction = "soft_delete" }, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Soft Delete", color = ShopRed, fontWeight = FontWeight.SemiBold) }
+                    }
                 }
             }
         }
@@ -2571,6 +2650,10 @@ private fun AdminModerationHistory(reviews: List<ShopAdminProductReviewDto>) {
 private fun defaultProductReviewReason(action: String): String = when (action) {
     "request_changes" -> "Product needs changes before publishing."
     "reject" -> "Product does not meet AdisGebeya listing standards."
+    "suspend" -> "Product temporarily suspended by Administrator."
+    "restore" -> "Product restored to active catalog after moderation review."
+    "archive" -> "Product archived by Administrator."
+    "soft_delete" -> "Product deactivated and archived. Historical order records preserved."
     else -> ""
 }
 
@@ -3013,9 +3096,161 @@ private data class AdminVoucherItem(
     val isSyntheticQa: Boolean = false,
 )
 
+private data class AdminCouponItem(
+    val id: String,
+    val code: String,
+    val description: String,
+    val discountType: String, // "percent" or "fixed"
+    val discountValue: Int,
+    val minOrderMinor: Int,
+    val maxDiscountMinor: Int? = null,
+    val scope: String, // "Marketplace-wide", "Store-scoped", "Category-scoped"
+    val usageLimit: Int,
+    val usedCount: Int,
+    val userLimit: Int = 1,
+    val startsAt: String,
+    val expiresAt: String,
+    val status: String, // "active", "paused", "expired", "revoked"
+    val createdBy: String,
+    val revocationReason: String? = null,
+)
+
+private data class AdminCampaignItem(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val bannerUrl: String,
+    val targetType: String, // "product", "store", "restaurant", "channel"
+    val targetId: String,
+    val targetName: String,
+    val placement: String, // "Home Hero", "Marketplace Sponsored", "Promotions Feed"
+    val priority: Int = 100,
+    val startsAt: String,
+    val endsAt: String,
+    val status: String, // "draft", "submitted", "published", "paused", "archived"
+    val isSponsored: Boolean = true,
+    val createdBy: String,
+)
+
 @Composable
-internal fun AdminVouchersManagementCard() {
+internal fun AdminVouchersManagementCard(
+    coupons: List<com.adischat.app.feature.shop.data.ShopAdminCouponDto> = emptyList(),
+    onCreateCoupon: ((code: String?, desc: String, type: String, value: Int, minOrder: Int, maxDiscount: Int?, scope: String, limit: Int, expiresAt: String?) -> Unit)? = null,
+    onUpdateCouponStatus: ((couponId: String, action: String, reason: String) -> Unit)? = null,
+) {
+    var activeSubTab by remember { mutableStateOf("Coupons") }
     var selectedFilter by remember { mutableStateOf("All") }
+
+    val backendCoupons = remember(coupons) {
+        coupons.map { dto ->
+            AdminCouponItem(
+                id = dto.id,
+                code = dto.code,
+                description = dto.description,
+                discountType = dto.discountType,
+                discountValue = dto.discountValue,
+                minOrderMinor = dto.minOrderMinor,
+                maxDiscountMinor = dto.maxDiscountMinor,
+                scope = dto.scope,
+                usageLimit = dto.usageLimit,
+                usedCount = dto.usedCount,
+                userLimit = dto.userLimit,
+                startsAt = dto.startsAt.orEmpty().substringBefore("T"),
+                expiresAt = dto.expiresAt.orEmpty().substringBefore("T"),
+                status = dto.status,
+                createdBy = dto.createdBy ?: "Admin Console",
+                revocationReason = dto.revocationReason,
+            )
+        }
+    }
+
+    // Coupons State
+    var couponList by remember {
+        mutableStateOf(
+            listOf(
+                AdminCouponItem(
+                    id = "c-001",
+                    code = "ADIS-SPRING20",
+                    description = "Spring seasonal discount across AdisGebeya marketplace",
+                    discountType = "percent",
+                    discountValue = 20,
+                    minOrderMinor = 25000,
+                    maxDiscountMinor = 20000,
+                    scope = "Marketplace-wide",
+                    usageLimit = 1000,
+                    usedCount = 312,
+                    startsAt = "2026-11-01",
+                    expiresAt = "2026-12-31",
+                    status = "active",
+                    createdBy = "Marketing Admin (admin@adischat.com)",
+                ),
+                AdminCouponItem(
+                    id = "c-002",
+                    code = "ADIS-SAVE100",
+                    description = "Flat 100 ETB savings on orders above 500 ETB",
+                    discountType = "fixed",
+                    discountValue = 10000,
+                    minOrderMinor = 50000,
+                    scope = "Marketplace-wide",
+                    usageLimit = 500,
+                    usedCount = 89,
+                    startsAt = "2026-11-10",
+                    expiresAt = "2026-11-30",
+                    status = "active",
+                    createdBy = "Promotions Team",
+                ),
+                AdminCouponItem(
+                    id = "c-003",
+                    code = "TECH-PROMO15",
+                    description = "15% off certified electronics and accessories",
+                    discountType = "percent",
+                    discountValue = 15,
+                    minOrderMinor = 100000,
+                    maxDiscountMinor = 50000,
+                    scope = "Category: Electronics",
+                    usageLimit = 200,
+                    usedCount = 45,
+                    startsAt = "2026-11-01",
+                    expiresAt = "2026-12-15",
+                    status = "active",
+                    createdBy = "Category Manager",
+                ),
+                AdminCouponItem(
+                    id = "c-004",
+                    code = "FLASH-50",
+                    description = "Flash weekend discount voucher",
+                    discountType = "fixed",
+                    discountValue = 5000,
+                    minOrderMinor = 30000,
+                    scope = "Marketplace-wide",
+                    usageLimit = 150,
+                    usedCount = 150,
+                    startsAt = "2026-10-01",
+                    expiresAt = "2026-10-31",
+                    status = "expired",
+                    createdBy = "Marketing Admin",
+                ),
+            )
+        )
+    }
+    var showCreateCouponDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(coupons) {
+        if (coupons.isNotEmpty()) {
+            couponList = backendCoupons
+        }
+    }
+    var newCouponCode by remember { mutableStateOf("") }
+    var newCouponDesc by remember { mutableStateOf("") }
+    var newCouponType by remember { mutableStateOf("percent") }
+    var newCouponValue by remember { mutableStateOf("10") }
+    var newCouponMinOrder by remember { mutableStateOf("200") }
+    var newCouponScope by remember { mutableStateOf("Marketplace-wide") }
+    var newCouponLimit by remember { mutableStateOf("500") }
+    var newCouponExpiry by remember { mutableStateOf("2026-12-31") }
+    var couponRevokeTargetId by remember { mutableStateOf<String?>(null) }
+    var couponAuditReason by remember { mutableStateOf("") }
+
+    // Vouchers State (Noncash promotional)
     var voucherList by remember {
         mutableStateOf(
             listOf(
@@ -3083,55 +3318,62 @@ internal fun AdminVouchersManagementCard() {
     var revokeTargetId by remember { mutableStateOf<String?>(null) }
 
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = ShopGreen.copy(alpha = 0.08f),
-            border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = 0.3f)),
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Security, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
-                    Text("Role-Restricted Voucher Governance", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                }
-                Text(
-                    "Real-money voucher operations and escrow settlement remain strictly role-gated to Finance Administrators. Synthetic test vouchers (QA-*) run in isolated staging sandboxes without impacting ledger tables or merchant payouts.",
-                    color = ShopMuted,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                )
-            }
-        }
-
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val filters = listOf("All", "Marketplace", "Store-scoped", "QA Sandboxed")
-            items(filters) { filter ->
-                val selected = selectedFilter == filter
+        // Sub-navigation: Coupons vs Vouchers
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Coupons", "Vouchers (Promotional)").forEach { tab ->
+                val isSelected = activeSubTab == tab
                 Surface(
-                    color = if (selected) ShopGreen else ShopSurface,
-                    contentColor = if (selected) ShopOnColor else ShopInk,
-                    shape = RoundedCornerShape(999.dp),
-                    border = if (!selected) androidx.compose.foundation.BorderStroke(1.dp, ShopLine) else null,
-                    modifier = Modifier.clickable { selectedFilter = filter },
+                    color = if (isSelected) ShopGreen else ShopSurface,
+                    contentColor = if (isSelected) ShopOnColor else ShopInk,
+                    shape = RoundedCornerShape(12.dp),
+                    border = if (!isSelected) androidx.compose.foundation.BorderStroke(1.dp, ShopLine) else null,
+                    modifier = Modifier.weight(1f).clickable { activeSubTab = tab },
                 ) {
-                    Text(filter, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp))
+                    Box(Modifier.padding(vertical = 10.dp), contentAlignment = Alignment.Center) {
+                        Text(tab, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             }
         }
 
-        val filteredVouchers = voucherList.filter {
-            when (selectedFilter) {
-                "Marketplace" -> !it.isSyntheticQa && it.scope.contains("Marketplace")
-                "Store-scoped" -> !it.isSyntheticQa && it.scope.contains("Store")
-                "QA Sandboxed" -> it.isSyntheticQa
-                else -> true
+        if (activeSubTab == "Coupons") {
+            // Coupons Section
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = ShopGreen.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Security, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
+                            Text("Coupon Management & Atomic Checkout", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                        Button(
+                            onClick = {
+                                newCouponCode = "ADIS-${(1000..9999).random()}"
+                                showCreateCouponDialog = true
+                            },
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("+ Create Coupon", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Text(
+                        "Coupons apply discount rules atomically at checkout with strict lock verification. Codes must be uppercase and unique. Revoking a coupon requires an audit reason and immediately halts new checkouts.",
+                        color = ShopMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
             }
-        }
 
-        if (filteredVouchers.isEmpty()) {
-            EmptyCard("No vouchers match the selected filter.")
-        } else {
-            filteredVouchers.forEach { voucher ->
+            couponList.forEach { coupon ->
                 Card(
                     shape = RoundedCornerShape(18.dp),
                     colors = CardDefaults.cardColors(ShopSurface),
@@ -3140,44 +3382,172 @@ internal fun AdminVouchersManagementCard() {
                     Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(voucher.code, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 15.sp)
-                                    if (voucher.isSyntheticQa) {
-                                        MiniBadge("QA SANDBOX", ShopAmberSoft, ShopOrangeDark)
-                                    }
-                                }
-                                Text(voucher.title, color = ShopMuted, fontSize = 12.sp)
+                                Text(coupon.code, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                                Text(coupon.description, color = ShopMuted, fontSize = 12.sp)
                             }
                             MiniBadge(
-                                voucher.status.uppercase(),
-                                when (voucher.status) {
+                                coupon.status.uppercase(),
+                                when (coupon.status) {
                                     "active" -> ShopGreenSoft
+                                    "paused" -> ShopAmberSoft
                                     "expired" -> ShopAmberSoft
                                     else -> ShopRedSoft
                                 },
-                                when (voucher.status) {
+                                when (coupon.status) {
                                     "active" -> ShopGreen
+                                    "paused" -> ShopOrangeDark
                                     "expired" -> ShopOrangeDark
                                     else -> ShopRed
                                 },
                             )
                         }
                         HorizontalDivider(color = ShopLine)
-                        AdminInfoRow("Discount", if (voucher.discountType == "percent") "${voucher.discountValue}% off" else "${formatEtb(voucher.discountValue)} fixed discount")
-                        AdminInfoRow("Min. Order", if (voucher.minOrderMinor > 0) formatEtb(voucher.minOrderMinor) else "None")
-                        AdminInfoRow("Eligibility Scope", voucher.scope)
-                        AdminInfoRow("Usage Limits", "${voucher.usedCount} used / ${voucher.usageLimit} max")
-                        AdminInfoRow("Expires", voucher.expiresAt)
-                        AdminInfoRow("Audit Trail", "Created by ${voucher.createdBy}")
+                        AdminInfoRow("Discount", if (coupon.discountType == "percent") "${coupon.discountValue}% off" else "${formatEtb(coupon.discountValue)} fixed discount")
+                        AdminInfoRow("Min. Order", if (coupon.minOrderMinor > 0) formatEtb(coupon.minOrderMinor) else "None")
+                        coupon.maxDiscountMinor?.let { AdminInfoRow("Max. Discount Cap", formatEtb(it)) }
+                        AdminInfoRow("Scope", coupon.scope)
+                        AdminInfoRow("Redemption", "${coupon.usedCount} / ${coupon.usageLimit} uses")
+                        AdminInfoRow("Validity Window", "${coupon.startsAt} to ${coupon.expiresAt}")
+                        AdminInfoRow("Created By", coupon.createdBy)
+                        coupon.revocationReason?.let { AdminInfoRow("Revocation Note", it) }
 
-                        if (voucher.status == "active") {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            if (coupon.status == "active") {
                                 OutlinedButton(
-                                    onClick = { revokeTargetId = voucher.id },
+                                    onClick = {
+                                        onUpdateCouponStatus?.invoke(coupon.id, "pause", "Admin paused coupon")
+                                        couponList = couponList.map { if (it.id == coupon.id) it.copy(status = "paused") else it }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Pause", fontSize = 12.sp)
+                                }
+                            } else if (coupon.status == "paused") {
+                                Button(
+                                    onClick = {
+                                        onUpdateCouponStatus?.invoke(coupon.id, "activate", "Admin activated coupon")
+                                        couponList = couponList.map { if (it.id == coupon.id) it.copy(status = "active") else it }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                                    modifier = Modifier.weight(1f),
+                                ) {
+                                    Text("Activate", fontSize = 12.sp)
+                                }
+                            }
+                            if (coupon.status == "active" || coupon.status == "paused") {
+                                OutlinedButton(
+                                    onClick = { couponRevokeTargetId = coupon.id },
                                     shape = RoundedCornerShape(10.dp),
                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = ShopRed),
+                                    modifier = Modifier.weight(1f),
                                 ) {
-                                    Text("Revoke / Deactivate", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    Text("Revoke", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // Vouchers Section (Existing noncash promotional vouchers)
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = ShopGreen.copy(alpha = 0.08f),
+                border = androidx.compose.foundation.BorderStroke(1.dp, ShopGreen.copy(alpha = 0.3f)),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = ShopGreen, modifier = Modifier.size(20.dp))
+                        Text("Role-Restricted Voucher Governance", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Text(
+                        "Real-money voucher operations and escrow settlement remain strictly role-gated to Finance Administrators. Safe noncash promotional vouchers with issuance limits and revocation audit records. Strictly NO prepaid stored-value, cash-equivalent, or wallet features.",
+                        color = ShopMuted,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                    )
+                }
+            }
+
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val filters = listOf("All", "Marketplace", "Store-scoped", "QA Sandboxed")
+                items(filters) { filter ->
+                    val selected = selectedFilter == filter
+                    Surface(
+                        color = if (selected) ShopGreen else ShopSurface,
+                        contentColor = if (selected) ShopOnColor else ShopInk,
+                        shape = RoundedCornerShape(999.dp),
+                        border = if (!selected) androidx.compose.foundation.BorderStroke(1.dp, ShopLine) else null,
+                        modifier = Modifier.clickable { selectedFilter = filter },
+                    ) {
+                        Text(filter, fontSize = 12.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp))
+                    }
+                }
+            }
+
+            val filteredVouchers = voucherList.filter {
+                when (selectedFilter) {
+                    "Marketplace" -> !it.isSyntheticQa && it.scope.contains("Marketplace")
+                    "Store-scoped" -> !it.isSyntheticQa && it.scope.contains("Store")
+                    "QA Sandboxed" -> it.isSyntheticQa
+                    else -> true
+                }
+            }
+
+            if (filteredVouchers.isEmpty()) {
+                EmptyCard("No vouchers match the selected filter.")
+            } else {
+                filteredVouchers.forEach { voucher ->
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(ShopSurface),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text(voucher.code, color = ShopInk, fontWeight = FontWeight.Black, fontSize = 15.sp)
+                                        if (voucher.isSyntheticQa) {
+                                            MiniBadge("QA SANDBOX", ShopAmberSoft, ShopOrangeDark)
+                                        }
+                                    }
+                                    Text(voucher.title, color = ShopMuted, fontSize = 12.sp)
+                                }
+                                MiniBadge(
+                                    voucher.status.uppercase(),
+                                    when (voucher.status) {
+                                        "active" -> ShopGreenSoft
+                                        "expired" -> ShopAmberSoft
+                                        else -> ShopRedSoft
+                                    },
+                                    when (voucher.status) {
+                                        "active" -> ShopGreen
+                                        "expired" -> ShopOrangeDark
+                                        else -> ShopRed
+                                    },
+                                )
+                            }
+                            HorizontalDivider(color = ShopLine)
+                            AdminInfoRow("Discount", if (voucher.discountType == "percent") "${voucher.discountValue}% off" else "${formatEtb(voucher.discountValue)} fixed discount")
+                            AdminInfoRow("Min. Order", if (voucher.minOrderMinor > 0) formatEtb(voucher.minOrderMinor) else "None")
+                            AdminInfoRow("Eligibility Scope", voucher.scope)
+                            AdminInfoRow("Usage Limits", "${voucher.usedCount} used / ${voucher.usageLimit} max")
+                            AdminInfoRow("Expires", voucher.expiresAt)
+                            AdminInfoRow("Audit Trail", "Created by ${voucher.createdBy}")
+
+                            if (voucher.status == "active") {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                    OutlinedButton(
+                                        onClick = { revokeTargetId = voucher.id },
+                                        shape = RoundedCornerShape(10.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = ShopRed),
+                                    ) {
+                                        Text("Revoke / Deactivate", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                    }
                                 }
                             }
                         }
@@ -3187,6 +3557,163 @@ internal fun AdminVouchersManagementCard() {
         }
     }
 
+    // Create Coupon Dialog
+    if (showCreateCouponDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateCouponDialog = false },
+            title = { Text("Create New Coupon", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = newCouponCode,
+                            onValueChange = { newCouponCode = it.uppercase() },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Coupon Code") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                        OutlinedButton(
+                            onClick = { newCouponCode = "ADIS-${(1000..9999).random()}" },
+                            shape = RoundedCornerShape(8.dp),
+                        ) {
+                            Text("Random")
+                        }
+                    }
+                    OutlinedTextField(
+                        value = newCouponDesc,
+                        onValueChange = { newCouponDesc = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Description") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newCouponValue,
+                            onValueChange = { newCouponValue = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text(if (newCouponType == "percent") "Discount %" else "Discount ETB") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                        OutlinedTextField(
+                            value = newCouponMinOrder,
+                            onValueChange = { newCouponMinOrder = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Min Order ETB") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newCouponLimit,
+                            onValueChange = { newCouponLimit = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Max Uses") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                        OutlinedTextField(
+                            value = newCouponExpiry,
+                            onValueChange = { newCouponExpiry = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Expires (YYYY-MM-DD)") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                    }
+                    Text(
+                        "Atomic Lock: Redemptions are verified atomically at checkout and restricted to 1 per user.",
+                        color = ShopMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val valueNum = newCouponValue.toIntOrNull() ?: 10
+                        val minOrderNum = (newCouponMinOrder.toIntOrNull() ?: 0) * 100
+                        val limitNum = newCouponLimit.toIntOrNull() ?: 100
+                        onCreateCoupon?.invoke(
+                            newCouponCode.ifBlank { null },
+                            newCouponDesc.ifBlank { "Special Promotional Discount" },
+                            newCouponType,
+                            valueNum,
+                            minOrderNum,
+                            null,
+                            newCouponScope,
+                            limitNum,
+                            newCouponExpiry.ifBlank { null },
+                        )
+                        couponList = listOf(
+                            AdminCouponItem(
+                                id = "c-${System.currentTimeMillis()}",
+                                code = newCouponCode.ifBlank { "ADIS-${(1000..9999).random()}" },
+                                description = newCouponDesc.ifBlank { "Special Promotional Discount" },
+                                discountType = newCouponType,
+                                discountValue = valueNum,
+                                minOrderMinor = minOrderNum,
+                                scope = newCouponScope,
+                                usageLimit = limitNum,
+                                usedCount = 0,
+                                startsAt = "2026-11-20",
+                                expiresAt = newCouponExpiry.ifBlank { "2026-12-31" },
+                                status = "active",
+                                createdBy = "Admin Console",
+                            )
+                        ) + couponList
+                        showCreateCouponDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                    enabled = newCouponCode.isNotBlank(),
+                ) {
+                    Text("Save & Activate")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateCouponDialog = false }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Coupon Revocation Dialog
+    couponRevokeTargetId?.let { targetId ->
+        val target = couponList.firstOrNull { it.id == targetId }
+        AlertDialog(
+            onDismissRequest = { couponRevokeTargetId = null },
+            title = { Text("Revoke Coupon ${target?.code.orEmpty()}?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Deactivating this coupon immediately prevents new checkouts from applying it. Enter an audit note explaining the revocation reason:", color = ShopMuted, fontSize = 13.sp)
+                    OutlinedTextField(
+                        value = couponAuditReason,
+                        onValueChange = { couponAuditReason = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Audit Note / Revocation Reason") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onUpdateCouponStatus?.invoke(targetId, "revoke", couponAuditReason)
+                        couponList = couponList.map {
+                            if (it.id == targetId) it.copy(status = "revoked", revocationReason = couponAuditReason) else it
+                        }
+                        couponRevokeTargetId = null
+                        couponAuditReason = ""
+                    },
+                    enabled = couponAuditReason.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopRed),
+                ) {
+                    Text("Confirm Revocation")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { couponRevokeTargetId = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    // Voucher Revocation Dialog
     revokeTargetId?.let { targetId ->
         val target = voucherList.firstOrNull { it.id == targetId }
         AlertDialog(
@@ -3230,10 +3757,105 @@ internal fun AdminVouchersManagementCard() {
 internal fun AdminPromotionsManagementCard(
     products: List<ShopAdminProductDto>,
     onOpenProduct: (String) -> Unit,
+    promotions: List<com.adischat.app.feature.shop.data.ShopAdminPromotionDto> = emptyList(),
+    onCreatePromotion: ((title: String, subtitle: String, bannerUrl: String, targetType: String, targetId: String, placement: String, priority: Int, startsAt: String, endsAt: String?) -> Unit)? = null,
+    onUpdatePromotionStatus: ((campaignId: String, action: String, reason: String) -> Unit)? = null,
 ) {
-    var selectedSection by remember { mutableStateOf("Home Featured") }
+    var selectedSection by remember { mutableStateOf("Campaigns") }
     var featuredProductIds by remember { mutableStateOf(setOf<String>()) }
     var heroBannerSlotByProduct by remember { mutableStateOf(mapOf<String, Int>()) }
+
+    val backendCampaigns = remember(promotions) {
+        promotions.map { dto ->
+            AdminCampaignItem(
+                id = dto.id,
+                title = dto.customTitle.ifBlank { "Promotion #${dto.id.take(6)}" },
+                subtitle = dto.customSubtitle,
+                bannerUrl = dto.customBannerUrl.orEmpty(),
+                targetType = dto.targetType,
+                targetId = dto.targetId,
+                targetName = dto.targetId,
+                placement = dto.placement,
+                priority = dto.priority,
+                startsAt = dto.startsAt.orEmpty().substringBefore("T"),
+                endsAt = dto.endsAt.orEmpty().substringBefore("T"),
+                status = dto.status,
+                isSponsored = dto.isSponsored,
+                createdBy = dto.createdBy ?: "Admin Console",
+            )
+        }
+    }
+
+    var campaignsList by remember {
+        mutableStateOf(
+            listOf(
+                AdminCampaignItem(
+                    id = "camp-001",
+                    title = "Holiday Electronics Fest",
+                    subtitle = "Up to 30% off selected gadgets and accessories across AdisGebeya",
+                    bannerUrl = "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800",
+                    targetType = "product",
+                    targetId = "p-001",
+                    targetName = "Wireless ANC Headphones",
+                    placement = "Home Hero",
+                    priority = 200,
+                    startsAt = "2026-11-01",
+                    endsAt = "2026-12-31",
+                    status = "published",
+                    isSponsored = true,
+                    createdBy = "Admin Marketing",
+                ),
+                AdminCampaignItem(
+                    id = "camp-002",
+                    title = "Bole Dining Week",
+                    subtitle = "Explore top menus and special culinary creations in Bole",
+                    bannerUrl = "https://images.unsplash.com/photo-1541544741938-0af808871cc0?w=800",
+                    targetType = "restaurant",
+                    targetId = "rest-bole-1",
+                    targetName = "Bole Kitchen",
+                    placement = "Promotions Feed",
+                    priority = 150,
+                    startsAt = "2026-11-15",
+                    endsAt = "2026-12-15",
+                    status = "published",
+                    isSponsored = true,
+                    createdBy = "Admin Promotions",
+                ),
+                AdminCampaignItem(
+                    id = "camp-003",
+                    title = "New Artisan Store Launch",
+                    subtitle = "Handcrafted Ethiopian textiles and leather accessories",
+                    bannerUrl = "https://images.unsplash.com/photo-1544816155-12df9643f363?w=800",
+                    targetType = "store",
+                    targetId = "st-artisan-1",
+                    targetName = "Addis Artisan Shop",
+                    placement = "Marketplace Sponsored",
+                    priority = 100,
+                    startsAt = "2026-12-01",
+                    endsAt = "2026-12-31",
+                    status = "draft",
+                    isSponsored = true,
+                    createdBy = "Admin Commerce",
+                ),
+            )
+        )
+    }
+
+    var showCreateCampaignDialog by remember { mutableStateOf(false) }
+    LaunchedEffect(promotions) {
+        if (promotions.isNotEmpty()) {
+            campaignsList = backendCampaigns
+        }
+    }
+    var newCampTitle by remember { mutableStateOf("") }
+    var newCampSubtitle by remember { mutableStateOf("") }
+    var newCampBannerUrl by remember { mutableStateOf("") }
+    var newCampPlacement by remember { mutableStateOf("Home Hero") }
+    var newCampTargetType by remember { mutableStateOf("product") }
+    var newCampTargetName by remember { mutableStateOf("") }
+    var newCampPriority by remember { mutableStateOf("100") }
+    var newCampStartsAt by remember { mutableStateOf("2026-11-20") }
+    var newCampEndsAt by remember { mutableStateOf("2026-12-31") }
 
     val approvedProducts = products.filter { product ->
         val modStatus = product.moderationStatus.orEmpty().ifBlank { product.status.orEmpty() }
@@ -3248,7 +3870,19 @@ internal fun AdminPromotionsManagementCard(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Super App Home & Marketplace Promotions", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Super App Home & Marketplace Promotions", color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Button(
+                        onClick = { showCreateCampaignDialog = true },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("+ Create Campaign", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
                 Text(
                     "Governance Rules:\n" +
                         "• Only approved products (moderation = 'approved', status = 'active') are eligible for promotions.\n" +
@@ -3262,7 +3896,7 @@ internal fun AdminPromotionsManagementCard(
         }
 
         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val sections = listOf("Home Featured", "Hero Banners", "Sponsored Listings")
+            val sections = listOf("Campaigns", "Home Featured", "Hero Banners", "Sponsored Listings")
             items(sections) { sec ->
                 val selected = selectedSection == sec
                 Surface(
@@ -3277,87 +3911,187 @@ internal fun AdminPromotionsManagementCard(
             }
         }
 
-        if (approvedProducts.isEmpty()) {
-            EmptyCard("No approved catalog products available for promotion. Products must pass moderation before they can be featured.")
-        } else {
-            approvedProducts.forEach { product ->
-                val isFeatured = featuredProductIds.contains(product.id)
-                val heroSlot = heroBannerSlotByProduct[product.id]
+        when (selectedSection) {
+            "Campaigns" -> {
+                if (campaignsList.isEmpty()) {
+                    EmptyCard("No promotional campaigns configured.")
+                } else {
+                    campaignsList.forEach { camp ->
+                        Card(
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(ShopSurface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                                    Column(Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            if (camp.isSponsored) {
+                                                MiniBadge("SPONSORED", ShopOrangeSoft, ShopOrangeDark)
+                                            }
+                                            Text(camp.title, color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        }
+                                        Text(camp.subtitle, color = ShopMuted, fontSize = 12.sp)
+                                    }
+                                    MiniBadge(
+                                        camp.status.uppercase(),
+                                        when (camp.status) {
+                                            "published" -> ShopGreenSoft
+                                            "paused" -> ShopAmberSoft
+                                            "submitted" -> ShopAmberSoft
+                                            else -> ShopSoft
+                                        },
+                                        when (camp.status) {
+                                            "published" -> ShopGreen
+                                            "paused" -> ShopOrangeDark
+                                            "submitted" -> ShopOrangeDark
+                                            else -> ShopMuted
+                                        },
+                                    )
+                                }
+                                HorizontalDivider(color = ShopLine)
+                                AdminInfoRow("Placement", camp.placement)
+                                AdminInfoRow("Target Entity", "${camp.targetType.uppercase()}: ${camp.targetName}")
+                                AdminInfoRow("Priority Level", "${camp.priority} (Higher = top feed placement)")
+                                AdminInfoRow("Validity Window", "${camp.startsAt} to ${camp.endsAt}")
+                                AdminInfoRow("Created By", camp.createdBy)
 
-                Card(
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(ShopSurface),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                            Column(Modifier.weight(1f)) {
-                                Text(product.title.orEmpty().ifBlank { "Untitled Product" }, color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("${product.storeName.orEmpty().ifBlank { "Store" }} · ${formatEtb(product.priceMinor)}", color = ShopMuted, fontSize = 12.sp)
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    if (camp.status == "published") {
+                                        OutlinedButton(
+                                            onClick = {
+                                                onUpdatePromotionStatus?.invoke(camp.id, "pause", "Admin paused campaign")
+                                                campaignsList = campaignsList.map { if (it.id == camp.id) it.copy(status = "paused") else it }
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            Text("Pause", fontSize = 12.sp)
+                                        }
+                                    } else if (camp.status == "paused" || camp.status == "draft") {
+                                        Button(
+                                            onClick = {
+                                                onUpdatePromotionStatus?.invoke(camp.id, "publish", "Admin published campaign")
+                                                campaignsList = campaignsList.map { if (it.id == camp.id) it.copy(status = "published") else it }
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            Text("Publish", fontSize = 12.sp)
+                                        }
+                                    }
+                                    if (camp.status == "draft") {
+                                        OutlinedButton(
+                                            onClick = {
+                                                campaignsList = campaignsList.map { if (it.id == camp.id) it.copy(status = "submitted") else it }
+                                            },
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            Text("Submit for Review", fontSize = 12.sp)
+                                        }
+                                    }
+                                    if (camp.status != "archived") {
+                                        TextButton(
+                                            onClick = {
+                                                campaignsList = campaignsList.map { if (it.id == camp.id) it.copy(status = "archived") else it }
+                                            },
+                                            modifier = Modifier.weight(1f),
+                                        ) {
+                                            Text("Archive", color = ShopMuted, fontSize = 12.sp)
+                                        }
+                                    }
+                                }
                             }
-                            MiniBadge("APPROVED", ShopGreenSoft, ShopGreen)
                         }
+                    }
+                }
+            }
+            "Home Featured", "Hero Banners", "Sponsored Listings" -> {
+                if (approvedProducts.isEmpty()) {
+                    EmptyCard("No approved catalog products available for promotion. Products must pass moderation before they can be featured.")
+                } else {
+                    approvedProducts.forEach { product ->
+                        val isFeatured = featuredProductIds.contains(product.id)
+                        val heroSlot = heroBannerSlotByProduct[product.id]
 
-                        HorizontalDivider(color = ShopLine)
+                        Card(
+                            shape = RoundedCornerShape(18.dp),
+                            colors = CardDefaults.cardColors(ShopSurface),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, ShopLine),
+                        ) {
+                            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(product.title.orEmpty().ifBlank { "Untitled Product" }, color = ShopInk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                        Text("${product.storeName.orEmpty().ifBlank { "Store" }} · ${formatEtb(product.priceMinor)}", color = ShopMuted, fontSize = 12.sp)
+                                    }
+                                    MiniBadge("APPROVED", ShopGreenSoft, ShopGreen)
+                                }
 
-                        when (selectedSection) {
-                            "Home Featured" -> {
-                                AdminInfoRow("Feature Status", if (isFeatured) "Featured on Super App Home" else "Organic Catalog Only")
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { onOpenProduct(product.id) },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                    ) {
-                                        Text("View Product", fontSize = 12.sp)
+                                HorizontalDivider(color = ShopLine)
+
+                                when (selectedSection) {
+                                    "Home Featured" -> {
+                                        AdminInfoRow("Feature Status", if (isFeatured) "Featured on Super App Home" else "Organic Catalog Only")
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = { onOpenProduct(product.id) },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(10.dp),
+                                            ) {
+                                                Text("View Product", fontSize = 12.sp)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    featuredProductIds = if (isFeatured) featuredProductIds - product.id else featuredProductIds + product.id
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (isFeatured) ShopRed else ShopGreen
+                                                ),
+                                            ) {
+                                                Text(if (isFeatured) "Unfeature" else "Feature on Home", fontSize = 12.sp)
+                                            }
+                                        }
                                     }
-                                    Button(
-                                        onClick = {
-                                            featuredProductIds = if (isFeatured) featuredProductIds - product.id else featuredProductIds + product.id
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (isFeatured) ShopRed else ShopGreen
-                                        ),
-                                    ) {
-                                        Text(if (isFeatured) "Unfeature" else "Feature on Home", fontSize = 12.sp)
+                                    "Hero Banners" -> {
+                                        AdminInfoRow("Hero Slot", heroSlot?.let { "Assigned to Carousel Slot #$it" } ?: "Not in Hero Carousel")
+                                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(
+                                                onClick = { onOpenProduct(product.id) },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(10.dp),
+                                            ) {
+                                                Text("View Product", fontSize = 12.sp)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    heroBannerSlotByProduct = if (heroSlot != null) heroBannerSlotByProduct - product.id else heroBannerSlotByProduct + (product.id to 1)
+                                                },
+                                                modifier = Modifier.weight(1f),
+                                                shape = RoundedCornerShape(10.dp),
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = if (heroSlot != null) ShopOrangeDark else ShopGreen
+                                                ),
+                                            ) {
+                                                Text(if (heroSlot != null) "Remove Hero Slot" else "Assign Slot #1", fontSize = 12.sp)
+                                            }
+                                        }
                                     }
-                                }
-                            }
-                            "Hero Banners" -> {
-                                AdminInfoRow("Hero Slot", heroSlot?.let { "Assigned to Carousel Slot #$it" } ?: "Not in Hero Carousel")
-                                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = { onOpenProduct(product.id) },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                    ) {
-                                        Text("View Product", fontSize = 12.sp)
+                                    "Sponsored Listings" -> {
+                                        AdminInfoRow("Listing Tier", "Organic (CPC promotion pending seller bid)")
+                                        AdminInfoRow("Catalog Ranking", "Default relevance algorithm")
+                                        OutlinedButton(
+                                            onClick = { onOpenProduct(product.id) },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(10.dp),
+                                        ) {
+                                            Text("View Product", fontSize = 12.sp)
+                                        }
                                     }
-                                    Button(
-                                        onClick = {
-                                            heroBannerSlotByProduct = if (heroSlot != null) heroBannerSlotByProduct - product.id else heroBannerSlotByProduct + (product.id to 1)
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(10.dp),
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (heroSlot != null) ShopOrangeDark else ShopGreen
-                                        ),
-                                    ) {
-                                        Text(if (heroSlot != null) "Remove Hero Slot" else "Assign Slot #1", fontSize = 12.sp)
-                                    }
-                                }
-                            }
-                            "Sponsored Listings" -> {
-                                AdminInfoRow("Listing Tier", "Organic (CPC promotion pending seller bid)")
-                                AdminInfoRow("Catalog Ranking", "Default relevance algorithm")
-                                OutlinedButton(
-                                    onClick = { onOpenProduct(product.id) },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(10.dp),
-                                ) {
-                                    Text("View Product", fontSize = 12.sp)
                                 }
                             }
                         }
@@ -3365,6 +4099,127 @@ internal fun AdminPromotionsManagementCard(
                 }
             }
         }
+    }
+
+    // Create Campaign Dialog
+    if (showCreateCampaignDialog) {
+        AlertDialog(
+            onDismissRequest = { showCreateCampaignDialog = false },
+            title = { Text("Create Promotional Campaign", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newCampTitle,
+                        onValueChange = { newCampTitle = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Campaign Title") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                    OutlinedTextField(
+                        value = newCampSubtitle,
+                        onValueChange = { newCampSubtitle = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Subtitle / Marketing Copy") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                    OutlinedTextField(
+                        value = newCampBannerUrl,
+                        onValueChange = { newCampBannerUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Banner Image URL") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newCampTargetType,
+                            onValueChange = { newCampTargetType = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Type (product/store/etc)") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                        OutlinedTextField(
+                            value = newCampPlacement,
+                            onValueChange = { newCampPlacement = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Placement") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                    }
+                    OutlinedTextField(
+                        value = newCampTargetName,
+                        onValueChange = { newCampTargetName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Target Name or Item ID") },
+                        colors = shopOutlinedTextFieldColors(),
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newCampStartsAt,
+                            onValueChange = { newCampStartsAt = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("Start Date") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                        OutlinedTextField(
+                            value = newCampEndsAt,
+                            onValueChange = { newCampEndsAt = it },
+                            modifier = Modifier.weight(1f),
+                            label = { Text("End Date") },
+                            colors = shopOutlinedTextFieldColors(),
+                        )
+                    }
+                    Text(
+                        "Administrative Promotion: No paid billing or automated credit card charges. Tagged as SPONSORED.",
+                        color = ShopMuted,
+                        fontSize = 11.sp,
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val priorityNum = newCampPriority.toIntOrNull() ?: 100
+                        onCreatePromotion?.invoke(
+                            newCampTitle.ifBlank { "Special Feature" },
+                            newCampSubtitle.ifBlank { "Featured in AdisChat Super App" },
+                            newCampBannerUrl,
+                            newCampTargetType.ifBlank { "product" },
+                            "target-${System.currentTimeMillis()}",
+                            newCampPlacement.ifBlank { "Home Hero" },
+                            priorityNum,
+                            newCampStartsAt.ifBlank { "2026-11-20" },
+                            newCampEndsAt.ifBlank { "2026-12-31" },
+                        )
+                        campaignsList = listOf(
+                            AdminCampaignItem(
+                                id = "camp-${System.currentTimeMillis()}",
+                                title = newCampTitle.ifBlank { "Special Feature" },
+                                subtitle = newCampSubtitle.ifBlank { "Featured in AdisChat Super App" },
+                                bannerUrl = newCampBannerUrl,
+                                targetType = newCampTargetType.ifBlank { "product" },
+                                targetId = "target-${System.currentTimeMillis()}",
+                                targetName = newCampTargetName.ifBlank { "Featured Item" },
+                                placement = newCampPlacement.ifBlank { "Home Hero" },
+                                priority = priorityNum,
+                                startsAt = newCampStartsAt.ifBlank { "2026-11-20" },
+                                endsAt = newCampEndsAt.ifBlank { "2026-12-31" },
+                                status = "published",
+                                isSponsored = true,
+                                createdBy = "Admin Console",
+                            )
+                        ) + campaignsList
+                        showCreateCampaignDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = ShopGreen),
+                    enabled = newCampTitle.isNotBlank(),
+                ) {
+                    Text("Publish Campaign")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCreateCampaignDialog = false }) { Text("Cancel") }
+            },
+        )
     }
 }
 

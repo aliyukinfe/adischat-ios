@@ -109,6 +109,10 @@ export async function requireFirebaseUser(request, env) {
     role: record?.role || payload.role || "user",
     name: record?.name || payload.name || "",
     photoUrl: record?.photo_url || "",
+    authTime: payload.auth_time || null,
+    phoneNumber: payload.phone_number || null,
+    signInProvider: payload.firebase?.sign_in_provider || null,
+    claims: payload,
   };
   return { user, userRecord: record || user };
 }

@@ -1953,60 +1953,63 @@ private fun TabDock(
         tonalElevation = 0.dp,
     ) {
         Row(
-        modifier = Modifier
-        .fillMaxWidth()
-        .height(58.dp)
-        .padding(horizontal = 12.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(64.dp)
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-        listOf(
-        Triple(MessageTab.Chats, Icons.Default.ChatBubbleOutline, "Chats"),
-        Triple(MessageTab.Channels, Icons.Default.Campaign, "Channels"),
-        Triple(MessageTab.Groups, Icons.Default.Groups, "Groups"),
-        ).forEach { (tab, icon, label) ->
-        val active = activeTab == tab
-        val badge = when (tab) {
-        MessageTab.Chats    -> chatBadge
-        MessageTab.Channels -> channelBadge
-        MessageTab.Groups   -> groupBadge
-        }
-        Column(
-        modifier = Modifier
-        .weight(1f)
-        .fillMaxHeight()
-        .clip(RoundedCornerShape(20.dp))
-        .clickable { onTabChange(tab) }
-        .padding(vertical = 5.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        ) {
-        Box(Modifier.height(7.dp), contentAlignment = Alignment.Center) {
-        if (active) Box(Modifier.size(6.dp).clip(CircleShape).background(accent))
-        }
-        Box(contentAlignment = Alignment.Center) {
-        Icon(
-        imageVector = icon,
-        contentDescription = label,
-        tint = if (active) accent else AdisTextSec.copy(alpha = 0.7f),
-        modifier = Modifier.size(23.dp),
-        )
-        if (badge > 0) {
-        NotificationPill(
-        count = badge,
-        modifier = Modifier.align(Alignment.TopEnd).offset(x = 13.dp, y = (-7).dp),
-        )
-        }
-        }
-        Spacer(Modifier.height(3.dp))
-        Text(
-        text = label,
-        fontSize = 11.sp,
-        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
-        color = if (active) accent else AdisTextSec.copy(alpha = 0.7f),
-        )
-        }
-        }
+            listOf(
+                Triple(MessageTab.Chats, Icons.Default.ChatBubbleOutline, "Chats"),
+                Triple(MessageTab.Channels, Icons.Default.Campaign, "Channels"),
+                Triple(MessageTab.Groups, Icons.Default.Groups, "Groups"),
+            ).forEach { (tab, icon, label) ->
+                val active = activeTab == tab
+                val badge = when (tab) {
+                    MessageTab.Chats    -> chatBadge
+                    MessageTab.Channels -> channelBadge
+                    MessageTab.Groups   -> groupBadge
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { onTabChange(tab) }
+                        .padding(vertical = 2.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    Box(Modifier.height(5.dp), contentAlignment = Alignment.Center) {
+                        if (active) Box(Modifier.size(5.dp).clip(CircleShape).background(accent))
+                    }
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = label,
+                            tint = if (active) accent else AdisTextSec.copy(alpha = 0.7f),
+                            modifier = Modifier.size(22.dp),
+                        )
+                        if (badge > 0) {
+                            NotificationPill(
+                                count = badge,
+                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 13.dp, y = (-7).dp),
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        text = label,
+                        fontSize = 11.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        color = if (active) accent else AdisTextSec.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
         }
     }
 }

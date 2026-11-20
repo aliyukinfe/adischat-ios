@@ -12,12 +12,12 @@ object FeatureFlags {
     const val WALLET_ENABLED = FEATURE_WALLET_ENABLED
     const val VIDEO_CALLS_ENABLED = false
 
-    // AdisChat Restaurants — QA & Offline Preview gating only.
-    // Release and Debug builds keep all Restaurants flags strictly disabled.
+    // AdisChat Restaurants — Customer Dine-In & Restaurant Center enabled for production release.
+    // Admin review and QA preview/synthetic harnesses remain strictly restricted.
     val RESTAURANTS_DINE_IN_ENABLED: Boolean
-        get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
+        get() = true
     val RESTAURANT_CENTER_ENABLED: Boolean
-        get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
+        get() = true
     val RESTAURANT_ADMIN_ENABLED: Boolean
         get() = BuildConfig.QA_BUILD || BuildConfig.OFFLINE_QA_PREVIEW
     val RESTAURANTS_QA_PREVIEW_ENABLED: Boolean

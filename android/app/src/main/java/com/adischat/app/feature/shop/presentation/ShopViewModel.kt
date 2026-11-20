@@ -38,6 +38,12 @@ import com.adischat.app.feature.shop.data.ShopSellerReviewReplyRequest
 import com.adischat.app.feature.shop.data.ShopStateReducers
 import com.adischat.app.feature.shop.data.ProductRepository
 import com.adischat.app.feature.shop.data.CategoryRepository
+import com.adischat.app.feature.shop.data.ShopAdminPromotionDto
+import com.adischat.app.feature.shop.data.ShopAdminCouponDto
+import com.adischat.app.feature.shop.data.ShopAdminPromotionCreateRequest
+import com.adischat.app.feature.shop.data.ShopAdminPromotionStatusRequest
+import com.adischat.app.feature.shop.data.ShopAdminCouponCreateRequest
+import com.adischat.app.feature.shop.data.ShopAdminCouponStatusRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -1846,6 +1852,8 @@ class ShopViewModel(
             val refunds = adminRepository.refunds().getOrDefault(emptyList())
             val exchanges = adminRepository.exchanges().getOrDefault(emptyList())
             val reviews = adminRepository.reviews().getOrDefault(emptyList())
+            val promotions = adminRepository.promotions().getOrDefault(emptyList())
+            val coupons = adminRepository.coupons().getOrDefault(emptyList())
             _protectedState.value = _protectedState.value.copy(
                 adminSellerApplications = sellers,
                 adminProducts = products,
@@ -1853,6 +1861,8 @@ class ShopViewModel(
                 adminRefundRequests = refunds,
                 adminExchangeRequests = exchanges,
                 adminReviews = reviews,
+                adminPromotions = promotions,
+                adminCoupons = coupons,
                 adminLoading = false,
                 adminError = null,
             )
@@ -2219,6 +2229,186 @@ class ShopViewModel(
                 }
                 .onFailure { showAdminError(it, "Review moderation could not be saved.") }
             setBusy(reviewId, false)
+        }
+    }
+
+    fun loadAdminPromotions() {
+        viewModelScope.launch {
+            adminRepository.promotions()
+                .onSuccess { list ->
+                    _protectedState.value = _protectedState.value.copy(adminPromotions = list)
+                }
+                .onFailure { showAdminError(it, "Couldn't load promotions.") }
+        }
+    }
+
+    fun createAdminPromotion(
+        title: String,
+        subtitle: String = "",
+        bannerUrl: String = "",
+        targetType: String = "product",
+        targetId: String = "",
+        placement: String = "home_hero",
+        priority: Int = 100,
+        startsAt: String = "",
+        endsAt: String? = null,
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            val req = ShopAdminPromotionCreateRequest(
+                title = title,
+                subtitle = subtitle,
+                bannerUrl = bannerUrl,
+                targetType = targetType,
+                targetId = targetId,
+                placement = placement,
+                priority = priority,
+                startsAt = startsAt,
+                endsAt = endsAt,
+            )
+            adminRepository.createPromotion(req)
+                .onSuccess { created ->
+                    if (created != null) {
+                        val current = _protectedState.value.adminPromotions
+                        _protectedState.value = _protectedState.value.copy(
+                            adminPromotions = listOf(created) + current.filter { it.id != created.id }
+                        )
+                    } else {
+                        loadAdminPromotions()
+                    }
+                    _state.value = _state.value.copy(message = "Promotion campaign published.")
+                    onDone(true)
+                }
+                .onFailure {
+                    showAdminError(it, "Failed to create promotion.")
+                    onDone(false)
+                }
+        }
+    }
+
+    fun updateAdminPromotionStatus(
+        campaignId: String,
+        action: String,
+        reason: String = "",
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        if (campaignId.isBlank()) return
+        viewModelScope.launch {
+            val req = ShopAdminPromotionStatusRequest(
+                action = action,
+                campaignId = campaignId,
+                reason = reason,
+            )
+            adminRepository.updatePromotionStatus(req)
+                .onSuccess { updated ->
+                    if (updated != null) {
+                        val current = _protectedState.value.adminPromotions
+                        _protectedState.value = _protectedState.value.copy(
+                            adminPromotions = current.map { if (it.id == updated.id) updated else it }
+                        )
+                    } else {
+                        loadAdminPromotions()
+                    }
+                    _state.value = _state.value.copy(message = "Promotion status updated.")
+                    onDone(true)
+                }
+                .onFailure {
+                    showAdminError(it, "Failed to update promotion status.")
+                    onDone(false)
+                }
+        }
+    }
+
+    fun loadAdminCoupons() {
+        viewModelScope.launch {
+            adminRepository.coupons()
+                .onSuccess { list ->
+                    _protectedState.value = _protectedState.value.copy(adminCoupons = list)
+                }
+                .onFailure { showAdminError(it, "Couldn't load coupons.") }
+        }
+    }
+
+    fun createAdminCoupon(
+        code: String? = null,
+        description: String = "",
+        discountType: String = "percent",
+        discountValue: Int = 10,
+        minOrderMinor: Int = 0,
+        maxDiscountMinor: Int? = null,
+        scope: String = "marketplace",
+        storeId: String? = null,
+        usageLimit: Int = 100,
+        userLimit: Int = 1,
+        startsAt: String = "",
+        expiresAt: String? = null,
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            val req = ShopAdminCouponCreateRequest(
+                code = code,
+                description = description,
+                discountType = discountType,
+                discountValue = discountValue,
+                minOrderMinor = minOrderMinor,
+                maxDiscountMinor = maxDiscountMinor,
+                scope = scope,
+                storeId = storeId,
+                usageLimit = usageLimit,
+                userLimit = userLimit,
+                startsAt = startsAt,
+                expiresAt = expiresAt,
+            )
+            adminRepository.createCoupon(req)
+                .onSuccess { created ->
+                    if (created != null) {
+                        val current = _protectedState.value.adminCoupons
+                        _protectedState.value = _protectedState.value.copy(
+                            adminCoupons = listOf(created) + current.filter { it.id != created.id }
+                        )
+                    } else {
+                        loadAdminCoupons()
+                    }
+                    _state.value = _state.value.copy(message = "Coupon created.")
+                    onDone(true)
+                }
+                .onFailure {
+                    showAdminError(it, "Failed to create coupon.")
+                    onDone(false)
+                }
+        }
+    }
+
+    fun updateAdminCouponStatus(
+        couponId: String,
+        action: String,
+        reason: String = "",
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        if (couponId.isBlank()) return
+        viewModelScope.launch {
+            val req = ShopAdminCouponStatusRequest(
+                action = action,
+                couponId = couponId,
+                reason = reason,
+            )
+            adminRepository.updateCouponStatus(req)
+                .onSuccess { updated ->
+                    if (updated != null) {
+                        val current = _protectedState.value.adminCoupons
+                        _protectedState.value = _protectedState.value.copy(
+                            adminCoupons = current.map { if (it.id == updated.id) updated else it }
+                        )
+                    } else {
+                        loadAdminCoupons()
+                    }
+                    _state.value = _state.value.copy(message = "Coupon status updated.")
+                    onDone(true)
+                }
+                .onFailure {
+                    showAdminError(it, "Failed to update coupon status.")
+                    onDone(false)
+                }
         }
     }
 

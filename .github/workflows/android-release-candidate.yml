@@ -120,6 +120,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Upload Versioned Signed AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AdisChat-v1.0.130-signed.aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Upload Release Candidate APK Artifact
         uses: actions/upload-artifact@v4
         with:

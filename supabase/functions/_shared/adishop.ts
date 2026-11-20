@@ -1455,7 +1455,7 @@ async function adminReviewProduct(request: Request) {
 
   // 2. Validate action and inputs
   const action = String(body.action || "").trim().toLowerCase();
-  const allowedActions = ["start_review", "approve", "reject", "request_changes", "suspend", "reactivate", "archive"];
+  const allowedActions = ["start_review", "approve", "reject", "request_changes", "suspend", "reactivate", "archive", "soft_delete"];
   if (!allowedActions.includes(action)) {
     return structuredError("unsupported_action", "Unsupported moderation action.", 400);
   }
@@ -1487,7 +1487,7 @@ async function adminReviewProduct(request: Request) {
   }
 
   // Reject seller self-approval server-side
-  if (["approve", "reject", "request_changes", "suspend", "reactivate", "archive"].includes(action) &&
+  if (["approve", "reject", "request_changes", "suspend", "reactivate", "archive", "soft_delete"].includes(action) &&
       store.owner_profile_id === profileId) {
     return structuredError("self_review_blocked", "A seller cannot review their own product.", 403);
   }
@@ -1576,10 +1576,47 @@ async function adminStoreDetail(request: Request) {
 }
 
 async function adminUpdateStoreStatus(request: Request) {
+  const { client, profileId } = await currentSession(request);
   const body = await jsonBody(request);
+
+  // 1. Verify authorized Shop Admin role
+  const { data: adminRoles, error: rolesError } = await client
+    .rpc("current_shop_roles", { target_profile_id: profileId });
+  const hasModerationRole = Array.isArray(adminRoles) && adminRoles.some((r: string) =>
+    ["SHOP_SUPER_ADMIN", "SHOP_ADMIN"].includes(r)
+  );
+  if (rolesError || !hasModerationRole) {
+    return structuredError("admin_forbidden", "You do not have access to AdisGebeya Admin.", 403);
+  }
+
+  const storeId = String(body.storeId || "").trim();
+  if (!storeId) return structuredError("store_id_required", "Store ID is required.", 400);
+
+  const action = String(body.action || "").trim().toLowerCase();
+  const allowedStoreActions = ["warn", "suspend", "reactivate", "archive", "safe_delete"];
+  if (!allowedStoreActions.includes(action)) {
+    return structuredError("unsupported_action", "Unsupported store moderation action.", 400);
+  }
+
+  // 2. Pre-check store owner self-approval
+  const { data: storeRecord, error: storeErr } = await client
+    .from("shop_stores")
+    .select("id, owner_profile_id, status, approval_status")
+    .eq("id", storeId)
+    .single();
+
+  if (storeErr || !storeRecord) {
+    return structuredError("store_not_found", "Store not found.", 404);
+  }
+
+  if (["reactivate", "approve"].includes(action) && storeRecord.owner_profile_id === profileId) {
+    return structuredError("self_review_blocked", "A store owner cannot approve or reactivate their own store.", 403);
+  }
+
+  // 3. Delegate to RPC for atomic updates, audit recording, and hiding public catalog on suspension
   return adminRpc(request, "adishop_admin_update_store_status", {
-    p_store_id: String(body.storeId || ""),
-    p_action: String(body.action || ""),
+    p_store_id: storeId,
+    p_action: action,
     p_reason_code: String(body.reasonCode || ""),
     p_seller_visible_message: String(body.sellerVisibleMessage || body.reason || ""),
     p_private_note: String(body.privateNote || ""),
@@ -1602,6 +1639,273 @@ async function adminRoleMutation(request: Request, mode: "assign" | "revoke") {
     return structuredError(mapped.code, mapped.message, mapped.status, mapped.status >= 500);
   }
   return response({ ok: true, result: data as Json });
+}
+
+async function adminPromotions(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const { data: adminRoles, error: rolesError } = await client
+    .rpc("current_shop_roles", { target_profile_id: profileId });
+  const hasAdminRole = Array.isArray(adminRoles) && adminRoles.some((r: string) =>
+    ["SHOP_SUPER_ADMIN", "SHOP_ADMIN"].includes(r)
+  );
+  if (rolesError || !hasAdminRole) {
+    return structuredError("admin_forbidden", "You do not have access to AdisGebeya Admin.", 403);
+  }
+
+  const method = request.method.toUpperCase();
+  if (method === "GET") {
+    const { data: tablePromos, error: tableErr } = await client
+      .from("admin_feed_promotions")
+      .select("*")
+      .order("priority", { ascending: false })
+      .order("created_at", { ascending: false });
+    if (!tableErr && tablePromos) {
+      return response({ ok: true, promotions: tablePromos as Json });
+    }
+    return adminRpc(request, "adishop_admin_list_promotions", pageParams(request), "promotions");
+  }
+
+  const body = await jsonBody(request);
+  const action = String(body.action || "").trim().toLowerCase();
+
+  if (action === "create" || method === "POST") {
+    const title = String(body.title || "").trim();
+    if (!title) return structuredError("title_required", "Campaign title is required.", 400);
+
+    const promoPayload = {
+      target_type: String(body.targetType || "product"),
+      target_id: String(body.targetId || ""),
+      custom_title: title,
+      custom_subtitle: String(body.subtitle || ""),
+      custom_banner_url: String(body.bannerUrl || ""),
+      placement: String(body.placement || "home_hero"),
+      priority: Number(body.priority || 100),
+      starts_at: String(body.startsAt || new Date().toISOString()),
+      ends_at: body.endsAt ? String(body.endsAt) : null,
+      status: "published",
+      is_sponsored: true,
+      is_active: true,
+      created_by: profileId,
+    };
+
+    const { data: inserted, error: insertErr } = await client
+      .from("admin_feed_promotions")
+      .insert(promoPayload)
+      .select("*")
+      .single();
+
+    if (!insertErr && inserted) {
+      await audit(client, profileId, "promotion.created", "admin_feed_promotions", (inserted as any)?.id);
+      return response({ ok: true, promotion: inserted as Json });
+    }
+
+    return adminRpc(request, "adishop_admin_create_promotion", {
+      p_actor_profile_id: profileId,
+      p_target_type: String(body.targetType || "product"),
+      p_target_id: String(body.targetId || ""),
+      p_custom_title: title,
+      p_custom_subtitle: String(body.subtitle || ""),
+      p_custom_banner_url: String(body.bannerUrl || ""),
+      p_placement: String(body.placement || "home_hero"),
+      p_priority: Number(body.priority || 100),
+      p_starts_at: String(body.startsAt || new Date().toISOString()),
+      p_ends_at: body.endsAt ? String(body.endsAt) : null,
+      p_is_sponsored: true,
+    }, "promotion", "p_actor_profile_id");
+  }
+
+  if (["publish", "pause", "archive", "submit"].includes(action)) {
+    const campaignId = String(body.campaignId || "").trim();
+    if (!campaignId) return structuredError("campaign_id_required", "Campaign ID is required.", 400);
+
+    const targetStatus = action === "publish" ? "published" : action === "pause" ? "paused" : action === "archive" ? "archived" : "submitted";
+    const { data: updated, error: updateErr } = await client
+      .from("admin_feed_promotions")
+      .update({
+        status: targetStatus,
+        is_active: targetStatus === "published",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", campaignId)
+      .select("*")
+      .single();
+
+    if (!updateErr && updated) {
+      await audit(client, profileId, `promotion.${action}`, "admin_feed_promotions", campaignId);
+      return response({ ok: true, promotion: updated as Json });
+    }
+
+    return adminRpc(request, "adishop_admin_update_promotion_status", {
+      p_actor_profile_id: profileId,
+      p_campaign_id: campaignId,
+      p_status: targetStatus,
+      p_reason: String(body.reason || ""),
+    }, "promotion", "p_actor_profile_id");
+  }
+
+  return structuredError("unsupported_action", "Unsupported promotions action.", 400);
+}
+
+async function adminCoupons(request: Request) {
+  const { client, profileId } = await currentSession(request);
+  const { data: adminRoles, error: rolesError } = await client
+    .rpc("current_shop_roles", { target_profile_id: profileId });
+  const hasAdminRole = Array.isArray(adminRoles) && adminRoles.some((r: string) =>
+    ["SHOP_SUPER_ADMIN", "SHOP_ADMIN"].includes(r)
+  );
+  if (rolesError || !hasAdminRole) {
+    return structuredError("admin_forbidden", "You do not have access to AdisGebeya Admin.", 403);
+  }
+
+  const method = request.method.toUpperCase();
+  if (method === "GET") {
+    const { data: tableCoupons, error: tableErr } = await client
+      .from("shop_coupons")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (!tableErr && tableCoupons) {
+      return response({ ok: true, coupons: tableCoupons as Json });
+    }
+    return adminRpc(request, "adishop_admin_list_coupons", pageParams(request), "coupons");
+  }
+
+  const body = await jsonBody(request);
+  const action = String(body.action || "").trim().toLowerCase();
+
+  if (action === "create" || method === "POST") {
+    // Generate collision-resistant coupon code server-side if not supplied
+    let code = String(body.code || "").trim().toUpperCase();
+    if (!code) {
+      code = "ADIS-" + crypto.randomUUID().replace(/-/g, "").substring(0, 8).toUpperCase();
+    }
+    if (code.length < 3 || code.length > 32) {
+      return structuredError("invalid_code", "Coupon code must be between 3 and 32 characters.", 400);
+    }
+    const discountValue = Number(body.discountValue || 0);
+    if (discountValue <= 0) {
+      return structuredError("invalid_discount", "Discount value must be greater than zero.", 400);
+    }
+
+    // Check code uniqueness in database
+    const { data: existingCoupon } = await client
+      .from("shop_coupons")
+      .select("id")
+      .eq("code", code)
+      .maybeSingle();
+
+    if (existingCoupon) {
+      return structuredError("code_already_exists", "A coupon with this code already exists.", 409);
+    }
+
+    // Attempt direct insert, falling back to RPC
+    const newCouponRecord = {
+      code: code,
+      description: String(body.description || ""),
+      discount_type: String(body.discountType || "percent"),
+      discount_value: discountValue,
+      min_order_minor: Number(body.minOrderMinor || 0),
+      max_discount_minor: body.maxDiscountMinor ? Number(body.maxDiscountMinor) : null,
+      usage_limit: Number(body.usageLimit || 100),
+      user_limit: Number(body.userLimit || 1),
+      scope: String(body.scope || "marketplace"),
+      store_id: body.storeId ? String(body.storeId) : null,
+      starts_at: String(body.startsAt || new Date().toISOString()),
+      expires_at: String(body.expiresAt || new Date(Date.now() + 30 * 86400000).toISOString()),
+      status: "active",
+      is_active: true,
+      created_by: profileId,
+    };
+
+    const { data: inserted, error: insertErr } = await client
+      .from("shop_coupons")
+      .insert(newCouponRecord)
+      .select("*")
+      .single();
+
+    if (!insertErr && inserted) {
+      await audit(client, profileId, "coupon.created", "shop_coupons", (inserted as any)?.id);
+      return response({ ok: true, coupon: inserted as Json });
+    }
+
+    return adminRpc(request, "adishop_admin_create_coupon", {
+      p_actor_profile_id: profileId,
+      p_code: code,
+      p_description: String(body.description || ""),
+      p_discount_type: String(body.discountType || "percent"),
+      p_discount_value: discountValue,
+      p_min_order_minor: Number(body.minOrderMinor || 0),
+      p_max_discount_minor: body.maxDiscountMinor ? Number(body.maxDiscountMinor) : null,
+      p_usage_limit: Number(body.usageLimit || 100),
+      p_user_limit: Number(body.userLimit || 1),
+      p_scope: String(body.scope || "marketplace"),
+      p_store_id: body.storeId ? String(body.storeId) : null,
+      p_starts_at: String(body.startsAt || new Date().toISOString()),
+      p_expires_at: String(body.expiresAt || new Date(Date.now() + 30 * 86400000).toISOString()),
+    }, "coupon", "p_actor_profile_id");
+  }
+
+  if (["activate", "pause", "revoke"].includes(action)) {
+    const couponId = String(body.couponId || "").trim();
+    if (!couponId) return structuredError("coupon_id_required", "Coupon ID is required.", 400);
+    const reason = String(body.reason || body.auditReason || "").trim();
+    if (action === "revoke" && reason.length < 3) {
+      return structuredError("reason_required", "An audit note / reason is required to revoke a coupon.", 400);
+    }
+
+    const newStatus = action === "activate" ? "active" : action === "pause" ? "paused" : "revoked";
+    const updatePayload: Record<string, any> = {
+      status: newStatus,
+      is_active: newStatus === "active",
+      updated_at: new Date().toISOString(),
+    };
+    if (action === "revoke") {
+      updatePayload.revoked_at = new Date().toISOString();
+      updatePayload.revocation_reason = reason;
+    }
+
+    const { data: updated, error: updateErr } = await client
+      .from("shop_coupons")
+      .update(updatePayload)
+      .eq("id", couponId)
+      .select("*")
+      .single();
+
+    if (!updateErr && updated) {
+      await audit(client, profileId, `coupon.${action}`, "shop_coupons", couponId);
+      return response({ ok: true, coupon: updated as Json });
+    }
+
+    return adminRpc(request, "adishop_admin_update_coupon_status", {
+      p_actor_profile_id: profileId,
+      p_coupon_id: couponId,
+      p_action: action,
+      p_reason: reason,
+    }, "coupon", "p_actor_profile_id");
+  }
+
+  return structuredError("unsupported_action", "Unsupported coupon action.", 400);
+}
+
+async function publicPromotions(request: Request) {
+  const client = adminClient();
+  const now = new Date().toISOString();
+
+  const { data, error } = await client
+    .from("admin_feed_promotions")
+    .select("id, target_type, target_id, custom_title, custom_subtitle, custom_banner_url, placement, priority, starts_at, ends_at, is_sponsored")
+    .eq("status", "published")
+    .eq("is_active", true)
+    .lte("starts_at", now)
+    .or(`ends_at.is.null,ends_at.gt.${now}`)
+    .order("priority", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(50);
+
+  if (error) {
+    return response({ ok: true, promotions: [] });
+  }
+
+  return response({ ok: true, promotions: data || [] });
 }
 
 async function sellerStatus(request: Request) {
@@ -2297,6 +2601,9 @@ export async function handleAdishopFunction(name: string, request: Request) {
     if (name === "adishop-admin-update-store-status") return await adminUpdateStoreStatus(request);
     if (name === "adishop-admin-assign-role") return await adminRoleMutation(request, "assign");
     if (name === "adishop-admin-revoke-role") return await adminRoleMutation(request, "revoke");
+    if (name === "adishop-admin-promotions") return await adminPromotions(request);
+    if (name === "adishop-admin-coupons") return await adminCoupons(request);
+    if (name === "adishop-public-promotions") return await publicPromotions(request);
     return safeError("Shop action unavailable.", 404);
   } catch (error) {
     const code = error instanceof Error ? error.message : "";

@@ -8,9 +8,15 @@ import { handleMessageReceiptsRequest } from "../../shared/message-receipts-rout
 import { health, notFound, preflight, withCors } from "../../shared/http.mjs";
 import { handleStorageRequest } from "../../shared/storage-router.mjs";
 import { handleShopIdentityRequest } from "../../shared/shop-identity-assertion.mjs";
+import { handleRestaurantsIdentityRequest } from "../../shared/restaurants-identity-assertion.mjs";
 
 async function route(request, env, ctx) {
   const url = new URL(request.url);
+
+  // Dedicated Restaurants identity bridge route with isolated CORS handling
+  if (url.pathname === "/api/restaurants/session-assertion") {
+    return handleRestaurantsIdentityRequest(request, env);
+  }
 
   if (request.method === "OPTIONS") return preflight(env);
   if (url.pathname === "/" || url.pathname === "/api/health") return health("adischat-api");
@@ -72,10 +78,18 @@ async function route(request, env, ctx) {
 export default {
   async fetch(request, env, ctx) {
     try {
-      return withCors(await route(request, env, ctx), env);
+      const isRestaurantsRoute = new URL(request.url).pathname === "/api/restaurants/session-assertion";
+      const response = await route(request, env, ctx);
+      return isRestaurantsRoute ? response : withCors(response, env);
     } catch (error) {
       const message = error?.message === "AUTH_REQUIRED" ? "Authentication required" : "Internal server error";
       const status = error?.message === "AUTH_REQUIRED" ? 401 : 500;
+      if (new URL(request.url).pathname === "/api/restaurants/session-assertion") {
+        return Response.json(
+          { ok: false, error: { code: "bridge_unavailable", message } },
+          { status: 503, headers: { "Cache-Control": "no-store" } },
+        );
+      }
       return withCors(Response.json({ error: message }, { status }), env);
     }
   },

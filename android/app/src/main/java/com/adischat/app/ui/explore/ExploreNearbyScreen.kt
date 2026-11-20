@@ -14,6 +14,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -1049,6 +1050,15 @@ private fun ExploreListView(
 // Interactive Map View Component (Vector & Pin Navigation)
 // ============================================================================
 
+private fun lonToTileX(lon: Double, zoom: Int): Double {
+    return (lon + 180.0) / 360.0 * (1 shl zoom)
+}
+
+private fun latToTileY(lat: Double, zoom: Int): Double {
+    val latRad = Math.toRadians(lat.coerceIn(-85.05112878, 85.05112878))
+    return (1.0 - Math.log(Math.tan(latRad) + 1.0 / Math.cos(latRad)) / Math.PI) / 2.0 * (1 shl zoom)
+}
+
 @Composable
 private fun ExploreMapView(
     entities: List<NearbyEntity>,
@@ -1071,11 +1081,18 @@ private fun ExploreMapView(
     var panOffsetY by remember { mutableDoubleStateOf(0.0) }
 
     Box(modifier = Modifier.fillMaxSize()) {
-        // Map Canvas
+        // Map Canvas & Street Tiles
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0F172A))
+                .pointerInput(Unit) {
+                    detectDragGestures { change, dragAmount ->
+                        change.consume()
+                        panOffsetX += dragAmount.x
+                        panOffsetY += dragAmount.y
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures {
                         onSelectEntity(null)
@@ -1088,48 +1105,45 @@ private fun ExploreMapView(
             val cx = widthPx / 2f + panOffsetX.toFloat()
             val cy = heightPx / 2f + panOffsetY.toFloat()
 
-            // Scale degrees to canvas pixels (~40,000 px per degree scaled by zoom)
-            val scaleFactor = (32000.0 * zoomLevel).toFloat()
+            val intZoom = (14 + if (zoomLevel >= 2.0) 1 else if (zoomLevel < 0.8) -1 else 0).coerceIn(12, 16)
+            val centerTileX = lonToTileX(centerLng, intZoom)
+            val centerTileY = latToTileY(centerLat, intZoom)
+            val tileSizeDp = 256.dp
+            val tileSizePx = with(LocalDensity.current) { tileSizeDp.toPx() }
 
+            val minTx = (centerTileX - (cx / tileSizePx) - 0.5).toInt().coerceAtLeast(0)
+            val maxTx = (centerTileX + ((widthPx - cx) / tileSizePx) + 0.5).toInt().coerceAtLeast(minTx)
+            val minTy = (centerTileY - (cy / tileSizePx) - 0.5).toInt().coerceAtLeast(0)
+            val maxTy = (centerTileY + ((heightPx - cy) / tileSizePx) + 0.5).toInt().coerceAtLeast(minTy)
+
+            // 1. Street Tiles Layer (OpenFreeMap Production Raster Tiles)
+            for (tx in minTx.coerceAtLeast(0)..maxTx.coerceAtMost(minTx + 4)) {
+                for (ty in minTy.coerceAtLeast(0)..maxTy.coerceAtMost(minTy + 5)) {
+                    val tileLeftPx = cx + (tx - centerTileX).toFloat() * tileSizePx
+                    val tileTopPx = cy + (ty - centerTileY).toFloat() * tileSizePx
+                    val tileUrl = "https://tiles.openfreemap.org/styles/bright/$intZoom/$tx/$ty.png"
+
+                    AsyncImage(
+                        model = coil.request.ImageRequest.Builder(androidx.compose.ui.platform.LocalContext.current)
+                            .data(tileUrl)
+                            .crossfade(true)
+                            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                            .build(),
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier
+                            .offset(
+                                x = (tileLeftPx / density).dp,
+                                y = (tileTopPx / density).dp,
+                            )
+                            .size(tileSizeDp),
+                    )
+                }
+            }
+
+            // 2. User Location / Center Pulse Overlay
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Background Grid Lines representing street layout
-                val step = 60f * zoomLevel.toFloat()
-                var x = 0f
-                while (x < widthPx) {
-                    drawLine(
-                        color = Color(0xFF1E293B),
-                        start = Offset(x, 0f),
-                        end = Offset(x, heightPx),
-                        strokeWidth = 1f,
-                    )
-                    x += step
-                }
-                var y = 0f
-                while (y < heightPx) {
-                    drawLine(
-                        color = Color(0xFF1E293B),
-                        start = Offset(0f, y),
-                        end = Offset(widthPx, y),
-                        strokeWidth = 1f,
-                    )
-                    y += step
-                }
-
-                // Main Thoroughfares (Bole Road, Ring Road, Churchill Ave)
-                drawLine(
-                    color = Color(0xFF334155),
-                    start = Offset(cx - 300f, cy + 200f),
-                    end = Offset(cx + 300f, cy - 200f),
-                    strokeWidth = 4f,
-                )
-                drawLine(
-                    color = Color(0xFF334155),
-                    start = Offset(cx - 250f, cy - 180f),
-                    end = Offset(cx + 250f, cy + 180f),
-                    strokeWidth = 3f,
-                )
-
-                // User Location / Reference Pulse Circle
                 drawCircle(
                     color = (if (isGpsActive) brandMint else Color(0xFF3B82F6)).copy(alpha = 0.20f),
                     radius = 32f * zoomLevel.toFloat(),
@@ -1142,10 +1156,12 @@ private fun ExploreMapView(
                 )
             }
 
-            // Interactive Entity Pins Placed on the Map
+            // 3. Interactive Entity Pins Placed on the Real Map
             entities.forEach { entity ->
-                val px = cx + ((entity.longitude - centerLng) * scaleFactor).toFloat()
-                val py = cy - ((entity.latitude - centerLat) * scaleFactor).toFloat()
+                val entityTileX = lonToTileX(entity.longitude, intZoom)
+                val entityTileY = latToTileY(entity.latitude, intZoom)
+                val px = cx + (entityTileX - centerTileX).toFloat() * tileSizePx
+                val py = cy + (entityTileY - centerTileY).toFloat() * tileSizePx
 
                 // Only render if within visible screen bounds
                 if (px in -40f..widthPx + 40f && py in -40f..heightPx + 40f) {
@@ -1258,12 +1274,29 @@ private fun ExploreMapView(
                         color = textColor,
                     )
                     Text(
-                        text = "Schematic Vector Map • Real Coordinates",
+                        text = "OpenFreeMap Live Streets • Real Coordinates",
                         fontSize = 9.sp,
                         color = mutedColor,
                     )
                 }
             }
+        }
+
+        // Map Attribution Badge
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = cardBg.copy(alpha = 0.88f),
+            border = BorderStroke(1.dp, cardBorder),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(start = 14.dp, bottom = 14.dp),
+        ) {
+            Text(
+                text = "Map data © OpenStreetMap contributors, OpenFreeMap",
+                color = mutedColor,
+                fontSize = 8.5.sp,
+                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+            )
         }
 
         // Bottom Entity Selection Card (appears when a map pin is tapped)

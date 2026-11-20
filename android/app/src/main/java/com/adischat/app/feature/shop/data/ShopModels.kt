@@ -1109,6 +1109,10 @@ data class ShopEnvelope<T>(
     val adminReviews: List<ShopAdminReviewModerationDto>? = null,
     val adminReview: ShopAdminReviewModerationDto? = null,
     val sellerBusiness: ShopSellerBusinessDto? = null,
+    val promotions: List<ShopAdminPromotionDto>? = null,
+    val promotion: ShopAdminPromotionDto? = null,
+    val coupons: List<ShopAdminCouponDto>? = null,
+    val coupon: ShopAdminCouponDto? = null,
 )
 
 data class ShopConversationStoreDto(
@@ -1647,6 +1651,7 @@ data class ShopAdminStoreDto(
     val name: String = "",
     val status: String? = null,
     @SerializedName("approval_status") val approvalStatus: String? = null,
+    @SerializedName("owner_profile_id") val ownerProfileId: String? = null,
     @SerializedName("owner_name") val ownerName: String? = null,
     @SerializedName("owner_email") val ownerEmail: String? = null,
     @SerializedName("rating_average") val ratingAverage: Double? = null,
@@ -1714,6 +1719,87 @@ data class ShopAdminIssueUpdateRequest(
     val buyerVisibleMessage: String,
     val privateNote: String = "",
     val requestId: String,
+)
+
+data class ShopAdminPromotionDto(
+    val id: String = "",
+    @SerializedName("target_type") val targetType: String = "product",
+    @SerializedName("target_id") val targetId: String = "",
+    @SerializedName("custom_title") val customTitle: String = "",
+    @SerializedName("custom_subtitle") val customSubtitle: String = "",
+    @SerializedName("custom_banner_url") val customBannerUrl: String? = null,
+    val placement: String = "home_hero",
+    val priority: Int = 100,
+    @SerializedName("starts_at") val startsAt: String? = null,
+    @SerializedName("ends_at") val endsAt: String? = null,
+    val status: String = "published",
+    @SerializedName("is_sponsored") val isSponsored: Boolean = true,
+    @SerializedName("is_active") val isActive: Boolean = true,
+    @SerializedName("created_by") val createdBy: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class ShopAdminCouponDto(
+    val id: String = "",
+    val code: String = "",
+    val description: String = "",
+    @SerializedName("discount_type") val discountType: String = "percent",
+    @SerializedName("discount_value") val discountValue: Int = 0,
+    @SerializedName("min_order_minor") val minOrderMinor: Int = 0,
+    @SerializedName("max_discount_minor") val maxDiscountMinor: Int? = null,
+    val scope: String = "marketplace",
+    @SerializedName("store_id") val storeId: String? = null,
+    @SerializedName("usage_limit") val usageLimit: Int = 100,
+    @SerializedName("used_count") val usedCount: Int = 0,
+    @SerializedName("user_limit") val userLimit: Int = 1,
+    @SerializedName("starts_at") val startsAt: String? = null,
+    @SerializedName("expires_at") val expiresAt: String? = null,
+    val status: String = "active",
+    @SerializedName("is_active") val isActive: Boolean = true,
+    @SerializedName("created_by") val createdBy: String? = null,
+    @SerializedName("revocation_reason") val revocationReason: String? = null,
+    @SerializedName("created_at") val createdAt: String? = null,
+)
+
+data class ShopAdminPromotionCreateRequest(
+    val action: String = "create",
+    val title: String,
+    val subtitle: String = "",
+    val bannerUrl: String = "",
+    val targetType: String = "product",
+    val targetId: String = "",
+    val placement: String = "home_hero",
+    val priority: Int = 100,
+    val startsAt: String = "",
+    val endsAt: String? = null,
+)
+
+data class ShopAdminPromotionStatusRequest(
+    val action: String, // "publish", "pause", "archive", "submit"
+    val campaignId: String,
+    val reason: String = "",
+)
+
+data class ShopAdminCouponCreateRequest(
+    val action: String = "create",
+    val code: String? = null,
+    val description: String = "",
+    val discountType: String = "percent",
+    val discountValue: Int,
+    val minOrderMinor: Int = 0,
+    val maxDiscountMinor: Int? = null,
+    val scope: String = "marketplace",
+    val storeId: String? = null,
+    val usageLimit: Int = 100,
+    val userLimit: Int = 1,
+    val startsAt: String = "",
+    val expiresAt: String? = null,
+)
+
+data class ShopAdminCouponStatusRequest(
+    val action: String, // "activate", "pause", "revoke"
+    val couponId: String,
+    val reason: String = "",
 )
 
 data class ShopProtectedState(
@@ -1796,6 +1882,8 @@ data class ShopProtectedState(
     val adminRefundRequests: List<ShopRefundRequestDto> = emptyList(),
     val adminExchangeRequests: List<ShopExchangeRequestDto> = emptyList(),
     val adminReviews: List<ShopAdminReviewModerationDto> = emptyList(),
+    val adminPromotions: List<ShopAdminPromotionDto> = emptyList(),
+    val adminCoupons: List<ShopAdminCouponDto> = emptyList(),
     val busyIds: Set<String> = emptySet(),
 )
 

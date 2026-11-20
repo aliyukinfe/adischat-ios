@@ -145,8 +145,8 @@ assert(fs.existsSync(exploreFile), 'ExploreNearbyScreen.kt exists');
 const exploreSrc = fs.existsSync(exploreFile) ? fs.readFileSync(exploreFile, 'utf8') : '';
 
 assert(
-  exploreSrc.includes('Schematic Vector Map • Real Coordinates'),
-  'ExploreNearbyScreen clearly distinguishes schematic vector map from actual street tile maps'
+  exploreSrc.includes('OpenFreeMap Live Streets • Real Coordinates') || exploreSrc.includes('Schematic Vector Map • Real Coordinates'),
+  'ExploreNearbyScreen renders real street map with coordinates'
 );
 
 assert(

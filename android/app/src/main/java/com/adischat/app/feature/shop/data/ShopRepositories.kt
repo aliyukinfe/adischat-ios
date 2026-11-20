@@ -1826,6 +1826,60 @@ class ShopAdminRepository(
             throw IllegalStateException(error.adminMessage("Review moderation could not be saved."))
         }
     }
+
+    suspend fun promotions(): Result<List<ShopAdminPromotionDto>> = runCatching {
+        val service = api ?: error("Couldn't load promotions.")
+        try {
+            withAdminAuth { token -> service.adminPromotions(token) }.promotions.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load promotions."))
+        }
+    }
+
+    suspend fun createPromotion(request: ShopAdminPromotionCreateRequest): Result<ShopAdminPromotionDto?> = runCatching {
+        val service = api ?: error("Promotion creation is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminCreatePromotion(token, request) }.promotion
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Campaign could not be created."))
+        }
+    }
+
+    suspend fun updatePromotionStatus(request: ShopAdminPromotionStatusRequest): Result<ShopAdminPromotionDto?> = runCatching {
+        val service = api ?: error("Promotion update is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminUpdatePromotionStatus(token, request) }.promotion
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Campaign status could not be updated."))
+        }
+    }
+
+    suspend fun coupons(): Result<List<ShopAdminCouponDto>> = runCatching {
+        val service = api ?: error("Couldn't load coupons.")
+        try {
+            withAdminAuth { token -> service.adminCoupons(token) }.coupons.orEmpty()
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Couldn't load coupons."))
+        }
+    }
+
+    suspend fun createCoupon(request: ShopAdminCouponCreateRequest): Result<ShopAdminCouponDto?> = runCatching {
+        val service = api ?: error("Coupon creation is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminCreateCoupon(token, request) }.coupon
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Coupon could not be created."))
+        }
+    }
+
+    suspend fun updateCouponStatus(request: ShopAdminCouponStatusRequest): Result<ShopAdminCouponDto?> = runCatching {
+        val service = api ?: error("Coupon update is temporarily unavailable.")
+        try {
+            withAdminAuth { token -> service.adminUpdateCouponStatus(token, request) }.coupon
+        } catch (error: Throwable) {
+            throw IllegalStateException(error.adminMessage("Coupon status could not be updated."))
+        }
+    }
 }
 
 class ProfileShoppingRepository {

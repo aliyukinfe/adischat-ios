@@ -593,4 +593,22 @@ interface ShopFunctionApi {
 
     @POST("functions/v1/adishop-admin-review-detail")
     suspend fun adminModerateReview(@Header("Authorization") authorization: String, @Body body: ShopAdminReviewModerationRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-promotions")
+    suspend fun adminPromotions(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-promotions")
+    suspend fun adminCreatePromotion(@Header("Authorization") authorization: String, @Body body: ShopAdminPromotionCreateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-promotions")
+    suspend fun adminUpdatePromotionStatus(@Header("Authorization") authorization: String, @Body body: ShopAdminPromotionStatusRequest): ShopEnvelope<Unit>
+
+    @GET("functions/v1/adishop-admin-coupons")
+    suspend fun adminCoupons(@Header("Authorization") authorization: String): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-coupons")
+    suspend fun adminCreateCoupon(@Header("Authorization") authorization: String, @Body body: ShopAdminCouponCreateRequest): ShopEnvelope<Unit>
+
+    @POST("functions/v1/adishop-admin-coupons")
+    suspend fun adminUpdateCouponStatus(@Header("Authorization") authorization: String, @Body body: ShopAdminCouponStatusRequest): ShopEnvelope<Unit>
 }

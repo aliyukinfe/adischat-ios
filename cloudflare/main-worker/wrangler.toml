@@ -6,6 +6,8 @@ workers_dev = true
 [vars]
 FIREBASE_PROJECT_ID = "adischat-f4a77"
 CORS_ORIGIN = "*"
+RESTAURANTS_ASSERTION_ISSUER = "adischat-api-prod"
+RESTAURANTS_ASSERTION_AUDIENCE = "adischat-restaurants:npmniymdxabjvagierwq"
 
 [[d1_databases]]
 binding = "DB"
