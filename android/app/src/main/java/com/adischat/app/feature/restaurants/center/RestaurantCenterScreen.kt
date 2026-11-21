@@ -581,11 +581,6 @@ fun RestaurantCenterScreen(
                                 }
                             }
                         }
-                                    onOpenSession = { onOpenDiningSession(table.id) },
-                                    onCloseSession = { sid -> onCloseDiningSession(sid) },
-                                )
-                            }
-                        }
 
                         RestaurantCenterTab.STAFF -> {
                             item {
@@ -692,6 +687,9 @@ fun RestaurantCenterScreen(
             )
         }
     }
+}
+
+}
 
 @Composable
 private fun CenterOverviewSection(
