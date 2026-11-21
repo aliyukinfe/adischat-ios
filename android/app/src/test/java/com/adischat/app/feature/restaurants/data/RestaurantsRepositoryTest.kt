@@ -186,6 +186,31 @@ class RestaurantsRepositoryTest {
         assertTrue(result.isFailure)
         assertTrue(result.exceptionOrNull() is RestaurantsFailure.QaBlocked)
     }
+
+    @Test
+    fun `restaurants-menu and restaurants-tables-qr endpoint routing annotations match backend contracts`() {
+        val methods = RestaurantsApi::class.java.declaredMethods
+
+        fun getPostPath(methodName: String): String? {
+            val m = methods.firstOrNull { it.name == methodName } ?: return null
+            val post = m.getAnnotation(retrofit2.http.POST::class.java)
+            return post?.value
+        }
+
+        // restaurants-menu endpoints
+        assertEquals("restaurants-menu", getPostPath("upsertMenuCategory"))
+        assertEquals("restaurants-menu", getPostPath("upsertMenuItem"))
+        assertEquals("restaurants-menu", getPostPath("activateRestaurant"))
+        assertEquals("restaurants-menu", getPostPath("publishLive"))
+
+        // restaurants-tables-qr endpoints
+        assertEquals("restaurants-tables-qr", getPostPath("upsertTable"))
+        assertEquals("restaurants-tables-qr", getPostPath("listTables"))
+        assertEquals("restaurants-tables-qr", getPostPath("rotateTableQr"))
+        assertEquals("restaurants-tables-qr", getPostPath("revokeTableQr"))
+        assertEquals("restaurants-tables-qr", getPostPath("resolveTableQr"))
+        assertEquals("restaurants-tables-qr", getPostPath("openDiningSession"))
+    }
 }
 
 /**

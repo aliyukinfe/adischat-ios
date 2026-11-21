@@ -419,6 +419,19 @@ class RestaurantCenterCoordinatorTest {
     @Test
     fun `owner can activate restaurant once readiness prerequisites are satisfied`() = runBlocking {
         val fake = FakeCenterDataSource()
+        fake.customMenuItemsForPending = listOf(
+            CenterMenuItemUi(
+                id = "item-ready",
+                categoryId = "cat-1",
+                restaurantId = "r-pending",
+                branchId = "b-hearth-1",
+                name = "Signature Dish",
+                description = "Ready to serve",
+                priceMinor = 15000L,
+                isActive = true,
+                inStock = true,
+            )
+        )
         val coordinator = RestaurantCenterCoordinator(
             scope = this,
             dataSource = fake,
@@ -705,8 +718,14 @@ private class FakeCenterDataSource : RestaurantCenterDataSource {
         return Result.success(ActivateRestaurantResponse(ok = true, status = "active", isLiveOrderingEnabled = false))
     }
 
+    var customMenuItemsForPending: List<CenterMenuItemUi> = emptyList()
+
     override suspend fun loadMenuCategories(restaurantId: String): Result<List<MenuCategoryDto>> = Result.success(emptyList())
-    override suspend fun loadMenuItemsForBranch(restaurantId: String, branchId: String): Result<List<CenterMenuItemUi>> = Result.success(emptyList())
+    override suspend fun loadMenuItemsForBranch(restaurantId: String, branchId: String): Result<List<CenterMenuItemUi>> {
+        calls.incrementAndGet()
+        if (restaurantId == "r-pending") return Result.success(customMenuItemsForPending)
+        return Result.success(emptyList())
+    }
 
     override suspend fun upsertMenuCategory(request: UpsertCategoryRequest): Result<MenuCategoryDto> {
         calls.incrementAndGet()
