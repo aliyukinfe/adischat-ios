@@ -1,0 +1,40 @@
+name: Android Feature Verification
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-feature:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Prepare build environment
+        run: |
+          set -euo pipefail
+          PUB_KEY="sb_publishable_GqKe_CHk8GQ0oO3SQNbHHQ_0L71yj8x"
+          printf '\nADISHOP_SUPABASE_PUBLISHABLE_KEY=%s\n' "$PUB_KEY" >> android/local.properties
+          if [ ! -d "$ANDROID_HOME/platforms/android-36" ]; then
+            echo y | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" || true
+          fi
+          test -d "$ANDROID_HOME/platforms/android-36" || { echo 'Android SDK 36 is unavailable'; exit 1; }
+
+      - name: Run Unit Tests and Compilation Check
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew testReleaseUnitTest --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"

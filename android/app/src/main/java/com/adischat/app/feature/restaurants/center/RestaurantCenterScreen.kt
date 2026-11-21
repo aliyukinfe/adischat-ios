@@ -20,18 +20,27 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.Group
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.PhotoLibrary
 import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restaurant
+import androidx.compose.material.icons.rounded.RestaurantMenu
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.UploadFile
+import androidx.compose.material.icons.rounded.Visibility
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -48,14 +57,18 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.adischat.app.feature.restaurants.data.MenuCategoryDto
 import com.adischat.app.feature.restaurants.data.RestaurantMediaSlot
 import com.adischat.app.feature.restaurants.data.RestaurantsBinaryUploadSource
 import com.adischat.app.feature.restaurants.presentation.DineInNoticeBanner
@@ -89,6 +102,12 @@ fun RestaurantCenterScreen(
     onInviteStaff: (identifier: String, role: RestaurantStaffRole) -> Unit,
     onRevokeStaff: (staffMemberId: String) -> Unit,
     onTogglePublishLive: (Boolean) -> Unit,
+    onActivateRestaurant: () -> Unit = {},
+    onRevokeTableQr: (tableId: String) -> Unit = {},
+    onUpsertCategory: (name: String, sortOrder: Int, categoryId: String?) -> Unit = { _, _, _ -> },
+    onCreateCategoryAndItem: (categoryName: String, name: String, description: String, priceMinor: Long) -> Unit = { _, _, _, _ -> },
+    onUpsertMenuItem: (categoryId: String, name: String, description: String, priceMinor: Long, itemId: String?, isActive: Boolean) -> Unit = { _, _, _, _, _, _ -> },
+    onUpsertTable: (tableCode: String, label: String, zone: String, capacity: Int, tableId: String?, isActive: Boolean) -> Unit = { _, _, _, _, _, _ -> },
     onUpdateSettings: (description: String) -> Unit,
     onSubmitApplication: (applicationId: String) -> Unit,
     onBackClick: () -> Unit,
@@ -100,6 +119,18 @@ fun RestaurantCenterScreen(
     onRetryUpload: () -> Unit = {},
     onDismissUploadStatus: () -> Unit = {},
 ) {
+    var showAddCategoryDialog by rememberSaveable { mutableStateOf(false) }
+    var editingCategory by remember { mutableStateOf<MenuCategoryDto?>(null) }
+
+    var showAddDishDialog by rememberSaveable { mutableStateOf(false) }
+    var editingDish by remember { mutableStateOf<CenterMenuItemUi?>(null) }
+
+    var showAddTableDialog by rememberSaveable { mutableStateOf(false) }
+    var editingTable by remember { mutableStateOf<CenterTableUi?>(null) }
+
+    var viewingQrTable by remember { mutableStateOf<CenterTableUi?>(null) }
+    var selectedMenuCategoryFilter by rememberSaveable { mutableStateOf<String?>(null) }
+
     val uploadPicker = rememberRestaurantsUploadPicker(
         onFileSelected = onUploadPickedFile,
         onSelectionFailed = onUploadValidationError,
@@ -255,6 +286,21 @@ fun RestaurantCenterScreen(
                                     branch = state.selectedBranch,
                                     activeRole = state.activeRole,
                                     activeOrdersCount = state.orders.count { !it.status.isTerminalNegative && it.status != RestaurantOrderStatus.COMPLETED },
+                                    activationReadiness = state.activationReadiness,
+                                    liveOrderingReadiness = state.liveOrderingReadiness,
+                                    menuItemsCount = state.menuItems.size,
+                                    tablesCount = state.tables.size,
+                                    staffCount = state.staffMembers.size,
+                                    onTabSelected = onTabSelected,
+                                    onAddDishClick = {
+                                        editingDish = null
+                                        showAddDishDialog = true
+                                    },
+                                    onAddTableClick = {
+                                        editingTable = null
+                                        showAddTableDialog = true
+                                    },
+                                    onActivateRestaurant = onActivateRestaurant,
                                     onTogglePublishLive = onTogglePublishLive,
                                 )
                             }
@@ -293,30 +339,237 @@ fun RestaurantCenterScreen(
                         }
 
                         RestaurantCenterTab.MENU -> {
-                            items(state.menuItems, key = { it.id }) { item ->
-                                CenterMenuRowCard(
-                                    item = item,
-                                    canToggleStock = RestaurantRolePermissions.canToggleBranchStock(state.activeRole),
-                                    canManageMenu = RestaurantRolePermissions.canManageMenu(state.activeRole),
-                                    uploadInProgress = state.uploadState.isInProgress,
-                                    onToggleStock = { onToggleItemStock(item.id, !item.isAvailableAtBranch) },
-                                    onUploadPhoto = {
-                                        val restId = state.selectedRestaurantId
-                                        if (!restId.isNullOrBlank()) {
-                                            uploadPicker.pickMenuItemPhoto(restId, item.id, item.name)
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Text(
+                                        text = "Menu (${state.menuItems.size} dishes)",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                    if (RestaurantRolePermissions.canManageMenu(state.activeRole)) {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            OutlinedButton(onClick = {
+                                                editingCategory = null
+                                                showAddCategoryDialog = true
+                                            }) {
+                                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("Category")
+                                            }
+                                            Button(onClick = {
+                                                editingDish = null
+                                                showAddDishDialog = true
+                                            }) {
+                                                Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(Modifier.width(4.dp))
+                                                Text("Add Dish")
+                                            }
                                         }
-                                    },
-                                )
+                                    }
+                                }
+                            }
+
+                            if (state.categories.isNotEmpty()) {
+                                item {
+                                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        item {
+                                            FilterChip(
+                                                selected = selectedMenuCategoryFilter == null,
+                                                onClick = { selectedMenuCategoryFilter = null },
+                                                label = { Text("All (${state.menuItems.size})") },
+                                            )
+                                        }
+                                        items(state.categories, key = { it.id }) { cat ->
+                                            FilterChip(
+                                                selected = selectedMenuCategoryFilter == cat.id,
+                                                onClick = {
+                                                    selectedMenuCategoryFilter = if (selectedMenuCategoryFilter == cat.id) null else cat.id
+                                                },
+                                                label = { Text(cat.name) },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            val displayedItems = if (selectedMenuCategoryFilter != null) {
+                                state.menuItems.filter { it.categoryId == selectedMenuCategoryFilter }
+                            } else {
+                                state.menuItems
+                            }
+
+                            if (displayedItems.isEmpty()) {
+                                item {
+                                    Surface(
+                                        shape = RoundedCornerShape(RestaurantsUiDefaults.CardRadius),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(20.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.RestaurantMenu,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                            Text(
+                                                text = if (state.menuItems.isEmpty()) "No dishes on your menu yet" else "No dishes in this category",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Text(
+                                                text = if (state.menuItems.isEmpty()) {
+                                                    "Add your categories and at least 1 menu item to satisfy activation requirements and prepare for live ordering."
+                                                } else {
+                                                    "Select another category or add dishes to this category."
+                                                },
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                            if (RestaurantRolePermissions.canManageMenu(state.activeRole)) {
+                                                Button(
+                                                    onClick = {
+                                                        editingDish = null
+                                                        showAddDishDialog = true
+                                                    },
+                                                ) {
+                                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Add Your First Dish")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(displayedItems, key = { it.id }) { item ->
+                                    CenterMenuRowCard(
+                                        item = item,
+                                        canToggleStock = RestaurantRolePermissions.canToggleBranchStock(state.activeRole),
+                                        canManageMenu = RestaurantRolePermissions.canManageMenu(state.activeRole),
+                                        uploadInProgress = state.uploadState.isInProgress,
+                                        onToggleStock = { onToggleItemStock(item.id, !item.isAvailableAtBranch) },
+                                        onEditItem = {
+                                            editingDish = item
+                                            showAddDishDialog = true
+                                        },
+                                        onUploadPhoto = {
+                                            val restId = state.selectedRestaurantId
+                                            if (!restId.isNullOrBlank()) {
+                                                uploadPicker.pickMenuItemPhoto(restId, item.id, item.name)
+                                            }
+                                        },
+                                    )
+                                }
                             }
                         }
 
                         RestaurantCenterTab.TABLES_QR -> {
-                            items(state.tables, key = { it.id }) { table ->
-                                CenterTableCard(
-                                    table = table,
-                                    canManageQr = RestaurantRolePermissions.canManageTablesAndQr(state.activeRole),
-                                    canOperateSession = RestaurantRolePermissions.canActivateTableSession(state.activeRole),
-                                    onRotateQr = { onRotateTableQr(table.id) },
+                            item {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = "Dining Tables (${state.tables.size})",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                        )
+                                        Text(
+                                            text = "${state.selectedBranch?.name ?: "Branch"} • ${state.tables.count { (it.activeQrVersion ?: 0) > 0 }} QR active",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    if (RestaurantRolePermissions.canManageTablesAndQr(state.activeRole)) {
+                                        Button(onClick = {
+                                            editingTable = null
+                                            showAddTableDialog = true
+                                        }) {
+                                            Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Add Table")
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (state.tables.isEmpty()) {
+                                item {
+                                    Surface(
+                                        shape = RoundedCornerShape(RestaurantsUiDefaults.CardRadius),
+                                        color = MaterialTheme.colorScheme.surface,
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(20.dp),
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.QrCode2,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(40.dp),
+                                            )
+                                            Text(
+                                                text = "No tables configured yet",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                            )
+                                            Text(
+                                                text = "Add dining tables with capacity and labels, then generate printable QR codes for customer ordering. Tables and QR codes can be prepared in advance before activation.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center,
+                                            )
+                                            if (RestaurantRolePermissions.canManageTablesAndQr(state.activeRole)) {
+                                                Button(
+                                                    onClick = {
+                                                        editingTable = null
+                                                        showAddTableDialog = true
+                                                    },
+                                                ) {
+                                                    Icon(Icons.Rounded.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(6.dp))
+                                                    Text("Add Your First Table")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                items(state.tables, key = { it.id }) { table ->
+                                    CenterTableCard(
+                                        table = table,
+                                        canManageQr = RestaurantRolePermissions.canManageTablesAndQr(state.activeRole),
+                                        canOperateSession = RestaurantRolePermissions.canActivateTableSession(state.activeRole),
+                                        onRotateQr = { onRotateTableQr(table.id) },
+                                        onRevokeQr = { onRevokeTableQr(table.id) },
+                                        onViewQr = { viewingQrTable = table },
+                                        onEditTable = {
+                                            editingTable = table
+                                            showAddTableDialog = true
+                                        },
+                                        onOpenSession = { onOpenDiningSession(table.id) },
+                                        onCloseSession = { sid -> onCloseDiningSession(sid) },
+                                    )
+                                }
+                            }
+                        }
                                     onOpenSession = { onOpenDiningSession(table.id) },
                                     onCloseSession = { sid -> onCloseDiningSession(sid) },
                                 )
@@ -379,6 +632,55 @@ fun RestaurantCenterScreen(
             }
         }
     }
+
+    if (showAddCategoryDialog) {
+        AddCategoryDialog(
+            initialCategory = editingCategory,
+            onDismiss = {
+                showAddCategoryDialog = false
+                editingCategory = null
+            },
+            onSave = onUpsertCategory,
+        )
+    }
+
+    if (showAddDishDialog) {
+        AddEditDishDialog(
+            initialItem = editingDish,
+            categories = state.categories,
+            onDismiss = {
+                showAddDishDialog = false
+                editingDish = null
+            },
+            onSave = { catId, name, desc, priceMinor, itemId, active ->
+                if (catId.startsWith("new:")) {
+                    onCreateCategoryAndItem(catId.removePrefix("new:"), name, desc, priceMinor)
+                } else {
+                    onUpsertMenuItem(catId, name, desc, priceMinor, itemId, active)
+                }
+            },
+        )
+    }
+
+    if (showAddTableDialog) {
+        AddEditTableDialog(
+            initialTable = editingTable,
+            onDismiss = {
+                showAddTableDialog = false
+                editingTable = null
+            },
+            onSave = onUpsertTable,
+        )
+    }
+
+    viewingQrTable?.let { table ->
+        ViewTableQrDialog(
+            table = table,
+            onDismiss = { viewingQrTable = null },
+            onRotateQr = { onRotateTableQr(table.id) },
+            onRevokeQr = { onRevokeTableQr(table.id) },
+        )
+    }
 }
 
 @Composable
@@ -387,6 +689,15 @@ private fun CenterOverviewSection(
     branch: CenterBranchUi?,
     activeRole: RestaurantStaffRole?,
     activeOrdersCount: Int,
+    activationReadiness: ActivationReadiness,
+    liveOrderingReadiness: LiveOrderingReadiness,
+    menuItemsCount: Int,
+    tablesCount: Int,
+    staffCount: Int,
+    onTabSelected: (RestaurantCenterTab) -> Unit,
+    onAddDishClick: () -> Unit,
+    onAddTableClick: () -> Unit,
+    onActivateRestaurant: () -> Unit,
     onTogglePublishLive: (Boolean) -> Unit,
 ) {
     if (restaurant == null) {
@@ -398,6 +709,164 @@ private fun CenterOverviewSection(
         )
         return
     }
+
+    if (restaurant.status == RestaurantOperationalStatus.PENDING_SETUP) {
+        Surface(
+            shape = RoundedCornerShape(RestaurantsUiDefaults.CardRadius),
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.55f)),
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Restaurant Setup — ${restaurant.name}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        Text(
+                            text = "Complete initial setup to activate your restaurant on AdisChat.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    RestaurantTagPill(
+                        label = "Pending Setup",
+                        containerColor = RestaurantsUiDefaults.WarmAmberSoft,
+                        contentColor = RestaurantsUiDefaults.WarmAmberAccent,
+                    )
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+
+                Text(
+                    text = "A. Restaurant Activation Requirements",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+
+                SetupChecklistRow(
+                    isComplete = true,
+                    title = "Business Approved",
+                    description = "Approved by Platform Super Admin",
+                )
+
+                SetupChecklistRow(
+                    isComplete = activationReadiness.hasName && activationReadiness.hasDescription,
+                    title = "Restaurant Profile",
+                    description = "${restaurant.name} • ${if (restaurant.description.isNotBlank()) "Profile complete" else "Description required"}",
+                )
+
+                SetupChecklistRow(
+                    isComplete = activationReadiness.hasActiveBranch,
+                    title = "Main Branch",
+                    description = branch?.let { "${it.name} (${it.address})" } ?: "Active branch created",
+                )
+
+                SetupChecklistRow(
+                    isComplete = menuItemsCount > 0,
+                    title = if (menuItemsCount > 0) "Menu Configured" else "Menu (Dishes)",
+                    description = if (menuItemsCount > 0) {
+                        "$menuItemsCount dish(es) on menu"
+                    } else {
+                        "Not configured — Add at least 1 dish"
+                    },
+                    actionLabel = if (menuItemsCount == 0 && RestaurantRolePermissions.canManageMenu(activeRole)) "Add Dish" else null,
+                    onActionClick = onAddDishClick,
+                )
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Button(
+                            onClick = onActivateRestaurant,
+                            enabled = activationReadiness.isReadyToActivate && RestaurantRolePermissions.canPublishLive(activeRole),
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text("Activate Restaurant")
+                        }
+                        if (!activationReadiness.isReadyToActivate) {
+                            Text(
+                                text = "Activation waiting for: ${activationReadiness.pendingRequirements.joinToString(", ")}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                            )
+                        } else {
+                            Text(
+                                text = "All activation requirements satisfied. Tap to activate.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f))
+
+                Text(
+                    text = "B. Live Dine-In Ordering Preparation",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+
+                SetupChecklistRow(
+                    isComplete = tablesCount > 0,
+                    title = "Dining Tables",
+                    description = if (tablesCount > 0) "$tablesCount table(s) configured" else "Not configured — Add tables",
+                    actionLabel = if (tablesCount == 0 && RestaurantRolePermissions.canManageTablesAndQr(activeRole)) "Add Table" else null,
+                    onActionClick = onAddTableClick,
+                )
+
+                val qrCount = liveOrderingReadiness.hasActiveQr
+                SetupChecklistRow(
+                    isComplete = qrCount,
+                    title = "Table QR Codes",
+                    description = if (qrCount) "QR codes generated" else "Not generated — Configure under Tables tab",
+                    actionLabel = "Tables & QR",
+                    onActionClick = { onTabSelected(RestaurantCenterTab.TABLES_QR) },
+                )
+
+                SetupChecklistRow(
+                    isComplete = staffCount > 1,
+                    title = "Staff Members",
+                    description = if (staffCount > 1) "$staffCount staff member(s) assigned" else "Only owner assigned — Invite team under Staff tab",
+                    actionLabel = "Staff",
+                    onActionClick = { onTabSelected(RestaurantCenterTab.STAFF) },
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Live Dine-In Ordering", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "Disabled — Requires restaurant activation and at least 1 table with active QR code.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = false,
+                        onCheckedChange = {},
+                        enabled = false,
+                    )
+                }
+            }
+        }
+        return
+    }
+
     Surface(
         shape = RoundedCornerShape(RestaurantsUiDefaults.CardRadius),
         color = MaterialTheme.colorScheme.surface,
@@ -435,7 +904,13 @@ private fun CenterOverviewSection(
                 Column(modifier = Modifier.weight(1f)) {
                     Text("Live Dine-In Ordering", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = "Separate from Admin approval — requires Active status & Owner toggle.",
+                        text = if (restaurant.isLiveOrderingEnabled) {
+                            "Customer live ordering is active for this restaurant."
+                        } else if (!liveOrderingReadiness.isReadyForLiveOrdering) {
+                            "Pending: ${liveOrderingReadiness.pendingRequirements.joinToString(", ")}"
+                        } else {
+                            "Ready to publish live dining."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -444,14 +919,64 @@ private fun CenterOverviewSection(
                     checked = restaurant.isLiveOrderingEnabled,
                     onCheckedChange = onTogglePublishLive,
                     enabled = RestaurantRolePermissions.canPublishLive(activeRole) &&
-                        restaurant.status == RestaurantOperationalStatus.ACTIVE,
+                        restaurant.status == RestaurantOperationalStatus.ACTIVE &&
+                        (restaurant.isLiveOrderingEnabled || liveOrderingReadiness.isReadyForLiveOrdering),
                 )
             }
             Text(
-                text = "Active kitchen queue: $activeOrdersCount dine-in ticket(s) • Your role: ${activeRole?.label ?: "None"}",
+                text = "Kitchen queue: $activeOrdersCount ticket(s) • Dishes: $menuItemsCount • Tables: $tablesCount • Role: ${activeRole?.label ?: "None"}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
+        }
+    }
+}
+
+@Composable
+private fun SetupChecklistRow(
+    isComplete: Boolean,
+    title: String,
+    description: String,
+    actionLabel: String? = null,
+    onActionClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = if (isComplete) Icons.Rounded.CheckCircle else Icons.Rounded.ErrorOutline,
+                contentDescription = null,
+                tint = if (isComplete) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                modifier = Modifier.size(18.dp).padding(top = 2.dp),
+            )
+            Column {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        if (actionLabel != null && onActionClick != null) {
+            OutlinedButton(
+                onClick = onActionClick,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                modifier = Modifier.height(32.dp),
+            ) {
+                Text(actionLabel, style = MaterialTheme.typography.labelSmall)
+            }
         }
     }
 }
@@ -588,6 +1113,7 @@ private fun CenterMenuRowCard(
     canManageMenu: Boolean,
     uploadInProgress: Boolean,
     onToggleStock: () -> Unit,
+    onEditItem: () -> Unit = {},
     onUploadPhoto: () -> Unit,
 ) {
     Surface(
@@ -625,25 +1151,36 @@ private fun CenterMenuRowCard(
                 )
             }
             if (canManageMenu) {
-                OutlinedButton(
-                    onClick = onUploadPhoto,
-                    enabled = !uploadInProgress,
-                ) {
-                    Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(if (item.photoPath.isNullOrBlank()) "Upload Photo" else "Replace Photo")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onEditItem) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Edit Dish")
+                    }
+                    OutlinedButton(
+                        onClick = onUploadPhoto,
+                        enabled = !uploadInProgress,
+                    ) {
+                        Icon(Icons.Rounded.PhotoLibrary, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (item.photoPath.isNullOrBlank()) "Upload Photo" else "Replace Photo")
+                    }
                 }
             }
         }
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CenterTableCard(
     table: CenterTableUi,
     canManageQr: Boolean,
     canOperateSession: Boolean,
     onRotateQr: () -> Unit,
+    onRevokeQr: () -> Unit = {},
+    onViewQr: () -> Unit = {},
+    onEditTable: () -> Unit = {},
     onOpenSession: () -> Unit,
     onCloseSession: (String) -> Unit,
 ) {
@@ -663,12 +1200,33 @@ private fun CenterTableCard(
             table.latestGeneratedSessionCode?.let { code ->
                 Text("Staff Session Code: $code", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 if (canManageQr) {
-                    OutlinedButton(onClick = onRotateQr) {
-                        Icon(Icons.Rounded.QrCode2, contentDescription = null, modifier = Modifier.size(16.dp))
+                    if ((table.activeQrVersion ?: 0) > 0) {
+                        Button(onClick = onViewQr) {
+                            Icon(Icons.Rounded.Visibility, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("View QR")
+                        }
+                        OutlinedButton(onClick = onRotateQr) {
+                            Icon(Icons.Rounded.QrCode2, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Rotate QR")
+                        }
+                    } else {
+                        Button(onClick = onRotateQr) {
+                            Icon(Icons.Rounded.QrCode2, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Generate QR")
+                        }
+                    }
+                    OutlinedButton(onClick = onEditTable) {
+                        Icon(Icons.Rounded.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Rotate QR")
+                        Text("Edit")
                     }
                 }
                 if (canOperateSession) {
@@ -682,6 +1240,396 @@ private fun CenterTableCard(
             }
         }
     }
+}
+
+@Composable
+private fun AddCategoryDialog(
+    initialCategory: MenuCategoryDto? = null,
+    onDismiss: () -> Unit,
+    onSave: (name: String, sortOrder: Int, categoryId: String?) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf(initialCategory?.name ?: "") }
+    var sortOrderText by rememberSaveable { mutableStateOf(initialCategory?.sortOrder?.toString() ?: "0") }
+    var nameError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (initialCategory == null) "Add Menu Category" else "Edit Menu Category",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (nameError != null && it.isNotBlank()) nameError = null
+                    },
+                    label = { Text("Category Name (e.g. Traditional, Drinks)") },
+                    isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = sortOrderText,
+                    onValueChange = { sortOrderText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Display Order") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        nameError = "Category name is required"
+                    } else {
+                        val order = sortOrderText.toIntOrNull() ?: 0
+                        onSave(name.trim(), order, initialCategory?.id)
+                        onDismiss()
+                    }
+                },
+            ) {
+                Text(if (initialCategory == null) "Create Category" else "Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun AddEditDishDialog(
+    initialItem: CenterMenuItemUi? = null,
+    categories: List<MenuCategoryDto>,
+    onDismiss: () -> Unit,
+    onSave: (categoryId: String, name: String, description: String, priceMinor: Long, itemId: String?, isActive: Boolean) -> Unit,
+) {
+    var name by rememberSaveable { mutableStateOf(initialItem?.name ?: "") }
+    var description by rememberSaveable { mutableStateOf(initialItem?.description ?: "") }
+    var priceText by rememberSaveable {
+        mutableStateOf(
+            initialItem?.let { (it.basePriceMinor / 100.0).toString() } ?: ""
+        )
+    }
+    var selectedCategoryId by rememberSaveable {
+        mutableStateOf(
+            initialItem?.categoryId ?: categories.firstOrNull()?.id ?: ""
+        )
+    }
+    var newCategoryName by rememberSaveable { mutableStateOf("") }
+    var isActive by rememberSaveable { mutableStateOf(initialItem?.isActive ?: true) }
+
+    var nameError by rememberSaveable { mutableStateOf<String?>(null) }
+    var priceError by rememberSaveable { mutableStateOf<String?>(null) }
+    var categoryError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (initialItem == null) "Add Menu Dish" else "Edit Menu Dish",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (categories.isNotEmpty()) {
+                    Text("Select Category", style = MaterialTheme.typography.labelMedium)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        categories.forEach { cat ->
+                            FilterChip(
+                                selected = selectedCategoryId == cat.id,
+                                onClick = {
+                                    selectedCategoryId = cat.id
+                                    categoryError = null
+                                },
+                                label = { Text(cat.name) },
+                            )
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = newCategoryName,
+                        onValueChange = {
+                            newCategoryName = it
+                            categoryError = null
+                        },
+                        label = { Text("Initial Category (e.g. Main Dishes)") },
+                        singleLine = true,
+                        isError = categoryError != null,
+                        supportingText = categoryError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (nameError != null && it.isNotBlank()) nameError = null
+                    },
+                    label = { Text("Dish Name (e.g. Doro Wat)") },
+                    isError = nameError != null,
+                    supportingText = nameError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description (Optional)") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = {
+                        priceText = it
+                        if (priceError != null) priceError = null
+                    },
+                    label = { Text("Price in ETB (e.g. 350.00)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    isError = priceError != null,
+                    supportingText = priceError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Active on Menu", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = isActive, onCheckedChange = { isActive = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanName = name.trim()
+                    val cleanPrice = priceText.toDoubleOrNull()
+                    val catId = selectedCategoryId.ifBlank {
+                        if (newCategoryName.isNotBlank()) "new:${newCategoryName.trim()}" else ""
+                    }
+
+                    var hasError = false
+                    if (cleanName.isBlank()) {
+                        nameError = "Dish name is required"
+                        hasError = true
+                    }
+                    if (cleanPrice == null || cleanPrice <= 0.0) {
+                        priceError = "Enter a valid price greater than 0"
+                        hasError = true
+                    }
+                    if (catId.isBlank()) {
+                        categoryError = "Select or enter a category"
+                        hasError = true
+                    }
+
+                    if (!hasError && cleanPrice != null) {
+                        val minorUnits = (cleanPrice * 100).toLong()
+                        onSave(catId, cleanName, description.trim(), minorUnits, initialItem?.id, isActive)
+                        onDismiss()
+                    }
+                },
+            ) {
+                Text(if (initialItem == null) "Create Dish" else "Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun AddEditTableDialog(
+    initialTable: CenterTableUi? = null,
+    onDismiss: () -> Unit,
+    onSave: (tableCode: String, label: String, zone: String, capacity: Int, tableId: String?, isActive: Boolean) -> Unit,
+) {
+    var tableCode by rememberSaveable { mutableStateOf(initialTable?.tableCode ?: "") }
+    var label by rememberSaveable { mutableStateOf(initialTable?.label ?: "") }
+    var zone by rememberSaveable { mutableStateOf(initialTable?.zone ?: "Main Dining") }
+    var capacityText by rememberSaveable { mutableStateOf(initialTable?.capacity?.toString() ?: "4") }
+    var isActive by rememberSaveable { mutableStateOf(initialTable?.isActive ?: true) }
+
+    var codeError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = if (initialTable == null) "Add Dining Table" else "Edit Dining Table",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = tableCode,
+                    onValueChange = {
+                        tableCode = it
+                        if (codeError != null && it.isNotBlank()) codeError = null
+                    },
+                    label = { Text("Table Code (e.g. T-01, 1)") },
+                    isError = codeError != null,
+                    supportingText = codeError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = label,
+                    onValueChange = { label = it },
+                    label = { Text("Table Label (e.g. Table 1, Window Booth)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = zone,
+                    onValueChange = { zone = it },
+                    label = { Text("Zone (e.g. Main Dining, Terrace)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                OutlinedTextField(
+                    value = capacityText,
+                    onValueChange = { capacityText = it.filter { ch -> ch.isDigit() } },
+                    label = { Text("Seating Capacity") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("Active Table", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = isActive, onCheckedChange = { isActive = it })
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val cleanCode = tableCode.trim()
+                    val cleanLabel = label.trim().ifBlank { cleanCode }
+                    val cap = capacityText.toIntOrNull() ?: 4
+
+                    var hasError = false
+                    if (cleanCode.isBlank()) {
+                        codeError = "Table code is required"
+                        hasError = true
+                    }
+                    if (!hasError) {
+                        onSave(cleanCode, cleanLabel, zone.trim().ifBlank { "Main Dining" }, cap, initialTable?.id, isActive)
+                        onDismiss()
+                    }
+                },
+            ) {
+                Text(if (initialTable == null) "Create Table" else "Save Changes")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        },
+    )
+}
+
+@Composable
+private fun ViewTableQrDialog(
+    table: CenterTableUi,
+    onDismiss: () -> Unit,
+    onRotateQr: () -> Unit,
+    onRevokeQr: () -> Unit,
+) {
+    val qrVersion = table.activeQrVersion ?: 1
+    val qrUrl = table.latestQrUrl ?: "https://adischat.com/d/table-${table.id.take(8)}"
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(Icons.Rounded.QrCode2, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("${table.label} — QR Code", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                ) {
+                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Active QR Version: v$qrVersion", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                        Text("Zone: ${table.zone} • Capacity: ${table.capacity} seats", style = MaterialTheme.typography.bodySmall)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text("QR Ordering URL:", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(qrUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                Text(
+                    text = "Preparing QR codes in advance allows you to print table standees before opening. Customers cannot open sessions or order until Live Dine-In Ordering is enabled by the owner.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        onRevokeQr()
+                        onDismiss()
+                    },
+                ) {
+                    Text("Revoke QR", color = MaterialTheme.colorScheme.error)
+                }
+                Button(
+                    onClick = {
+                        onRotateQr()
+                        onDismiss()
+                    },
+                ) {
+                    Text("Regenerate QR")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+    )
 }
 
 @OptIn(ExperimentalLayoutApi::class)

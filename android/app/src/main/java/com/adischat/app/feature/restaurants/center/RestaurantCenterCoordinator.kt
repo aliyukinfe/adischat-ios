@@ -796,7 +796,7 @@ class RestaurantCenterCoordinator(
         }
     }
 
-    fun upsertMenuCategory(name: String, sortOrder: Int) {
+    fun upsertMenuCategory(name: String, sortOrder: Int = 0, categoryId: String? = null) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
@@ -806,7 +806,12 @@ class RestaurantCenterCoordinator(
         val startEpoch = flowEpoch.get()
         runMutation(startEpoch, uid) {
             val cat = dataSource.upsertMenuCategory(
-                UpsertCategoryRequest(restaurantId = rest.id, name = name, sortOrder = sortOrder),
+                UpsertCategoryRequest(
+                    restaurantId = rest.id,
+                    id = categoryId,
+                    name = name,
+                    sortOrder = sortOrder,
+                ),
             ).getOrThrow()
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
@@ -819,7 +824,14 @@ class RestaurantCenterCoordinator(
         }
     }
 
-    fun upsertMenuItem(categoryId: String, name: String, description: String, priceMinor: Long) {
+    fun upsertMenuItem(
+        categoryId: String,
+        name: String,
+        description: String,
+        priceMinor: Long,
+        itemId: String? = null,
+        isActive: Boolean = true,
+    ) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
@@ -832,10 +844,12 @@ class RestaurantCenterCoordinator(
             dataSource.upsertMenuItem(
                 UpsertMenuItemRequest(
                     restaurantId = rest.id,
+                    id = itemId,
                     categoryId = categoryId,
                     name = name,
                     description = description,
                     basePriceMinor = priceMinor,
+                    isActive = isActive,
                 ),
             ).getOrThrow()
             val refreshed = dataSource.loadMenuItemsForBranch(rest.id, branchId).getOrThrow()
@@ -844,6 +858,47 @@ class RestaurantCenterCoordinator(
                 current.copy(
                     menuItems = refreshed,
                     actionFeedback = "Saved menu item \"$name\".",
+                )
+            }
+        }
+    }
+
+    fun createCategoryAndItem(
+        categoryName: String,
+        name: String,
+        description: String,
+        priceMinor: Long,
+    ) {
+        val uid = requireEnabledAndUid() ?: return
+        val rest = requireActiveSelectedRestaurant() ?: return
+        if (!RestaurantRolePermissions.canManageMenu(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Only the Owner can edit menu items.") }
+            return
+        }
+        val branchId = _state.value.selectedBranchId ?: return
+        val startEpoch = flowEpoch.get()
+        runMutation(startEpoch, uid) {
+            val cat = dataSource.upsertMenuCategory(
+                UpsertCategoryRequest(restaurantId = rest.id, name = categoryName, sortOrder = 0),
+            ).getOrThrow()
+            dataSource.upsertMenuItem(
+                UpsertMenuItemRequest(
+                    restaurantId = rest.id,
+                    categoryId = cat.id,
+                    name = name,
+                    description = description,
+                    basePriceMinor = priceMinor,
+                    isActive = true,
+                ),
+            ).getOrThrow()
+            val refreshed = dataSource.loadMenuItemsForBranch(rest.id, branchId).getOrThrow()
+            _state.update { current ->
+                if (!isStillValid(startEpoch, uid)) return@update current
+                val updatedCats = (current.categories.filterNot { it.id == cat.id } + cat).sortedBy { it.sortOrder }
+                current.copy(
+                    categories = updatedCats,
+                    menuItems = refreshed,
+                    actionFeedback = "Created category \"$categoryName\" and dish \"$name\".",
                 )
             }
         }
@@ -897,7 +952,14 @@ class RestaurantCenterCoordinator(
     // Tables, QR codes & Staff-activated Dining Sessions
     // ========================================================================
 
-    fun upsertTable(tableCode: String, label: String, zone: String, capacity: Int) {
+    fun upsertTable(
+        tableCode: String,
+        label: String,
+        zone: String,
+        capacity: Int,
+        tableId: String? = null,
+        isActive: Boolean = true,
+    ) {
         val uid = requireEnabledAndUid() ?: return
         val rest = requireActiveSelectedRestaurant() ?: return
         val branchId = _state.value.selectedBranchId ?: return
@@ -911,16 +973,32 @@ class RestaurantCenterCoordinator(
                 UpsertTableRequest(
                     restaurantId = rest.id,
                     branchId = branchId,
+                    id = tableId,
                     tableCode = tableCode,
                     label = label,
                     zone = zone,
                     capacity = capacity,
+                    isActive = isActive,
                 ),
             ).getOrThrow()
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
+                val existing = current.tables.firstOrNull { it.id == saved.id }
+                val merged = if (existing != null) {
+                    saved.copy(
+                        activeQrVersion = existing.activeQrVersion,
+                        activeQrStatus = existing.activeQrStatus,
+                        openSessionId = existing.openSessionId,
+                        openSessionExpiresAt = existing.openSessionExpiresAt,
+                        hasSessionCode = existing.hasSessionCode,
+                        latestGeneratedSessionCode = existing.latestGeneratedSessionCode,
+                        latestQrUrl = existing.latestQrUrl,
+                    )
+                } else {
+                    saved
+                }
                 current.copy(
-                    tables = current.tables.filterNot { it.id == saved.id } + saved,
+                    tables = current.tables.filterNot { it.id == saved.id } + merged,
                     actionFeedback = "Saved table ${saved.label}.",
                 )
             }
@@ -953,6 +1031,37 @@ class RestaurantCenterCoordinator(
                         }
                     },
                     actionFeedback = "Rotated QR to v${rotated.qrVersion ?: 1}.",
+                )
+            }
+        }
+    }
+
+    fun revokeTableQr(tableId: String) {
+        val uid = requireEnabledAndUid() ?: return
+        val rest = requireActiveSelectedRestaurant() ?: return
+        val branchId = _state.value.selectedBranchId ?: return
+        if (!RestaurantRolePermissions.canManageTablesAndQr(_state.value.activeRole)) {
+            _state.update { it.copy(errorBanner = "Only Owner or Manager can revoke table QR codes.") }
+            return
+        }
+        val startEpoch = flowEpoch.get()
+        runMutation(startEpoch, uid) {
+            dataSource.revokeTableQr(rest.id, branchId, tableId).getOrThrow()
+            _state.update { current ->
+                if (!isStillValid(startEpoch, uid)) return@update current
+                current.copy(
+                    tables = current.tables.map { t ->
+                        if (t.id == tableId) {
+                            t.copy(
+                                activeQrVersion = null,
+                                activeQrStatus = "revoked",
+                                latestQrUrl = null,
+                            )
+                        } else {
+                            t
+                        }
+                    },
+                    actionFeedback = "Revoked table QR code.",
                 )
             }
         }
