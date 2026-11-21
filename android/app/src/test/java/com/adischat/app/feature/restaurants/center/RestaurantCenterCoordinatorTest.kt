@@ -10,6 +10,7 @@ import com.adischat.app.feature.restaurants.data.MenuCategoryDto
 import com.adischat.app.feature.restaurants.data.MenuItemDto
 import com.adischat.app.feature.restaurants.data.OpenSessionResponse
 import com.adischat.app.feature.restaurants.data.RestaurantSummaryDto
+import com.adischat.app.feature.restaurants.data.RestaurantsBinaryUploadSource
 import com.adischat.app.feature.restaurants.data.RestaurantsEnvironment
 import com.adischat.app.feature.restaurants.data.RotateQrResponse
 import com.adischat.app.feature.restaurants.data.RotateSessionCodeResponse
@@ -336,7 +337,7 @@ class RestaurantCenterCoordinatorTest {
     }
 
     @Test
-    fun `submitDraftApplication uploads business license and transitions application to SUBMITTED`() = runTest {
+    fun `submitDraftApplication uploads business license and transitions application to SUBMITTED`() = runBlocking {
         val fake = FakeCenterDataSource()
         val coordinator = RestaurantCenterCoordinator(
             dataSource = fake,
