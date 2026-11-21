@@ -449,7 +449,7 @@ class RestaurantCenterCoordinatorTest {
         assertTrue(fake.activatedRestaurants.contains("r-pending"))
         assertEquals(RestaurantOperationalStatus.ACTIVE, coordinator.state.value.selectedRestaurant?.status)
         assertFalse(coordinator.state.value.selectedRestaurant?.isLiveOrderingEnabled == true)
-        assertEquals("Restaurant activated successfully.", coordinator.state.value.actionFeedback)
+        assertEquals("Restaurant activated (pending live toggle).", coordinator.state.value.actionFeedback)
     }
 
     @Test
