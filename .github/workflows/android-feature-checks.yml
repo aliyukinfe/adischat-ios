@@ -37,4 +37,4 @@ jobs:
         working-directory: android
         run: |
           chmod +x ./gradlew
-          ./gradlew testReleaseUnitTest --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
+          ./gradlew testDebugUnitTest --no-daemon --max-workers=2 --console=plain "-Dorg.gradle.java.home=$JAVA_HOME"
