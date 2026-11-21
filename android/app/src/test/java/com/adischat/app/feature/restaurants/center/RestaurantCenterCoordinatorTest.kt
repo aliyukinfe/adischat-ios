@@ -422,14 +422,13 @@ class RestaurantCenterCoordinatorTest {
         fake.customMenuItemsForPending = listOf(
             CenterMenuItemUi(
                 id = "item-ready",
-                categoryId = "cat-1",
                 restaurantId = "r-pending",
-                branchId = "b-hearth-1",
+                categoryId = "cat-1",
+                categoryName = "Mains",
                 name = "Signature Dish",
                 description = "Ready to serve",
-                priceMinor = 15000L,
+                basePriceMinor = 15000L,
                 isActive = true,
-                inStock = true,
             )
         )
         val coordinator = RestaurantCenterCoordinator(

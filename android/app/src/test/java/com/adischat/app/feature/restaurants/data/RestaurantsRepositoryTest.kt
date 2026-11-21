@@ -189,7 +189,7 @@ class RestaurantsRepositoryTest {
 
     @Test
     fun `restaurants-menu and restaurants-tables-qr endpoint routing annotations match backend contracts`() {
-        val methods = RestaurantsApi::class.java.declaredMethods
+        val methods = RestaurantsEdgeApi::class.java.declaredMethods
 
         fun getPostPath(methodName: String): String? {
             val m = methods.firstOrNull { it.name == methodName } ?: return null
