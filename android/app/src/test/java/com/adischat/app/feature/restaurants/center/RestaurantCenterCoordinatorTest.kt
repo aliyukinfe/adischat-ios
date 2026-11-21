@@ -468,11 +468,17 @@ class RestaurantCenterCoordinatorTest {
         assertEquals("Sambusa", fake.lastUpsertMenuItemRequest?.name)
         assertEquals(4500L, fake.lastUpsertMenuItemRequest?.basePriceMinor)
 
-        // Atomic createCategoryAndItem
+        // Sequential createCategoryAndItem
         coordinator.createCategoryAndItem("Desserts", "Baklava", "Sweet honey pastry", 8000L)
         delay(40)
         assertTrue(coordinator.state.value.categories.any { it.name == "Desserts" })
         assertEquals("Created category \"Desserts\" and dish \"Baklava\".", coordinator.state.value.actionFeedback)
+
+        // Calling createCategoryAndItem with existing category reuses it without duplicating
+        val catCountBefore = coordinator.state.value.categories.size
+        coordinator.createCategoryAndItem("Desserts", "Tiramisu", "Coffee dessert", 9000L)
+        delay(40)
+        assertEquals(catCountBefore, coordinator.state.value.categories.size)
     }
 
     @Test

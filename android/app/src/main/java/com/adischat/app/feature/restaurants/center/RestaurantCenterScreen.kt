@@ -1,6 +1,9 @@
 package com.adischat.app.feature.restaurants.center
 
+import android.content.Intent
+import android.graphics.Bitmap
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,6 +40,7 @@ import androidx.compose.material.icons.rounded.QrCode2
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Restaurant
 import androidx.compose.material.icons.rounded.RestaurantMenu
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.Storefront
 import androidx.compose.material.icons.rounded.UploadFile
 import androidx.compose.material.icons.rounded.Visibility
@@ -62,12 +66,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.EncodeHintType
+import com.google.zxing.qrcode.QRCodeWriter
+import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.adischat.app.feature.restaurants.data.MenuCategoryDto
 import com.adischat.app.feature.restaurants.data.RestaurantMediaSlot
 import com.adischat.app.feature.restaurants.data.RestaurantsBinaryUploadSource
@@ -673,12 +684,13 @@ fun RestaurantCenterScreen(
         )
     }
 
-    viewingQrTable?.let { table ->
+    val currentViewingTable = viewingQrTable
+    if (currentViewingTable != null) {
         ViewTableQrDialog(
-            table = table,
+            table = currentViewingTable,
             onDismiss = { viewingQrTable = null },
-            onRotateQr = { onRotateTableQr(table.id) },
-            onRevokeQr = { onRevokeTableQr(table.id) },
+            onRotateQr = { onRotateTableQr(currentViewingTable.id) },
+            onRevokeQr = { onRevokeTableQr(currentViewingTable.id) },
         )
     }
 }
@@ -1447,7 +1459,11 @@ private fun AddEditDishDialog(
                     }
 
                     if (!hasError && cleanPrice != null) {
-                        val minorUnits = (cleanPrice * 100).toLong()
+                        val minorUnits = Math.round(cleanPrice * 100.0)
+                        if (minorUnits <= 0L || minorUnits > 100_000_000L) {
+                            priceError = "Price must be between 0.01 and 1,000,000 ETB"
+                            return@Button
+                        }
                         onSave(catId, cleanName, description.trim(), minorUnits, initialItem?.id, isActive)
                         onDismiss()
                     }
@@ -1568,8 +1584,10 @@ private fun ViewTableQrDialog(
     onRotateQr: () -> Unit,
     onRevokeQr: () -> Unit,
 ) {
+    val context = LocalContext.current
     val qrVersion = table.activeQrVersion ?: 1
     val qrUrl = table.latestQrUrl ?: "https://adischat.com/d/table-${table.id.take(8)}"
+    val qrBitmap = remember(qrUrl) { createQrBitmap(qrUrl, 512) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1584,14 +1602,42 @@ private fun ViewTableQrDialog(
         },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                if (qrBitmap != null) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color.White,
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        modifier = Modifier
+                            .size(190.dp)
+                            .padding(4.dp),
+                    ) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = "Scannable QR code for ${table.label}",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(8.dp),
+                        )
+                    }
+                }
+
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
                         Text("Active QR Version: v$qrVersion", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                         Text("Zone: ${table.zone} • Capacity: ${table.capacity} seats", style = MaterialTheme.typography.bodySmall)
                         Spacer(modifier = Modifier.height(4.dp))
@@ -1610,11 +1656,25 @@ private fun ViewTableQrDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Table ${table.label} Dine-In QR Link")
+                            putExtra(Intent.EXTRA_TEXT, "AdisChat Dine-In Table ${table.label}\nZone: ${table.zone}\nSeats: ${table.capacity}\nOrdering URL: $qrUrl")
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, "Share Table QR"))
+                    },
+                ) {
+                    Icon(Icons.Rounded.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Share")
+                }
+                OutlinedButton(
+                    onClick = {
                         onRevokeQr()
                         onDismiss()
                     },
                 ) {
-                    Text("Revoke QR", color = MaterialTheme.colorScheme.error)
+                    Text("Revoke", color = MaterialTheme.colorScheme.error)
                 }
                 Button(
                     onClick = {
@@ -1622,7 +1682,7 @@ private fun ViewTableQrDialog(
                         onDismiss()
                     },
                 ) {
-                    Text("Regenerate QR")
+                    Text("Regenerate")
                 }
             }
         },
@@ -1630,6 +1690,23 @@ private fun ViewTableQrDialog(
             TextButton(onClick = onDismiss) { Text("Close") }
         },
     )
+}
+
+private fun createQrBitmap(payload: String, size: Int = 512): Bitmap? {
+    return runCatching {
+        val hints = mapOf(
+            EncodeHintType.ERROR_CORRECTION to ErrorCorrectionLevel.M,
+            EncodeHintType.MARGIN to 1,
+        )
+        val matrix = QRCodeWriter().encode(payload, BarcodeFormat.QR_CODE, size, size, hints)
+        Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).apply {
+            for (x in 0 until size) {
+                for (y in 0 until size) {
+                    setPixel(x, y, if (matrix[x, y]) android.graphics.Color.BLACK else android.graphics.Color.WHITE)
+                }
+            }
+        }
+    }.getOrNull()
 }
 
 @OptIn(ExperimentalLayoutApi::class)

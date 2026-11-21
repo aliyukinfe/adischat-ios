@@ -878,15 +878,35 @@ class RestaurantCenterCoordinator(
         val branchId = _state.value.selectedBranchId ?: return
         val startEpoch = flowEpoch.get()
         runMutation(startEpoch, uid) {
-            val cat = dataSource.upsertMenuCategory(
-                UpsertCategoryRequest(restaurantId = rest.id, name = categoryName, sortOrder = 0),
-            ).getOrThrow()
+            val cleanCatName = categoryName.trim()
+            val cleanDishName = name.trim()
+            val cleanDesc = description.trim()
+
+            // Reuse existing category if one already exists with the same name to prevent duplicates
+            val existingCat = _state.value.categories.firstOrNull {
+                it.name.trim().equals(cleanCatName, ignoreCase = true)
+            }
+            val targetCategoryId = if (existingCat != null) {
+                existingCat.id
+            } else {
+                val newCat = dataSource.upsertMenuCategory(
+                    UpsertCategoryRequest(restaurantId = rest.id, name = cleanCatName, sortOrder = 0),
+                ).getOrThrow()
+                // Persist category locally so partial dish creation failure does not orphan the category
+                _state.update { current ->
+                    if (!isStillValid(startEpoch, uid)) return@update current
+                    val updated = (current.categories.filterNot { it.id == newCat.id } + newCat).sortedBy { it.sortOrder }
+                    current.copy(categories = updated)
+                }
+                newCat.id
+            }
+
             dataSource.upsertMenuItem(
                 UpsertMenuItemRequest(
                     restaurantId = rest.id,
-                    categoryId = cat.id,
-                    name = name,
-                    description = description,
+                    categoryId = targetCategoryId,
+                    name = cleanDishName,
+                    description = cleanDesc,
                     basePriceMinor = priceMinor,
                     isActive = true,
                 ),
@@ -894,11 +914,9 @@ class RestaurantCenterCoordinator(
             val refreshed = dataSource.loadMenuItemsForBranch(rest.id, branchId).getOrThrow()
             _state.update { current ->
                 if (!isStillValid(startEpoch, uid)) return@update current
-                val updatedCats = (current.categories.filterNot { it.id == cat.id } + cat).sortedBy { it.sortOrder }
                 current.copy(
-                    categories = updatedCats,
                     menuItems = refreshed,
-                    actionFeedback = "Created category \"$categoryName\" and dish \"$name\".",
+                    actionFeedback = "Created category \"$cleanCatName\" and dish \"$cleanDishName\".",
                 )
             }
         }
