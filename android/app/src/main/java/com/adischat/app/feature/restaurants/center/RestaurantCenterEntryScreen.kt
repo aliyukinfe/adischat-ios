@@ -233,6 +233,16 @@ fun RestaurantCenterEntryScreen(accountUid: String, onBack: () -> Unit) {
                     onInviteStaff = { identifier, role -> coordinator.inviteStaffMember(identifier, role) },
                     onRevokeStaff = coordinator::revokeStaffMember,
                     onTogglePublishLive = coordinator::togglePublishLive,
+                    onActivateRestaurant = coordinator::activateRestaurant,
+                    onRevokeTableQr = coordinator::revokeTableQr,
+                    onUpsertCategory = { name, sortOrder, catId -> coordinator.upsertMenuCategory(name, sortOrder, catId) },
+                    onCreateCategoryAndItem = coordinator::createCategoryAndItem,
+                    onUpsertMenuItem = { catId, name, desc, priceMinor, itemId, active ->
+                        coordinator.upsertMenuItem(catId, name, desc, priceMinor, itemId, active)
+                    },
+                    onUpsertTable = { code, label, zone, cap, tableId, active ->
+                        coordinator.upsertTable(code, label, zone, cap, tableId, active)
+                    },
                     onUpdateSettings = { coordinator.updateRestaurantSettings(it) },
                     onSubmitApplication = coordinator::submitApplication,
                     onBackClick = onBack,

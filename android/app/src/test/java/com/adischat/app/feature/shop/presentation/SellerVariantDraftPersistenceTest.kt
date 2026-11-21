@@ -1,5 +1,8 @@
 package com.adischat.app.feature.shop.presentation
 
+import com.adischat.app.feature.shop.data.SellerVariantDraft
+import com.adischat.app.feature.shop.data.SellerVariantEditorSnapshot
+import com.adischat.app.feature.shop.data.SellerVariantOutputs
 import com.adischat.app.feature.shop.data.ShopSellerOptionValueInput
 import com.adischat.app.feature.shop.data.ShopSellerProductOptionInput
 import com.adischat.app.feature.shop.data.ShopSellerSpecificationInput

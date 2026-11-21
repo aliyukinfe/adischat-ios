@@ -357,6 +357,46 @@ data class CenterMenuItemUi(
     val photoPath: String? = null,
 )
 
+data class ActivationReadiness(
+    val isApproved: Boolean,
+    val hasName: Boolean,
+    val hasDescription: Boolean,
+    val hasActiveBranch: Boolean,
+    val hasActiveMenuItem: Boolean,
+) {
+    val isReadyToActivate: Boolean
+        get() = isApproved && hasName && hasDescription && hasActiveBranch && hasActiveMenuItem
+
+    val pendingRequirements: List<String>
+        get() = buildList {
+            if (!isApproved) add("Platform Admin approval")
+            if (!hasName) add("Restaurant name")
+            if (!hasDescription) add("Restaurant description")
+            if (!hasActiveBranch) add("At least one active branch")
+            if (!hasActiveMenuItem) add("At least one menu item")
+        }
+}
+
+data class LiveOrderingReadiness(
+    val isActivated: Boolean,
+    val hasActiveBranchWithDineIn: Boolean,
+    val hasActiveMenuItem: Boolean,
+    val hasTables: Boolean,
+    val hasActiveQr: Boolean,
+) {
+    val isReadyForLiveOrdering: Boolean
+        get() = isActivated && hasActiveBranchWithDineIn && hasActiveMenuItem && hasTables && hasActiveQr
+
+    val pendingRequirements: List<String>
+        get() = buildList {
+            if (!isActivated) add("Activate restaurant first")
+            if (!hasActiveBranchWithDineIn) add("Active branch with dine-in enabled")
+            if (!hasActiveMenuItem) add("At least one active dish on menu")
+            if (!hasTables) add("At least one dining table")
+            if (!hasActiveQr) add("At least one active table QR code")
+        }
+}
+
 data class CenterTableUi(
     val id: String,
     val restaurantId: String,
@@ -449,6 +489,39 @@ data class RestaurantCenterUiState(
 
     val filteredOrders: List<CenterOrderTicketUi>
         get() = RestaurantCenterReducers.filterOrders(orders, orderFilter)
+
+    val activationReadiness: ActivationReadiness
+        get() {
+            val rest = selectedRestaurant
+            val restId = selectedRestaurantId
+            val hasActiveBranch = branches.any { it.restaurantId == restId && it.status.equals("active", ignoreCase = true) }
+            val hasActiveMenuItem = menuItems.any { it.restaurantId == restId && it.isActive }
+            return ActivationReadiness(
+                isApproved = rest != null && rest.status != RestaurantOperationalStatus.SUSPENDED,
+                hasName = !rest?.name.isNullOrBlank(),
+                hasDescription = !rest?.description.isNullOrBlank(),
+                hasActiveBranch = hasActiveBranch,
+                hasActiveMenuItem = hasActiveMenuItem,
+            )
+        }
+
+    val liveOrderingReadiness: LiveOrderingReadiness
+        get() {
+            val rest = selectedRestaurant
+            val restId = selectedRestaurantId
+            val isActivated = rest?.status == RestaurantOperationalStatus.ACTIVE
+            val hasDineInBranch = branches.any { it.restaurantId == restId && it.status.equals("active", ignoreCase = true) && it.isDineInActive }
+            val hasActiveMenuItem = menuItems.any { it.restaurantId == restId && it.isActive && it.isAvailableAtBranch }
+            val hasTables = tables.any { it.restaurantId == restId && it.isActive }
+            val hasActiveQr = tables.any { it.restaurantId == restId && it.isActive && (it.activeQrVersion ?: 0) > 0 }
+            return LiveOrderingReadiness(
+                isActivated = isActivated,
+                hasActiveBranchWithDineIn = hasDineInBranch,
+                hasActiveMenuItem = hasActiveMenuItem,
+                hasTables = hasTables,
+                hasActiveQr = hasActiveQr,
+            )
+        }
 }
 
 object RestaurantCenterReducers {

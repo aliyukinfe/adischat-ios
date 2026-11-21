@@ -2,6 +2,7 @@ package com.adischat.app.feature.restaurants.center
 
 import com.adischat.app.BuildConfig
 import com.adischat.app.FeatureFlags
+import com.adischat.app.feature.restaurants.data.ActivateRestaurantResponse
 import com.adischat.app.feature.restaurants.data.ConfirmDocumentRequest
 import com.adischat.app.feature.restaurants.data.CreateBranchRequest
 import com.adischat.app.feature.restaurants.data.DiningTableWithStatusDto
@@ -9,6 +10,7 @@ import com.adischat.app.feature.restaurants.data.MenuCategoryDto
 import com.adischat.app.feature.restaurants.data.MenuItemDto
 import com.adischat.app.feature.restaurants.data.OpenSessionResponse
 import com.adischat.app.feature.restaurants.data.RestaurantSummaryDto
+import com.adischat.app.feature.restaurants.data.RestaurantsBinaryUploadSource
 import com.adischat.app.feature.restaurants.data.RestaurantsEnvironment
 import com.adischat.app.feature.restaurants.data.RotateQrResponse
 import com.adischat.app.feature.restaurants.data.RotateSessionCodeResponse
@@ -335,7 +337,7 @@ class RestaurantCenterCoordinatorTest {
     }
 
     @Test
-    fun `submitDraftApplication uploads business license and transitions application to SUBMITTED`() = runTest {
+    fun `submitDraftApplication uploads business license and transitions application to SUBMITTED`() = runBlocking {
         val fake = FakeCenterDataSource()
         val coordinator = RestaurantCenterCoordinator(
             dataSource = fake,
@@ -380,6 +382,174 @@ class RestaurantCenterCoordinatorTest {
         val app = coordinator.state.value.applications.first { it.id == "app-draft" }
         assertEquals(RestaurantApplicationStatus.SUBMITTED, app.status)
         assertTrue(app.documents.any { it.docType == "business_license" })
+    }
+
+    @Test
+    fun `owner setup checklist differentiates activation readiness from live ordering readiness`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectRestaurant("r-pending")
+        delay(40)
+
+        val state = coordinator.state.value
+        assertEquals(RestaurantOperationalStatus.PENDING_SETUP, state.selectedRestaurant?.status)
+
+        // 1. Activation readiness: 0 menu items -> not ready
+        val actReadiness = state.activationReadiness
+        assertFalse(actReadiness.isReadyToActivate)
+        assertTrue(actReadiness.pendingRequirements.contains("At least one menu item"))
+        // Tables, QR codes, and staff are NOT listed in activation prerequisites
+        assertFalse(actReadiness.pendingRequirements.any { it.contains("table", ignoreCase = true) })
+        assertFalse(actReadiness.pendingRequirements.any { it.contains("QR", ignoreCase = true) })
+        assertFalse(actReadiness.pendingRequirements.any { it.contains("staff", ignoreCase = true) })
+
+        // 2. Live ordering readiness: requires ACTIVE status, dish, tables, QR
+        val liveReadiness = state.liveOrderingReadiness
+        assertFalse(liveReadiness.isReadyForLiveOrdering)
+        assertTrue(liveReadiness.pendingRequirements.contains("Activate restaurant first"))
+    }
+
+    @Test
+    fun `owner can activate restaurant once readiness prerequisites are satisfied`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        fake.customMenuItemsForPending = listOf(
+            CenterMenuItemUi(
+                id = "item-ready",
+                restaurantId = "r-pending",
+                categoryId = "cat-1",
+                categoryName = "Mains",
+                name = "Signature Dish",
+                description = "Ready to serve",
+                basePriceMinor = 15000L,
+                isActive = true,
+            )
+        )
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectRestaurant("r-pending")
+        delay(40)
+
+        // Activate restaurant
+        coordinator.activateRestaurant()
+        delay(40)
+
+        assertTrue(fake.activatedRestaurants.contains("r-pending"))
+        assertEquals(RestaurantOperationalStatus.ACTIVE, coordinator.state.value.selectedRestaurant?.status)
+        assertFalse(coordinator.state.value.selectedRestaurant?.isLiveOrderingEnabled == true)
+        assertEquals("Restaurant activated (pending live toggle).", coordinator.state.value.actionFeedback)
+    }
+
+    @Test
+    fun `owner can upsert categories, items, and atomic category plus item`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectRestaurant("r-hearth")
+        delay(40)
+
+        // Upsert category
+        coordinator.upsertMenuCategory("Appetizers", 1)
+        delay(40)
+        assertNotNull(fake.lastUpsertCategoryRequest)
+        assertEquals("Appetizers", fake.lastUpsertCategoryRequest?.name)
+        assertTrue(coordinator.state.value.categories.any { it.name == "Appetizers" })
+
+        // Upsert item
+        val catId = coordinator.state.value.categories.first().id
+        coordinator.upsertMenuItem(catId, "Sambusa", "Crispy lentil pastry", 4500L)
+        delay(40)
+        assertNotNull(fake.lastUpsertMenuItemRequest)
+        assertEquals("Sambusa", fake.lastUpsertMenuItemRequest?.name)
+        assertEquals(4500L, fake.lastUpsertMenuItemRequest?.basePriceMinor)
+
+        // Sequential createCategoryAndItem
+        coordinator.createCategoryAndItem("Desserts", "Baklava", "Sweet honey pastry", 8000L)
+        delay(40)
+        assertTrue(coordinator.state.value.categories.any { it.name == "Desserts" })
+        assertEquals("Created category \"Desserts\" and dish \"Baklava\".", coordinator.state.value.actionFeedback)
+
+        // Calling createCategoryAndItem with existing category reuses it without duplicating
+        val catCountBefore = coordinator.state.value.categories.size
+        coordinator.createCategoryAndItem("Desserts", "Tiramisu", "Coffee dessert", 9000L)
+        delay(40)
+        assertEquals(catCountBefore, coordinator.state.value.categories.size)
+    }
+
+    @Test
+    fun `owner can upsert dining tables, rotate QR, and revoke QR`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectRestaurant("r-hearth")
+        delay(40)
+
+        // Upsert Table
+        coordinator.upsertTable("T-01", "Window Table 1", "Main Dining", 4)
+        delay(40)
+        assertNotNull(fake.lastUpsertTableRequest)
+        assertEquals("T-01", fake.lastUpsertTableRequest?.tableCode)
+        val createdTable = coordinator.state.value.tables.first { it.tableCode == "T-01" }
+
+        // Rotate QR
+        coordinator.rotateTableQr(createdTable.id)
+        delay(40)
+        val rotatedTable = coordinator.state.value.tables.first { it.id == createdTable.id }
+        assertEquals(2, rotatedTable.activeQrVersion)
+        assertEquals("active", rotatedTable.activeQrStatus)
+
+        // Revoke QR
+        coordinator.revokeTableQr(createdTable.id)
+        delay(40)
+        assertEquals(createdTable.id, fake.lastRevokedTableId)
+        val revokedTable = coordinator.state.value.tables.first { it.id == createdTable.id }
+        assertNull(revokedTable.activeQrVersion)
+        assertEquals("revoked", revokedTable.activeQrStatus)
+    }
+
+    @Test
+    fun `publish live ordering is rejected if restaurant is not active or caller is not owner`() = runBlocking {
+        val fake = FakeCenterDataSource()
+        val coordinator = RestaurantCenterCoordinator(
+            scope = this,
+            dataSource = fake,
+            environmentProvider = { enabledCenterEnv() },
+            accountUidProvider = { "owner-1" },
+        )
+        coordinator.loadCenter()
+        delay(40)
+        coordinator.selectRestaurant("r-pending")
+        delay(40)
+
+        // Attempting to publish live while PENDING_SETUP is blocked
+        coordinator.togglePublishLive(true)
+        delay(40)
+        assertNotNull(coordinator.state.value.errorBanner)
+        assertTrue(coordinator.state.value.errorBanner?.contains("Active") == true)
     }
 
     private fun enabledCenterEnv() = RestaurantsEnvironment(
@@ -535,15 +705,87 @@ private class FakeCenterDataSource : RestaurantCenterDataSource {
         return Result.success(enable)
     }
 
+    var lastUpsertCategoryRequest: UpsertCategoryRequest? = null
+    var lastUpsertMenuItemRequest: UpsertMenuItemRequest? = null
+    var lastUpsertTableRequest: UpsertTableRequest? = null
+    var lastRevokedTableId: String? = null
+    var activatedRestaurants = mutableListOf<String>()
+
+    override suspend fun activateRestaurant(restaurantId: String): Result<ActivateRestaurantResponse> {
+        calls.incrementAndGet()
+        activatedRestaurants.add(restaurantId)
+        return Result.success(ActivateRestaurantResponse(ok = true, status = "active", isLiveOrderingEnabled = false))
+    }
+
+    var customMenuItemsForPending: List<CenterMenuItemUi> = emptyList()
+
     override suspend fun loadMenuCategories(restaurantId: String): Result<List<MenuCategoryDto>> = Result.success(emptyList())
-    override suspend fun loadMenuItemsForBranch(restaurantId: String, branchId: String): Result<List<CenterMenuItemUi>> = Result.success(emptyList())
-    override suspend fun upsertMenuCategory(request: UpsertCategoryRequest) = error("unused")
-    override suspend fun upsertMenuItem(request: UpsertMenuItemRequest) = error("unused")
+    override suspend fun loadMenuItemsForBranch(restaurantId: String, branchId: String): Result<List<CenterMenuItemUi>> {
+        calls.incrementAndGet()
+        if (restaurantId == "r-pending") return Result.success(customMenuItemsForPending)
+        return Result.success(emptyList())
+    }
+
+    override suspend fun upsertMenuCategory(request: UpsertCategoryRequest): Result<MenuCategoryDto> {
+        calls.incrementAndGet()
+        lastUpsertCategoryRequest = request
+        val id = request.id ?: "cat-${System.currentTimeMillis()}"
+        return Result.success(MenuCategoryDto(id = id, restaurantId = request.restaurantId, name = request.name, sortOrder = request.sortOrder ?: 0))
+    }
+
+    override suspend fun upsertMenuItem(request: UpsertMenuItemRequest): Result<MenuItemDto> {
+        calls.incrementAndGet()
+        lastUpsertMenuItemRequest = request
+        val id = request.id ?: "item-${System.currentTimeMillis()}"
+        return Result.success(
+            MenuItemDto(
+                id = id,
+                restaurantId = request.restaurantId,
+                categoryId = request.categoryId,
+                name = request.name,
+                description = request.description.orEmpty(),
+                basePriceMinor = request.basePriceMinor,
+                isActive = request.isActive ?: true,
+            )
+        )
+    }
+
     override suspend fun setBranchAvailability(request: SetBranchAvailabilityRequest) = Result.success(Unit)
     override suspend fun loadTables(restaurantId: String, branchId: String): Result<List<DiningTableWithStatusDto>> = Result.success(emptyList())
-    override suspend fun upsertTable(request: UpsertTableRequest) = error("unused")
-    override suspend fun rotateTableQr(restaurantId: String, branchId: String, tableId: String): Result<RotateQrResponse> = error("unused")
-    override suspend fun revokeTableQr(restaurantId: String, branchId: String, tableId: String) = Result.success(Unit)
+
+    override suspend fun upsertTable(request: UpsertTableRequest): Result<CenterTableUi> {
+        calls.incrementAndGet()
+        lastUpsertTableRequest = request
+        val id = request.id ?: "table-${System.currentTimeMillis()}"
+        return Result.success(
+            CenterTableUi(
+                id = id,
+                restaurantId = request.restaurantId,
+                branchId = request.branchId,
+                tableCode = request.tableCode,
+                label = request.label,
+                zone = request.zone.orEmpty(),
+                capacity = request.capacity ?: 4,
+                isActive = request.isActive ?: true,
+                activeQrVersion = null,
+                activeQrStatus = null,
+                openSessionId = null,
+                openSessionExpiresAt = null,
+                hasSessionCode = false,
+            )
+        )
+    }
+
+    override suspend fun rotateTableQr(restaurantId: String, branchId: String, tableId: String): Result<RotateQrResponse> {
+        calls.incrementAndGet()
+        return Result.success(RotateQrResponse(ok = true, qrTokenId = "qr-$tableId", qrVersion = 2, qrUrl = "https://adischat.com/d/qr-$tableId"))
+    }
+
+    override suspend fun revokeTableQr(restaurantId: String, branchId: String, tableId: String): Result<Unit> {
+        calls.incrementAndGet()
+        lastRevokedTableId = tableId
+        return Result.success(Unit)
+    }
     override suspend fun openDiningSession(restaurantId: String, branchId: String, tableId: String): Result<OpenSessionResponse> = error("unused")
     override suspend fun rotateSessionCode(restaurantId: String, branchId: String, diningSessionId: String): Result<RotateSessionCodeResponse> = error("unused")
     override suspend fun closeDiningSession(restaurantId: String, branchId: String, diningSessionId: String) = Result.success(Unit)
