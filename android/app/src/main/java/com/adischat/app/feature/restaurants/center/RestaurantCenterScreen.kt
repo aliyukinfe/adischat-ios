@@ -639,61 +639,59 @@ fun RestaurantCenterScreen(
                         }
                     }
                 }
-                }
             }
         }
-    }
 
-    if (showAddCategoryDialog) {
-        AddCategoryDialog(
-            initialCategory = editingCategory,
-            onDismiss = {
-                showAddCategoryDialog = false
-                editingCategory = null
-            },
-            onSave = onUpsertCategory,
-        )
-    }
+        if (showAddCategoryDialog) {
+            AddCategoryDialog(
+                initialCategory = editingCategory,
+                onDismiss = {
+                    showAddCategoryDialog = false
+                    editingCategory = null
+                },
+                onSave = onUpsertCategory,
+            )
+        }
 
-    if (showAddDishDialog) {
-        AddEditDishDialog(
-            initialItem = editingDish,
-            categories = state.categories,
-            onDismiss = {
-                showAddDishDialog = false
-                editingDish = null
-            },
-            onSave = { catId, name, desc, priceMinor, itemId, active ->
-                if (catId.startsWith("new:")) {
-                    onCreateCategoryAndItem(catId.removePrefix("new:"), name, desc, priceMinor)
-                } else {
-                    onUpsertMenuItem(catId, name, desc, priceMinor, itemId, active)
-                }
-            },
-        )
-    }
+        if (showAddDishDialog) {
+            AddEditDishDialog(
+                initialItem = editingDish,
+                categories = state.categories,
+                onDismiss = {
+                    showAddDishDialog = false
+                    editingDish = null
+                },
+                onSave = { catId, name, desc, priceMinor, itemId, active ->
+                    if (catId.startsWith("new:")) {
+                        onCreateCategoryAndItem(catId.removePrefix("new:"), name, desc, priceMinor)
+                    } else {
+                        onUpsertMenuItem(catId, name, desc, priceMinor, itemId, active)
+                    }
+                },
+            )
+        }
 
-    if (showAddTableDialog) {
-        AddEditTableDialog(
-            initialTable = editingTable,
-            onDismiss = {
-                showAddTableDialog = false
-                editingTable = null
-            },
-            onSave = onUpsertTable,
-        )
-    }
+        if (showAddTableDialog) {
+            AddEditTableDialog(
+                initialTable = editingTable,
+                onDismiss = {
+                    showAddTableDialog = false
+                    editingTable = null
+                },
+                onSave = onUpsertTable,
+            )
+        }
 
-    val currentViewingTable = viewingQrTable
-    if (currentViewingTable != null) {
-        ViewTableQrDialog(
-            table = currentViewingTable,
-            onDismiss = { viewingQrTable = null },
-            onRotateQr = { onRotateTableQr(currentViewingTable.id) },
-            onRevokeQr = { onRevokeTableQr(currentViewingTable.id) },
-        )
+        val currentViewingTable = viewingQrTable
+        if (currentViewingTable != null) {
+            ViewTableQrDialog(
+                table = currentViewingTable,
+                onDismiss = { viewingQrTable = null },
+                onRotateQr = { onRotateTableQr(currentViewingTable.id) },
+                onRevokeQr = { onRevokeTableQr(currentViewingTable.id) },
+            )
+        }
     }
-}
 
 @Composable
 private fun CenterOverviewSection(
